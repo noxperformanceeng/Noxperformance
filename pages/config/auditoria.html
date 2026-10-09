@@ -65,6 +65,9 @@ let linhas = [], visiveis = [];
   ['fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', carregar));
   ['fUsuario', 'fTela', 'fAcao'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
   document.getElementById('fBusca').addEventListener('input', desenhar);
+  // Aberta a partir de outra tela (ex.: "Ver histórico" do produto): já filtra e amplia o período
+  const busca = new URLSearchParams(location.search).get('busca');
+  if (busca) { document.getElementById('fBusca').value = busca; document.getElementById('fDe').value = '2026-01-01'; }
   botoesRelatorio('relAuditoria', () => ({
     arquivo: 'auditoria',
     colunas: ['Data', 'Hora', 'Usuário', 'Tela', 'Ação', 'Registro', 'Campo', 'O que era', 'Como ficou'],

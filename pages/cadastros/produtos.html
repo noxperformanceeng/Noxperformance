@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Produtos · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .cab-tela { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+  .cab-tela .sub { margin: 0; }
+  .abas { flex-wrap: wrap; }
+  .aba .n { color: var(--texto-suave); font-weight: 400; margin-left: 4px; }
+  .pendencias { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+  .pendencias > span { color: var(--texto-suave); font-size: 12px; margin-right: 2px; }
+  .pend { border: 1px solid var(--linha); background: var(--superficie); border-radius: 20px; padding: 5px 12px; font: 500 12.5px var(--fonte); cursor: pointer; color: var(--texto); display: inline-flex; gap: 6px; align-items: center; }
+  .pend b { font-weight: 600; }
+  .pend i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .pend.ativa { border-color: var(--destaque); box-shadow: 0 0 0 1px var(--destaque); }
+  .pend.zero { opacity: .45; }
+  .c-erro { background: var(--erro); } .c-alerta { background: #d97706; } .c-neutro { background: #9aa0a8; }
+  td.cod { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 500; }
+  td.desc small { display: block; color: var(--texto-suave); font-size: 12px; margin-top: 2px; }
+  tr.inativo td { color: #9aa0a8; }
+  .tg { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; margin: 1px 2px 1px 0; white-space: nowrap; }
+  .tg.erro { background: #fdeceb; color: var(--erro); } .tg.alerta { background: #fff4e5; color: #b45309; }
+  .tg.ok { background: #e8f5ec; color: var(--ok); } .tg.neutro { background: var(--fundo); color: var(--texto-suave); }
+  .rev small { display: block; color: var(--texto-suave); font-size: 11px; margin-top: 3px; }
+  th.ord { cursor: pointer; user-select: none; } th.ord:hover { color: var(--texto); }
+  td input[type=checkbox], th input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--destaque); }
+  .lote { display: flex; gap: 8px; align-items: center; }
+  .lote span { font-weight: 500; }
+  /* janela do produto */
+  .modal.produto { max-width: 820px; max-height: 92vh; overflow: auto; }
+  .grade-campos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 14px; }
+  .grade-campos .l2 { grid-column: span 2; } .grade-campos .l4 { grid-column: span 4; }
+  .secao { margin: 18px 0 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--texto-suave); border-top: 1px solid var(--linha); padding-top: 14px; }
+  .linha-cod { display: flex; gap: 6px; } .linha-cod input { flex: 1; }
+  .aviso-dup { background: #fff4e5; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+  .aviso-dup b { color: #b45309; }
+  .lista-mini { width: 100%; font-size: 13px; } .lista-mini td { padding: 6px 8px; }
+  .info { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 16px; font-size: 12.5px; color: var(--texto-suave); }
+  .info b { color: var(--texto); font-weight: 500; }
+  .add-forn { display: grid; grid-template-columns: 2fr 1fr auto auto; gap: 8px; align-items: end; margin-top: 8px; }
+  .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto); margin: 0; }
+  @media (max-width: 860px) { .grade-campos { grid-template-columns: 1fr 1fr; } .grade-campos .l4 { grid-column: span 2; } .cab-tela { flex-direction: column; } .add-forn { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body data-modulo="produtos" data-titulo="Produtos">
+<main id="conteudo">
+  <div class="cab-tela">
+    <div><h1>Produtos</h1><p class="sub">Base de tudo: estoque, ficha técnica, compras, produção e vendas. Revise e confirme cada cadastro.</p></div>
+    <button class="btn primario" id="btnNovo" hidden>+ Novo produto</button>
+  </div>
+
+  <div class="abas" id="abasTipo"></div>
+  <div class="pendencias" id="pendencias"></div>
+
+  <div class="cartao filtros">
+    <div style="grid-column: span 2"><label>Buscar (código, descrição, grupo, fornecedor — palavras em qualquer ordem)</label><input id="fBusca" placeholder="ex.: abr inox 25"></div>
+    <div><label>Grupo</label><select id="fGrupo"><option value="">Todos</option></select></div>
+    <div><label>Fornecedor</label><select id="fForn"><option value="">Todos</option><option value="-">Sem fornecedor</option></select></div>
+    <div><label>Situação</label><select id="fSit"><option value="ativo">Ativos</option><option value="inativo">Inativos</option><option value="">Todos</option></select></div>
+    <div><label>Revisão</label><select id="fRev"><option value="">Todas</option><option value="nao">Não revisado</option><option value="ok">Revisado</option><option value="alt">Alterado após revisão</option></select></div>
+    <div><label>Unidade</label><select id="fUn"><option value="">Todas</option><option value="-">Sem unidade</option></select></div>
+    <div><label>Movimento no Tiny (desde 2025)</label><select id="fMov"><option value="">Todos</option><option value="sim">Com movimento</option><option value="nao">Sem movimento</option></select></div>
+    <div><label>Alterado de</label><input type="date" id="fDe"></div>
+    <div><label>até</label><input type="date" id="fAte"></div>
+  </div>
+
+  <div class="barra">
+    <span id="contagem" class="sub" style="margin:0"></span>
+    <div class="lote" id="lote" hidden></div>
+    <div id="relProdutos"></div>
+  </div>
+
+  <div class="cartao tabela-rolagem">
+    <table>
+      <thead><tr>
+        <th style="width:28px" class="nao-imprimir"><input type="checkbox" id="selTodos" title="Selecionar todos os listados"></th>
+        <th class="ord" data-ord="codigo">Código</th>
+        <th class="ord" data-ord="descricao">Descrição</th>
+        <th id="thTipo">Tipo</th>
+        <th>Un</th>
+        <th>Fornecedor</th>
+        <th class="ord" data-ord="revisao">Revisão</th>
+        <th>Pendências</th>
+      </tr></thead>
+      <tbody id="lista"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+  <p class="sub" id="rodape" style="margin-top:10px"></p>
+</main>
+
+<datalist id="dlGrupos"></datalist>
+<datalist id="dlForn"></datalist>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script>
+/* ===================== CONFIGURAÇÃO ===================== */
+const TIPOS = [
+  { id: 'materia_prima', nome: 'Matéria-prima' },
+  { id: 'semiacabado',   nome: 'Semiacabado' },
+  { id: 'acabado',       nome: 'Produto acabado' },
+  { id: 'kit',           nome: 'Kit' },
+  { id: 'ferramenta',    nome: 'Ferramenta' }
+];
+const NOME_TIPO = Object.fromEntries(TIPOS.map(t => [t.id, t.nome]));
+const COMPRADOS = ['materia_prima', 'ferramenta'];          // precisam de fornecedor
+const COM_ENGENHARIA = ['acabado', 'semiacabado', 'kit'];   // medidas e desenho técnico
+const UNIDADES = ['UN', 'PC', 'PAR', 'JG', 'CONJ', 'KIT', 'M', 'MM', 'M2', 'BARRA', 'ROLO', 'KG', 'G', 'L', 'ML', 'CX', 'PCT'];
+const PEND = [
+  { id: 'duplicado',      nome: 'Possível duplicado',    cor: 'erro' },
+  { id: 'sem_codigo',     nome: 'Sem código',            cor: 'erro' },
+  { id: 'descricao',      nome: 'Descrição suspeita',    cor: 'erro' },
+  { id: 'sem_fornecedor', nome: 'Sem fornecedor',        cor: 'alerta' },
+  { id: 'sem_unidade',    nome: 'Sem unidade',           cor: 'alerta' },
+  { id: 'alterado',       nome: 'Alterado após revisão', cor: 'alerta' },
+  { id: 'nao_revisado',   nome: 'Não revisado',          cor: 'neutro' }
+];
+
+let ctx, podeEditar = false;
+let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {};
+let tipoAtual = 'materia_prima', pendAtual = '', ordem = { campo: 'codigo', asc: true };
+let visiveis = [], selecionados = new Set();
+
+/* ===================== INÍCIO ===================== */
+(async () => {
+  ctx = await iniciarTela();
+  if (!ctx) return;
+  podeEditar = ctx.pode('produtos', 'editar');
+  document.getElementById('btnNovo').hidden = !podeEditar;
+  document.getElementById('btnNovo').onclick = () => abrirProduto(null);
+
+  ['fBusca'].forEach(id => document.getElementById(id).addEventListener('input', desenhar));
+  ['fGrupo', 'fForn', 'fSit', 'fRev', 'fUn', 'fMov', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
+  document.querySelectorAll('th.ord').forEach(th => th.onclick = () => {
+    ordem = { campo: th.dataset.ord, asc: ordem.campo === th.dataset.ord ? !ordem.asc : true }; desenhar();
+  });
+  document.getElementById('selTodos').onchange = e => {
+    visiveis.forEach(p => e.target.checked ? selecionados.add(p.id) : selecionados.delete(p.id)); desenhar();
+  };
+  botoesRelatorio('relProdutos', () => ({
+    arquivo: 'produtos_' + (tipoAtual || 'todos'),
+    colunas: ['Código', 'Descrição', 'Tipo', 'Grupo', 'Unidade', 'Situação', 'Fornecedores', 'NCM', 'Revisão', 'Revisado por', 'Revisado em',
+              'Última alteração', 'Alterado por', 'Pendências', 'Entradas Tiny desde 2025', 'Saldo Tiny 09/10/2026'],
+    linhas: visiveis.map(p => [p.codigo, p.descricao, NOME_TIPO[p.tipo], p.grupo, p.unidade, p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
+      fornDe(p.id).map(v => v.nome).join(', '), p.ncm, statusRevisao(p).texto, nomes[p.revisado_por] || '', dataHoraBR(p.revisado_em),
+      dataHoraBR(p.atualizado_em), nomes[p.atualizado_por] || '', [...p._pend].filter(x => x !== 'nao_revisado').map(x => PEND.find(y => y.id === x).nome).join(', '),
+      p.ref_tiny?.entradas_2025 ?? '', p.ref_tiny?.saldo_tiny ?? ''])
+  }));
+  await carregar();
+})();
+
+/* ===================== DADOS ===================== */
+async function carregar() {
+  try {
+    const [lista, vinc, forn, nm, dp] = await Promise.all([
+      buscarTodos(() => db.from('produtos').select('*').neq('tipo', 'despesa').order('id')),
+      buscarTodos(() => db.from('produto_fornecedores').select('id, produto_id, fornecedor_id, codigo_fornecedor, preferencial').order('id')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj, situacao').order('nome')),
+      db.rpc('usuarios_nomes'),
+      db.rpc('produtos_duplicados')
+    ]);
+    produtos = lista; vinculos = vinc; fornecedores = forn;
+    nomes = Object.fromEntries((nm.data || []).map(u => [u.id, u.nome]));
+    dups = {};
+    (dp.data || []).forEach(d => {
+      (dups[d.produto_a] ||= []).push({ outro: d.produto_b, nivel: d.nivel });
+      (dups[d.produto_b] ||= []).push({ outro: d.produto_a, nivel: d.nivel });
+    });
+    produtos.forEach(p => p._pend = pendencias(p));
+    preencherFiltros();
+    desenhar();
+  } catch (e) {
+    aviso('Erro ao carregar: ' + (e.message || e), true);
+  }
+}
+
+function fornDe(id) {
+  return vinculos.filter(v => v.produto_id === id)
+    .map(v => ({ ...v, nome: fornecedores.find(f => f.id === v.fornecedor_id)?.nome || '?' }))
+    .sort((a, b) => b.preferencial - a.preferencial);
+}
+
+function statusRevisao(p) {
+  if (!p.revisado_em) return { cls: 'neutro', texto: 'Não revisado' };
+  if (new Date(p.atualizado_em) > new Date(p.revisado_em)) return { cls: 'alerta', texto: 'Alterado após revisão' };
+  return { cls: 'ok', texto: 'Revisado' };
+}
+
+function pendencias(p) {
+  const s = new Set();
+  if (dups[p.id]?.length) s.add('duplicado');
+  if (!p.codigo) s.add('sem_codigo');
+  if (/\.(dxf|dwg|pdf|step|stp)\b/i.test(p.descricao) || (p.descricao || '').trim().length < 6) s.add('descricao');
+  if (p.situacao === 'ativo' && COMPRADOS.includes(p.tipo) && !vinculos.some(v => v.produto_id === p.id)) s.add('sem_fornecedor');
+  if (p.situacao === 'ativo' && !p.unidade) s.add('sem_unidade');
+  const r = statusRevisao(p).cls;
+  if (r === 'alerta') s.add('alterado');
+  if (r === 'neutro') s.add('nao_revisado');
+  return s;
+}
+
+function preencherFiltros() {
+  const base = produtos.filter(p => !tipoAtual || p.tipo === tipoAtual);
+  const opc = (id, valores, fixas) => {
+    const el = document.getElementById(id), atual = el.value;
+    el.innerHTML = fixas + valores.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    el.value = [...el.options].some(o => o.value === atual) ? atual : '';
+  };
+  opc('fGrupo', [...new Set(base.map(p => p.grupo).filter(Boolean))].sort(), '<option value="">Todos</option>');
+  opc('fUn', [...new Set(base.map(p => p.unidade).filter(Boolean))].sort(), '<option value="">Todas</option><option value="-">Sem unidade</option>');
+  const usados = new Set(vinculos.map(v => v.fornecedor_id));
+  const fs = fornecedores.filter(f => usados.has(f.id));
+  const el = document.getElementById('fForn'), atual = el.value;
+  el.innerHTML = '<option value="">Todos</option><option value="-">Sem fornecedor</option>' + fs.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('');
+  el.value = [...el.options].some(o => o.value === atual) ? atual : '';
+  document.getElementById('dlGrupos').innerHTML = [...new Set(produtos.map(p => p.grupo).filter(Boolean))].sort().map(g => `<option value="${esc(g)}">`).join('');
+  document.getElementById('dlForn').innerHTML = fornecedores.filter(f => f.situacao === 'ativo').map(f => `<option value="${esc(f.nome)}">`).join('');
+}
+
+/* ===================== LISTA ===================== */
+function filtrar(ignorarPend) {
+  const v = id => document.getElementById(id).value;
+  const busca = v('fBusca'), de = v('fDe'), ate = v('fAte');
+  return produtos.filter(p => {
+    if (tipoAtual && p.tipo !== tipoAtual) return false;
+    if (v('fSit') && p.situacao !== v('fSit')) return false;
+    if (v('fGrupo') && p.grupo !== v('fGrupo')) return false;
+    if (v('fUn') && (v('fUn') === '-' ? p.unidade : p.unidade !== v('fUn'))) return false;
+    if (v('fForn')) {
+      const fs = vinculos.filter(x => x.produto_id === p.id);
+      if (v('fForn') === '-' ? fs.length : !fs.some(x => String(x.fornecedor_id) === v('fForn'))) return false;
+    }
+    if (v('fRev')) {
+      const c = statusRevisao(p).cls;
+      if ((v('fRev') === 'nao' && c !== 'neutro') || (v('fRev') === 'ok' && c !== 'ok') || (v('fRev') === 'alt' && c !== 'alerta')) return false;
+    }
+    if (v('fMov')) {
+      const teve = p.ref_tiny && ('entradas_2025' in p.ref_tiny);
+      if ((v('fMov') === 'sim') !== !!teve) return false;
+    }
+    if (de && new Date(p.atualizado_em) < new Date(de + 'T00:00:00')) return false;
+    if (ate && new Date(p.atualizado_em) > new Date(ate + 'T23:59:59.999')) return false;
+    if (busca && !combinaBusca(`${p.codigo} ${p.descricao} ${p.grupo} ${fornDe(p.id).map(f => f.nome + ' ' + (f.codigo_fornecedor || '')).join(' ')}`, busca)) return false;
+    if (!ignorarPend && pendAtual && !p._pend.has(pendAtual)) return false;
+    return true;
+  });
+}
+
+function desenhar() {
+  // Abas por tipo
+  const sit = document.getElementById('fSit').value;
+  const contaTipo = t => produtos.filter(p => (!t || p.tipo === t) && (!sit || p.situacao === sit)).length;
+  document.getElementById('abasTipo').innerHTML = [{ id: '', nome: 'Todos' }, ...TIPOS].map(t =>
+    `<button class="aba${t.id === tipoAtual ? ' ativa' : ''}" data-tipo="${t.id}">${t.nome}<span class="n">${contaTipo(t.id)}</span></button>`).join('');
+  document.querySelectorAll('#abasTipo .aba').forEach(b => b.onclick = () => {
+    tipoAtual = b.dataset.tipo; pendAtual = ''; selecionados.clear(); preencherFiltros(); desenhar();
+  });
+  document.getElementById('thTipo').style.display = tipoAtual ? 'none' : '';
+
+  // Pendências (contadas sobre os filtros atuais, sem o filtro de pendência)
+  const base = filtrar(true);
+  document.getElementById('pendencias').innerHTML = '<span>Pendências:</span>' + PEND.map(x => {
+    const n = base.filter(p => p._pend.has(x.id)).length;
+    return `<button class="pend${pendAtual === x.id ? ' ativa' : ''}${n ? '' : ' zero'}" data-p="${x.id}"><i class="c-${x.cor}"></i>${x.nome} <b>${n}</b></button>`;
+  }).join('');
+  document.querySelectorAll('.pend').forEach(b => b.onclick = () => { pendAtual = pendAtual === b.dataset.p ? '' : b.dataset.p; desenhar(); });
+
+  // Lista
+  visiveis = filtrar(false);
+  const k = ordem.campo, dir = ordem.asc ? 1 : -1;
+  const chave = p => k === 'revisao' ? ({ alerta: 0, neutro: 1, ok: 2 }[statusRevisao(p).cls] + (p.revisado_em || '')) : semAcento(p[k] || '￿');
+  visiveis.sort((a, b) => (chave(a) > chave(b) ? 1 : chave(a) < chave(b) ? -1 : 0) * dir);
+  document.querySelectorAll('th.ord').forEach(th => th.textContent = th.textContent.replace(/ [▲▼]$/, '') + (th.dataset.ord === k ? (ordem.asc ? ' ▲' : ' ▼') : ''));
+
+  const LIM = 400, mostrar = visiveis.slice(0, LIM);
+  document.getElementById('lista').innerHTML = mostrar.length ? mostrar.map(p => {
+    const fs = fornDe(p.id), r = statusRevisao(p);
+    const pend = [...p._pend].filter(x => x !== 'nao_revisado' && x !== 'alterado').map(x => {
+      const d = PEND.find(y => y.id === x); return `<span class="tg ${d.cor}">${d.nome}</span>`;
+    }).join('') + (p.situacao === 'inativo' ? '<span class="tg neutro">Inativo</span>' : '');
+    const revInfo = r.cls === 'ok' ? `${dataBR(p.revisado_em)} · ${esc(nomes[p.revisado_por] || '')}` :
+                    r.cls === 'alerta' ? `alterado ${dataBR(p.atualizado_em)} · ${esc(nomes[p.atualizado_por] || '')}` : '';
+    return `<tr data-id="${p.id}" class="${p.situacao === 'inativo' ? 'inativo' : ''}" style="cursor:pointer">
+      <td class="nao-imprimir"><input type="checkbox" class="sel" data-id="${p.id}" ${selecionados.has(p.id) ? 'checked' : ''}></td>
+      <td class="cod">${esc(p.codigo || '—')}</td>
+      <td class="desc">${esc(p.descricao)}${p.grupo ? `<small>${esc(p.grupo)}</small>` : ''}</td>
+      ${tipoAtual ? '' : `<td>${NOME_TIPO[p.tipo] || p.tipo}</td>`}
+      <td>${esc(p.unidade || '')}</td>
+      <td>${fs.length ? esc(fs[0].nome) + (fs.length > 1 ? ` <span class="tg neutro">+${fs.length - 1}</span>` : '') : ''}</td>
+      <td class="rev"><span class="tg ${r.cls}">${r.texto}</span>${revInfo ? `<small>${revInfo}</small>` : ''}</td>
+      <td>${pend}</td></tr>`;
+  }).join('') : '<tr><td colspan="8" class="vazio">Nenhum produto com esses filtros.</td></tr>';
+
+  document.getElementById('contagem').textContent = `${visiveis.length} produto${visiveis.length === 1 ? '' : 's'}`;
+  document.getElementById('rodape').textContent = visiveis.length > LIM ? `Mostrando os ${LIM} primeiros. Use os filtros para refinar (o Exportar Excel leva todos os ${visiveis.length}).` : '';
+  document.querySelectorAll('#lista tr[data-id]').forEach(tr => tr.onclick = e => {
+    if (e.target.classList.contains('sel')) return;
+    abrirProduto(produtos.find(p => p.id === +tr.dataset.id));
+  });
+  document.querySelectorAll('#lista .sel').forEach(c => c.onchange = () => {
+    c.checked ? selecionados.add(+c.dataset.id) : selecionados.delete(+c.dataset.id); desenharLote();
+  });
+  desenharLote();
+}
+
+function desenharLote() {
+  const el = document.getElementById('lote');
+  el.hidden = !(podeEditar && selecionados.size);
+  document.getElementById('selTodos').checked = visiveis.length > 0 && visiveis.every(p => selecionados.has(p.id));
+  if (el.hidden) return;
+  el.innerHTML = `<span>${selecionados.size} selecionado${selecionados.size > 1 ? 's' : ''}</span>
+    <button class="btn primario" id="lRev">Marcar como revisados</button>
+    <button class="btn" id="lInat">Inativar</button><button class="btn" id="lAtiv">Ativar</button>
+    <button class="btn discreto" id="lLimpa">Limpar</button>`;
+  el.querySelector('#lRev').onclick = async () => {
+    // Só revisa quem está completo: pendência impeditiva fica de fora (qualidade do cadastro)
+    const BLOQ = ['duplicado', 'sem_codigo', 'descricao', 'sem_fornecedor', 'sem_unidade'];
+    const sel = produtos.filter(p => selecionados.has(p.id));
+    const ok = sel.filter(p => !BLOQ.some(b => p._pend.has(b))).map(p => p.id);
+    const fora = sel.length - ok.length;
+    if (!ok.length) return aviso(`Nenhum dos ${sel.length} pode ser revisado: todos têm pendência (unidade, fornecedor, código ou duplicado).`, true);
+    if (fora && !confirm(`${ok.length} serão marcados como revisados.\n${fora} ficam de fora por ainda terem pendência. Continuar?`)) return;
+    const { error } = await db.rpc('produtos_marcar_revisado', { p_ids: ok });
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    aviso(`${ok.length} revisado(s)` + (fora ? ` · ${fora} com pendência ficaram de fora` : '')); selecionados.clear(); carregar();
+  };
+  const situacao = async s => {
+    if (!confirm(`${s === 'inativo' ? 'Inativar' : 'Ativar'} ${selecionados.size} produto(s)?`)) return;
+    const { error } = await db.from('produtos').update({ situacao: s }).in('id', [...selecionados]);
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    aviso('Situação atualizada'); selecionados.clear(); carregar();
+  };
+  el.querySelector('#lInat').onclick = () => situacao('inativo');
+  el.querySelector('#lAtiv').onclick = () => situacao('ativo');
+  el.querySelector('#lLimpa').onclick = () => { selecionados.clear(); desenhar(); };
+}
+
+/* ===================== CADASTRO / EDIÇÃO ===================== */
+function abrirProduto(p) {
+  const novo = !p;
+  p = p || { tipo: tipoAtual || 'materia_prima', situacao: 'ativo', controla_estoque: true };
+  const ro = podeEditar ? '' : 'disabled';
+  let vinc = novo ? [] : fornDe(p.id).map(v => ({ ...v }));
+  const removidos = [];
+  const num = v => v === null || v === undefined ? '' : String(v).replace('.', ',');
+  const unidades = [...new Set([...UNIDADES, p.unidade].filter(Boolean))];
+
+  const m = abrirModal(`
+    <h2>${novo ? 'Novo produto' : esc(p.codigo || 'Produto sem código')}</h2>
+    <div id="avisoDup"></div>
+    <div class="grade-campos">
+      <div class="campo"><label>Tipo</label><select id="pTipo" ${ro}>${TIPOS.map(t => `<option value="${t.id}"${t.id === p.tipo ? ' selected' : ''}>${t.nome}</option>`).join('')}</select></div>
+      <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre do tipo">Gerar</button>' : ''}</div></div>
+      <div class="campo"><label>Situação</label><select id="pSit" ${ro}><option value="ativo"${p.situacao === 'ativo' ? ' selected' : ''}>Ativo</option><option value="inativo"${p.situacao === 'inativo' ? ' selected' : ''}>Inativo</option></select></div>
+      <div class="campo"><label>Unidade</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
+      <div class="campo l4"><label>Descrição</label><input id="pDesc" value="${esc(p.descricao || '')}" ${ro}></div>
+      <div class="campo l2"><label>Grupo</label><input id="pGrupo" list="dlGrupos" value="${esc(p.grupo || '')}" placeholder="ex.: Tubo, Abraçadeira, Intake" ${ro}></div>
+      <div class="campo"><label>NCM</label><input id="pNcm" value="${esc(p.ncm || '')}" ${ro}></div>
+      <div class="campo"><label>GTIN / EAN</label><input id="pGtin" value="${esc(p.gtin || '')}" ${ro}></div>
+    </div>
+
+    <div id="blEng">
+      <div class="secao">Engenharia e medidas</div>
+      <div class="grade-campos">
+        <div class="campo l2"><label>Código do desenho técnico</label><input id="pDesenho" value="${esc(p.codigo_desenho || '')}" placeholder="200.0173=SUPORTE" ${ro}></div>
+        <div class="campo"><label>Peso (kg)</label><input id="pPeso" inputmode="decimal" value="${num(p.peso_kg)}" ${ro}></div>
+        <div class="campo"><label>Comprimento (cm)</label><input id="pComp" inputmode="decimal" value="${num(p.comprimento_cm)}" ${ro}></div>
+        <div class="campo"><label>Largura (cm)</label><input id="pLarg" inputmode="decimal" value="${num(p.largura_cm)}" ${ro}></div>
+        <div class="campo"><label>Altura (cm)</label><input id="pAlt" inputmode="decimal" value="${num(p.altura_cm)}" ${ro}></div>
+      </div>
+    </div>
+
+    <div class="secao">Estoque</div>
+    <div class="grade-campos">
+      <div class="campo"><label>Estoque mínimo</label><input id="pMin" inputmode="decimal" value="${num(p.estoque_minimo)}" ${ro}></div>
+      <div class="campo l2" style="display:flex;align-items:end"><label class="chk"><input type="checkbox" id="pControla" ${p.controla_estoque ? 'checked' : ''} ${ro}> Controla estoque</label></div>
+    </div>
+
+    <div class="secao">Fornecedores <span id="obrigForn" style="text-transform:none;font-weight:400"></span></div>
+    <table class="lista-mini"><tbody id="pForn"></tbody></table>
+    ${podeEditar ? `<div class="add-forn">
+      <div><label>Fornecedor</label><input id="nfNome" list="dlForn" placeholder="Escolha ou digite um novo"></div>
+      <div><label>Código no fornecedor</label><input id="nfCod" placeholder="como vem na NF"></div>
+      <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="nfPref"> Preferencial</label>
+      <button class="btn" type="button" id="nfAdd">Adicionar</button></div>` : ''}
+
+    <div id="blDup"></div>
+
+    <div class="campo" style="margin-top:14px"><label>Observações</label><textarea id="pObs" rows="2" ${ro}>${esc(p.observacoes || '')}</textarea></div>
+
+    ${novo ? '' : `<div class="secao">Histórico</div>
+    <div class="info">
+      <div>Criado: <b>${dataHoraBR(p.criado_em)}</b> ${p.criado_por ? '· ' + esc(nomes[p.criado_por] || '') : (p.origem === 'tiny' ? '· importado do Tiny' : '')}</div>
+      <div>Última alteração: <b>${dataHoraBR(p.atualizado_em)}</b> ${p.atualizado_por ? '· ' + esc(nomes[p.atualizado_por] || '') : ''}</div>
+      <div>Revisão: <b>${p.revisado_em ? dataHoraBR(p.revisado_em) + ' · ' + esc(nomes[p.revisado_por] || '') : 'não revisado'}</b>${statusRevisao(p).cls === 'alerta' ? ' <span class="tg alerta">alterado depois</span>' : ''}</div>
+      <div>${p.ref_tiny ? `Tiny: entradas desde 2025 <b>${p.ref_tiny.entradas_2025 ?? '—'}</b> · saldo <b>${p.ref_tiny.saldo_tiny ?? '—'}</b>` : ''}</div>
+      ${ctx.pode('auditoria') ? `<div><a href="../config/auditoria.html?busca=${encodeURIComponent(p.codigo || p.descricao)}" style="color:var(--destaque)">Ver histórico completo →</a></div>` : ''}
+    </div>`}
+
+    <div class="acoes" style="margin-top:18px">
+      <button class="btn" id="mFechar">${podeEditar ? 'Cancelar' : 'Fechar'}</button>
+      ${podeEditar ? '<button class="btn" id="mSalvar">Salvar</button><button class="btn primario" id="mRevisar">Salvar e marcar revisado</button>' : ''}
+    </div>`);
+  m.querySelector('.modal').classList.add('produto');
+  const $ = s => m.querySelector(s);
+
+  const ajustarTipo = () => {
+    const t = $('#pTipo').value;
+    $('#blEng').hidden = !COM_ENGENHARIA.includes(t);
+    $('#obrigForn').textContent = COMPRADOS.includes(t) ? '· obrigatório para itens comprados' : '';
+  };
+  ajustarTipo();
+  $('#pTipo').onchange = () => { ajustarTipo(); checarParecidos(); };
+
+  const desenharForn = () => {
+    $('#pForn').innerHTML = vinc.length ? vinc.map((v, i) => `<tr>
+      <td><b>${esc(v.nome)}</b>${v.preferencial ? ' <span class="tg ok">preferencial</span>' : ''}</td>
+      <td style="color:var(--texto-suave)">${v.codigo_fornecedor ? 'cód. ' + esc(v.codigo_fornecedor) : ''}</td>
+      <td style="text-align:right">${podeEditar ? `<button class="btn discreto" data-rm="${i}">remover</button>` : ''}</td></tr>`).join('')
+      : `<tr><td class="sub" style="padding:6px 0">${COMPRADOS.includes($('#pTipo').value) ? 'Nenhum fornecedor vinculado — sem ele, compras não consegue repor este item.' : 'Nenhum fornecedor vinculado.'}</td></tr>`;
+    m.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const [r] = vinc.splice(+b.dataset.rm, 1); if (r.id) removidos.push(r.id); desenharForn(); });
+  };
+  desenharForn();
+
+  if (podeEditar) {
+    $('#nfAdd').onclick = () => {
+      const nome = $('#nfNome').value.trim();
+      if (!nome) return aviso('Informe o fornecedor', true);
+      if (vinc.some(v => semAcento(v.nome) === semAcento(nome))) return aviso('Fornecedor já vinculado', true);
+      const f = fornecedores.find(x => semAcento(x.nome) === semAcento(nome));
+      if ($('#nfPref').checked) vinc.forEach(v => v.preferencial = false);
+      vinc.push({ fornecedor_id: f?.id, nome: f?.nome || nome, codigo_fornecedor: $('#nfCod').value.trim() || null, preferencial: $('#nfPref').checked || vinc.length === 0, novoForn: !f });
+      $('#nfNome').value = ''; $('#nfCod').value = ''; $('#nfPref').checked = false; desenharForn();
+    };
+    $('#pGerar').onclick = async () => {
+      const { data, error } = await db.rpc('produtos_proximo_codigo', { p_tipo: $('#pTipo').value });
+      if (error || !data) return aviso('Este tipo não tem sequência automática; informe o código.', true);
+      $('#pCodigo').value = data;
+    };
+  }
+
+  // Possíveis duplicados deste produto (já cadastrados)
+  const desenharDup = () => {
+    const lista = novo ? [] : (dups[p.id] || []);
+    $('#blDup').innerHTML = lista.length ? `<div class="secao">Possíveis duplicados</div><table class="lista-mini"><tbody>${lista.map(d => {
+      const o = produtos.find(x => x.id === d.outro);
+      return `<tr><td><span class="tg ${d.nivel === 'provavel' ? 'erro' : 'alerta'}">${d.nivel === 'provavel' ? 'Provável' : 'Parecido'}</span></td>
+        <td><b>${esc(o?.codigo || '—')}</b> ${esc(o?.descricao || '')}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn discreto" data-abrir="${d.outro}">abrir</button>
+        ${podeEditar ? `<button class="btn discreto" data-naodup="${d.outro}">não é duplicado</button>` : ''}</td></tr>`;
+    }).join('')}</tbody></table>` : '';
+    m.querySelectorAll('[data-abrir]').forEach(b => b.onclick = () => { m.remove(); abrirProduto(produtos.find(x => x.id === +b.dataset.abrir)); });
+    m.querySelectorAll('[data-naodup]').forEach(b => b.onclick = async () => {
+      const o = +b.dataset.naodup;
+      const { error } = await db.from('produtos_nao_duplicados').insert({ produto_a: Math.min(p.id, o), produto_b: Math.max(p.id, o) });
+      if (error) return aviso('Não salvou: ' + error.message, true);
+      dups[p.id] = (dups[p.id] || []).filter(x => x.outro !== o);
+      dups[o] = (dups[o] || []).filter(x => x.outro !== p.id);
+      [p, produtos.find(x => x.id === o)].forEach(x => x && (x._pend = pendencias(x)));
+      desenharDup(); desenhar(); aviso('Marcado como não duplicado');
+    });
+  };
+  desenharDup();
+
+  // Aviso ao digitar uma descrição parecida com outra já cadastrada
+  let ultimo = '';
+  const checarParecidos = async () => {
+    const d = $('#pDesc').value.trim();
+    if (!podeEditar || d.length < 6 || d + $('#pTipo').value === ultimo) return;
+    ultimo = d + $('#pTipo').value;
+    const { data } = await db.rpc('produtos_parecidos', { p_descricao: d, p_tipo: $('#pTipo').value, p_ignorar: p.id || null });
+    $('#avisoDup').innerHTML = data?.length ? `<div class="aviso-dup"><b>Atenção:</b> já existe produto parecido — confira antes de salvar:<br>${data.map(x =>
+      `${esc(x.codigo || '(sem código)')} · ${esc(x.descricao)}${x.situacao === 'inativo' ? ' (inativo)' : ''}`).join('<br>')}</div>` : '';
+  };
+  $('#pDesc').addEventListener('blur', checarParecidos);
+  if (novo) setTimeout(() => $('#pDesc').focus(), 50);
+
+  $('#mFechar').onclick = () => m.remove();
+  if (!podeEditar) return;
+
+  const salvar = async revisar => {
+    const n = id => {
+      let v = $(id).value.trim(); if (v === '') return null;
+      if (v.includes(',')) v = v.replace(/\./g, '').replace(',', '.');   // 1.234,5 → 1234.5 ; 0,5 → 0.5 ; 0.5 fica 0.5
+      return Number(v);
+    };
+    const dados = {
+      tipo: $('#pTipo').value, codigo: $('#pCodigo').value.trim().toUpperCase() || null, situacao: $('#pSit').value,
+      unidade: $('#pUn').value || null, descricao: $('#pDesc').value.trim().replace(/\s+/g, ' '), grupo: $('#pGrupo').value.trim() || null,
+      ncm: $('#pNcm').value.replace(/\D/g, '') || null, gtin: $('#pGtin').value.trim() || null,
+      estoque_minimo: n('#pMin'), controla_estoque: $('#pControla').checked, observacoes: $('#pObs').value.trim() || null
+    };
+    if (COM_ENGENHARIA.includes(dados.tipo)) Object.assign(dados, {
+      codigo_desenho: $('#pDesenho').value.trim() || null, peso_kg: n('#pPeso'), comprimento_cm: n('#pComp'), largura_cm: n('#pLarg'), altura_cm: n('#pAlt')
+    });
+    if (!dados.descricao) return aviso('Informe a descrição', true);
+    if ([dados.estoque_minimo, dados.peso_kg, dados.comprimento_cm, dados.largura_cm, dados.altura_cm].some(x => x !== undefined && x !== null && isNaN(x)))
+      return aviso('Confira os campos numéricos (use vírgula para decimais)', true);
+    if (revisar && !dados.unidade) return aviso('Para marcar como revisado, informe a unidade', true);
+    if (revisar && !dados.codigo) return aviso('Para marcar como revisado, informe o código (use "Gerar")', true);
+    if (revisar && !novo && (dups[p.id] || []).length) return aviso('Resolva os possíveis duplicados antes (abrir / não é duplicado / inativar)', true);
+    if (revisar && COMPRADOS.includes(dados.tipo) && dados.situacao === 'ativo' && !vinc.length)
+      return aviso('Para marcar como revisado, vincule ao menos um fornecedor', true);
+
+    m.querySelectorAll('.acoes .btn').forEach(b => b.disabled = true);
+    try {
+      let id = p.id;
+      if (novo) {
+        const { data, error } = await db.from('produtos').insert(dados).select('id').single();
+        if (error) throw error; id = data.id;
+      } else {
+        const { error } = await db.from('produtos').update(dados).eq('id', id);
+        if (error) throw error;
+      }
+      // fornecedores novos + vínculos
+      for (const v of vinc) {
+        if (v.novoForn) {
+          const { data, error } = await db.from('fornecedores').insert({ nome: v.nome }).select('id').single();
+          if (error) throw error; v.fornecedor_id = data.id; v.novoForn = false;
+        }
+      }
+      if (removidos.length) { const { error } = await db.from('produto_fornecedores').delete().in('id', removidos); if (error) throw error; }
+      if (vinc.length) {
+        const { error } = await db.from('produto_fornecedores').upsert(vinc.map(v => ({ produto_id: id, fornecedor_id: v.fornecedor_id,
+          codigo_fornecedor: v.codigo_fornecedor || null, preferencial: !!v.preferencial })), { onConflict: 'produto_id,fornecedor_id' });
+        if (error) throw error;
+      }
+      if (revisar) { const { error } = await db.rpc('produtos_marcar_revisado', { p_ids: [id] }); if (error) throw error; }
+      m.remove(); aviso(revisar ? 'Salvo e revisado' : 'Salvo'); carregar();
+    } catch (e) {
+      m.querySelectorAll('.acoes .btn').forEach(b => b.disabled = false);
+      aviso(e.code === '23505' ? 'Já existe outro produto com este código' : 'Não salvou: ' + (e.message || e), true);
+    }
+  };
+  $('#mSalvar').onclick = () => salvar(false);
+  $('#mRevisar').onclick = () => salvar(true);
+}
+</script>
+</body>
+</html>

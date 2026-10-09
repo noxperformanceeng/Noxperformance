@@ -74,3 +74,31 @@ function botoesRelatorio(containerId, obterDados) {
 function linhasVisiveis(tbodyId) {
   return [...document.querySelectorAll('#' + tbodyId + ' tr')].filter(tr => tr.style.display !== 'none' && !tr.querySelector('.vazio'));
 }
+
+// Busca TODAS as linhas (o banco entrega no máximo 1000 por vez).
+// Uso: const lista = await buscarTodos(() => db.from('produtos').select('*').order('codigo'));
+async function buscarTodos(montar) {
+  const tam = 1000; let de = 0, tudo = [];
+  for (;;) {
+    const { data, error } = await montar().range(de, de + tam - 1);
+    if (error) throw error;
+    tudo = tudo.concat(data);
+    if (data.length < tam) return tudo;
+    de += tam;
+  }
+}
+
+// Texto sem acento e minúsculo, para buscas "inteligentes"
+function semAcento(t) {
+  return String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// Busca por palavras em qualquer ordem: "abr inox 25" encontra "ABRAÇADEIRA INOX - 25X44"
+function combinaBusca(texto, busca) {
+  const t = semAcento(texto);
+  return semAcento(busca).split(/\s+/).filter(Boolean).every(p => t.includes(p));
+}
+
+function dataHoraBR(v) {
+  return v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+}

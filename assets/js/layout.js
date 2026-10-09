@@ -6,7 +6,7 @@
    ===================================================================== */
 const MENU = [
   { grupo: 'Cadastros', itens: [
-    { id: 'produtos',      nome: 'Produtos',          arquivo: null },
+    { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
     { id: 'clientes',      nome: 'Clientes',          arquivo: null },
     { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: null },
     { id: 'funcionarios',  nome: 'Funcionários',      arquivo: null },

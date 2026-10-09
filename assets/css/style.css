@@ -74,6 +74,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 
 label { display: block; font-size: 12px; color: var(--texto-suave); margin-bottom: 6px; }
 input, select, textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--linha); border-radius: 8px; font: 14px var(--fonte); background: #fff; color: var(--texto); }
+input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--destaque); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--destaque); box-shadow: 0 0 0 3px var(--destaque-suave); }
 .campo { margin-bottom: 14px; }
 
