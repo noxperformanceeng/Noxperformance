@@ -11,7 +11,7 @@
 <body data-modulo="" data-titulo="Início">
 <main id="conteudo">
   <h1 id="saudacao">Olá</h1>
-  <p class="sub" id="empresaAtual"></p>
+  <p class="sub">NOX Peças · sistema de gestão</p>
   <h2>Seus atalhos</h2>
   <div class="grade" id="atalhos"></div>
 </main>
@@ -29,13 +29,6 @@
     const h = new Date().getHours();
     const nome = (ctx.usuario.nome || '').split(' ')[0];
     document.getElementById('saudacao').textContent = (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + ', ' + nome;
-
-    const mostrarEmpresa = () => {
-      const e = ctx.empresas.find(x => x.id === ctx.empresa);
-      document.getElementById('empresaAtual').textContent = 'Visão: ' + (e ? e.nome : 'Consolidado (todas as empresas)');
-    };
-    mostrarEmpresa();
-    window.addEventListener('empresa', mostrarEmpresa);
 
     const prontos = MENU.flatMap(g => g.itens.map(i => ({ ...i, grupo: g.grupo }))).filter(i => i.arquivo && ctx.pode(i.id));
     document.getElementById('atalhos').innerHTML = prontos.length
