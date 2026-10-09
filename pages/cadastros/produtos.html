@@ -42,7 +42,9 @@
   .lista-mini { width: 100%; font-size: 13px; } .lista-mini td { padding: 6px 8px; }
   .info { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 16px; font-size: 12.5px; color: var(--texto-suave); }
   .info b { color: var(--texto); font-weight: 500; }
-  .add-forn { display: grid; grid-template-columns: 2fr 1fr auto auto; gap: 8px; align-items: end; margin-top: 8px; }
+  .conv { font-size: 12.5px; color: var(--texto-suave); margin: -6px 0 10px; }
+  .conv b { color: var(--texto); }
+  .add-forn { display: grid; grid-template-columns: 2fr 1fr 0.8fr 0.8fr auto auto; gap: 8px; align-items: end; margin-top: 8px; }
   .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto); margin: 0; }
   @media (max-width: 860px) { .grade-campos { grid-template-columns: 1fr 1fr; } .grade-campos .l4 { grid-column: span 2; } .cab-tela { flex-direction: column; } .add-forn { grid-template-columns: 1fr; } }
 </style>
@@ -113,7 +115,9 @@ const TIPOS = [
 const NOME_TIPO = Object.fromEntries(TIPOS.map(t => [t.id, t.nome]));
 const COMPRADOS = ['materia_prima', 'ferramenta'];          // precisam de fornecedor
 const COM_ENGENHARIA = ['acabado', 'semiacabado', 'kit'];   // medidas e desenho técnico
-const UNIDADES = ['UN', 'PC', 'PAR', 'JG', 'CONJ', 'KIT', 'M', 'MM', 'M2', 'BARRA', 'ROLO', 'KG', 'G', 'L', 'ML', 'CX', 'PCT'];
+// Conversões automáticas sugeridas: [compra, estoque] → fator
+const CONVERSOES = { 'M>MM': 1000, 'M>CM': 100, 'KG>G': 1000, 'L>ML': 1000, 'M2>CM2': 10000, 'BARRA>MM': 6000, 'BARRA>M': 6 };
+const UNIDADES = ['UN', 'PC', 'PAR', 'JG', 'CONJ', 'KIT', 'M', 'MM', 'M2', 'BARRA', 'ROLO', 'KG', 'G', 'L', 'ML', 'CX', 'PCT', 'CM', 'CM2'];
 const PEND = [
   { id: 'duplicado',      nome: 'Possível duplicado',    cor: 'erro' },
   { id: 'sem_codigo',     nome: 'Sem código',            cor: 'erro' },
@@ -147,9 +151,9 @@ let visiveis = [], selecionados = new Set();
   };
   botoesRelatorio('relProdutos', () => ({
     arquivo: 'produtos_' + (tipoAtual || 'todos'),
-    colunas: ['Código', 'Descrição', 'Tipo', 'Grupo', 'Unidade', 'Situação', 'Fornecedores', 'NCM', 'Revisão', 'Revisado por', 'Revisado em',
+    colunas: ['Código', 'Descrição', 'Tipo', 'Grupo', 'Unid. estoque', 'Unid. compra', 'Fator', 'Situação', 'Fornecedores', 'NCM', 'Revisão', 'Revisado por', 'Revisado em',
               'Última alteração', 'Alterado por', 'Pendências', 'Entradas Tiny desde 2025', 'Saldo Tiny 09/10/2026'],
-    linhas: visiveis.map(p => [p.codigo, p.descricao, NOME_TIPO[p.tipo], p.grupo, p.unidade, p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
+    linhas: visiveis.map(p => [p.codigo, p.descricao, NOME_TIPO[p.tipo], p.grupo, p.unidade, p.unidade_compra, p.fator_compra ? String(p.fator_compra).replace('.', ',') : '', p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
       fornDe(p.id).map(v => v.nome).join(', '), p.ncm, statusRevisao(p).texto, nomes[p.revisado_por] || '', dataHoraBR(p.revisado_em),
       dataHoraBR(p.atualizado_em), nomes[p.atualizado_por] || '', [...p._pend].filter(x => x !== 'nao_revisado').map(x => PEND.find(y => y.id === x).nome).join(', '),
       p.ref_tiny?.entradas_2025 ?? '', p.ref_tiny?.saldo_tiny ?? ''])
@@ -162,7 +166,7 @@ async function carregar() {
   try {
     const [lista, vinc, forn, nm, dp] = await Promise.all([
       buscarTodos(() => db.from('produtos').select('*').neq('tipo', 'despesa').order('id')),
-      buscarTodos(() => db.from('produto_fornecedores').select('id, produto_id, fornecedor_id, codigo_fornecedor, preferencial').order('id')),
+      buscarTodos(() => db.from('produto_fornecedores').select('id, produto_id, fornecedor_id, codigo_fornecedor, preferencial, unidade_compra, fator_compra').order('id')),
       buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj, situacao').order('nome')),
       db.rpc('usuarios_nomes'),
       db.rpc('produtos_duplicados')
@@ -360,7 +364,7 @@ function abrirProduto(p) {
       <div class="campo"><label>Tipo</label><select id="pTipo" ${ro}>${TIPOS.map(t => `<option value="${t.id}"${t.id === p.tipo ? ' selected' : ''}>${t.nome}</option>`).join('')}</select></div>
       <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre do tipo">Gerar</button>' : ''}</div></div>
       <div class="campo"><label>Situação</label><select id="pSit" ${ro}><option value="ativo"${p.situacao === 'ativo' ? ' selected' : ''}>Ativo</option><option value="inativo"${p.situacao === 'inativo' ? ' selected' : ''}>Inativo</option></select></div>
-      <div class="campo"><label>Unidade</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
+      <div class="campo"><label>Unid. de estoque / uso</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
       <div class="campo l4"><label>Descrição</label><input id="pDesc" value="${esc(p.descricao || '')}" ${ro}></div>
       <div class="campo l2"><label>Grupo</label><input id="pGrupo" list="dlGrupos" value="${esc(p.grupo || '')}" placeholder="ex.: Tubo, Abraçadeira, Intake" ${ro}></div>
       <div class="campo"><label>NCM</label><input id="pNcm" value="${esc(p.ncm || '')}" ${ro}></div>
@@ -380,7 +384,10 @@ function abrirProduto(p) {
 
     <div class="secao">Estoque</div>
     <div class="grade-campos">
-      <div class="campo"><label>Estoque mínimo</label><input id="pMin" inputmode="decimal" value="${num(p.estoque_minimo)}" ${ro}></div>
+      <div class="campo"><label>Unidade de compra</label><select id="pUnC" ${ro}><option value="">Igual à de estoque</option>${unidades.map(u => `<option${u === p.unidade_compra ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
+      <div class="campo"><label>Fator (estoque por 1 de compra)</label><input id="pFator" inputmode="decimal" value="${num(p.fator_compra)}" placeholder="ex.: 1000" ${ro}></div>
+      <div class="campo"><label>Estoque mínimo <span id="minUn"></span></label><input id="pMin" inputmode="decimal" value="${num(p.estoque_minimo)}" ${ro}></div>
+      <div class="campo l4 conv" id="convTexto"></div>
       <div class="campo l2" style="display:flex;align-items:end"><label class="chk"><input type="checkbox" id="pControla" ${p.controla_estoque ? 'checked' : ''} ${ro}> Controla estoque</label></div>
     </div>
 
@@ -388,7 +395,9 @@ function abrirProduto(p) {
     <table class="lista-mini"><tbody id="pForn"></tbody></table>
     ${podeEditar ? `<div class="add-forn">
       <div><label>Fornecedor</label><input id="nfNome" list="dlForn" placeholder="Escolha ou digite um novo"></div>
-      <div><label>Código no fornecedor</label><input id="nfCod" placeholder="como vem na NF"></div>
+      <div><label>Cód. no fornecedor</label><input id="nfCod" placeholder="como vem na NF"></div>
+      <div><label>Un. na NF</label><select id="nfUn"><option value="">Padrão</option>${unidades.map(u => `<option>${u}</option>`).join('')}</select></div>
+      <div><label>Fator</label><input id="nfFator" inputmode="decimal" placeholder="padrão"></div>
       <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="nfPref"> Preferencial</label>
       <button class="btn" type="button" id="nfAdd">Adicionar</button></div>` : ''}
 
@@ -412,6 +421,21 @@ function abrirProduto(p) {
   m.querySelector('.modal').classList.add('produto');
   const $ = s => m.querySelector(s);
 
+  const fmtN = x => Number(x).toLocaleString('pt-BR', { maximumFractionDigits: 6 });
+  const lerFator = v => lerNumero(v);
+  const atualizarConv = (sugerir) => {
+    const ue = $('#pUn').value, uc = $('#pUnC').value;
+    if (sugerir && ue && uc && CONVERSOES[uc + '>' + ue] && !$('#pFator').value) $('#pFator').value = String(CONVERSOES[uc + '>' + ue]);
+    const f = lerFator($('#pFator').value);
+    $('#minUn').textContent = ue ? '(' + ue + ')' : '';
+    $('#convTexto').innerHTML = !uc || uc === ue ? (ue ? `Compra e estoque em <b>${ue}</b> — sem conversão.` : '')
+      : (ue && f ? `1 <b>${uc}</b> = <b>${fmtN(f)} ${ue}</b>. Na entrada da NF: 12 ${uc} viram ${fmtN(12 * f)} ${ue}, e o custo por ${ue} é o preço do ${uc} ÷ ${fmtN(f)}.`
+      : `<span style="color:var(--erro)">Informe o fator: quantos ${ue || '(unidade de estoque)'} há em 1 ${uc}.</span>`);
+  };
+  ['#pUn', '#pUnC'].forEach(id => $(id).addEventListener('change', () => atualizarConv(true)));
+  $('#pFator').addEventListener('input', () => atualizarConv(false));
+  atualizarConv(false);
+
   const ajustarTipo = () => {
     const t = $('#pTipo').value;
     $('#blEng').hidden = !COM_ENGENHARIA.includes(t);
@@ -423,7 +447,7 @@ function abrirProduto(p) {
   const desenharForn = () => {
     $('#pForn').innerHTML = vinc.length ? vinc.map((v, i) => `<tr>
       <td><b>${esc(v.nome)}</b>${v.preferencial ? ' <span class="tg ok">preferencial</span>' : ''}</td>
-      <td style="color:var(--texto-suave)">${v.codigo_fornecedor ? 'cód. ' + esc(v.codigo_fornecedor) : ''}</td>
+      <td style="color:var(--texto-suave)">${[v.codigo_fornecedor ? 'cód. ' + esc(v.codigo_fornecedor) : '', v.unidade_compra ? `vende em ${esc(v.unidade_compra)}${v.fator_compra ? ' (×' + fmtN(v.fator_compra) + ')' : ''}` : ''].filter(Boolean).join(' · ')}</td>
       <td style="text-align:right">${podeEditar ? `<button class="btn discreto" data-rm="${i}">remover</button>` : ''}</td></tr>`).join('')
       : `<tr><td class="sub" style="padding:6px 0">${COMPRADOS.includes($('#pTipo').value) ? 'Nenhum fornecedor vinculado — sem ele, compras não consegue repor este item.' : 'Nenhum fornecedor vinculado.'}</td></tr>`;
     m.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const [r] = vinc.splice(+b.dataset.rm, 1); if (r.id) removidos.push(r.id); desenharForn(); });
@@ -437,8 +461,11 @@ function abrirProduto(p) {
       if (vinc.some(v => semAcento(v.nome) === semAcento(nome))) return aviso('Fornecedor já vinculado', true);
       const f = fornecedores.find(x => semAcento(x.nome) === semAcento(nome));
       if ($('#nfPref').checked) vinc.forEach(v => v.preferencial = false);
-      vinc.push({ fornecedor_id: f?.id, nome: f?.nome || nome, codigo_fornecedor: $('#nfCod').value.trim() || null, preferencial: $('#nfPref').checked || vinc.length === 0, novoForn: !f });
-      $('#nfNome').value = ''; $('#nfCod').value = ''; $('#nfPref').checked = false; desenharForn();
+      const fF = lerFator($('#nfFator').value);
+      if ($('#nfFator').value && !(fF > 0)) return aviso('Fator do fornecedor inválido', true);
+      vinc.push({ fornecedor_id: f?.id, nome: f?.nome || nome, codigo_fornecedor: $('#nfCod').value.trim() || null, preferencial: $('#nfPref').checked || vinc.length === 0,
+        unidade_compra: $('#nfUn').value || null, fator_compra: fF, novoForn: !f });
+      $('#nfNome').value = ''; $('#nfCod').value = ''; $('#nfUn').value = ''; $('#nfFator').value = ''; $('#nfPref').checked = false; desenharForn();
     };
     $('#pGerar').onclick = async () => {
       const { data, error } = await db.rpc('produtos_proximo_codigo', { p_tipo: $('#pTipo').value });
@@ -487,21 +514,20 @@ function abrirProduto(p) {
   if (!podeEditar) return;
 
   const salvar = async revisar => {
-    const n = id => {
-      let v = $(id).value.trim(); if (v === '') return null;
-      if (v.includes(',')) v = v.replace(/\./g, '').replace(',', '.');   // 1.234,5 → 1234.5 ; 0,5 → 0.5 ; 0.5 fica 0.5
-      return Number(v);
-    };
+    const n = id => lerNumero($(id).value);
     const dados = {
       tipo: $('#pTipo').value, codigo: $('#pCodigo').value.trim().toUpperCase() || null, situacao: $('#pSit').value,
       unidade: $('#pUn').value || null, descricao: $('#pDesc').value.trim().replace(/\s+/g, ' '), grupo: $('#pGrupo').value.trim() || null,
       ncm: $('#pNcm').value.replace(/\D/g, '') || null, gtin: $('#pGtin').value.trim() || null,
+      unidade_compra: $('#pUnC').value && $('#pUnC').value !== $('#pUn').value ? $('#pUnC').value : null,
+      fator_compra: $('#pUnC').value && $('#pUnC').value !== $('#pUn').value ? n('#pFator') : null,
       estoque_minimo: n('#pMin'), controla_estoque: $('#pControla').checked, observacoes: $('#pObs').value.trim() || null
     };
     if (COM_ENGENHARIA.includes(dados.tipo)) Object.assign(dados, {
       codigo_desenho: $('#pDesenho').value.trim() || null, peso_kg: n('#pPeso'), comprimento_cm: n('#pComp'), largura_cm: n('#pLarg'), altura_cm: n('#pAlt')
     });
     if (!dados.descricao) return aviso('Informe a descrição', true);
+    if (dados.unidade_compra && !(dados.fator_compra > 0)) return aviso(`Informe o fator: quantos ${dados.unidade || 'unid. de estoque'} há em 1 ${dados.unidade_compra}`, true);
     if ([dados.estoque_minimo, dados.peso_kg, dados.comprimento_cm, dados.largura_cm, dados.altura_cm].some(x => x !== undefined && x !== null && isNaN(x)))
       return aviso('Confira os campos numéricos (use vírgula para decimais)', true);
     if (revisar && !dados.unidade) return aviso('Para marcar como revisado, informe a unidade', true);
@@ -530,7 +556,8 @@ function abrirProduto(p) {
       if (removidos.length) { const { error } = await db.from('produto_fornecedores').delete().in('id', removidos); if (error) throw error; }
       if (vinc.length) {
         const { error } = await db.from('produto_fornecedores').upsert(vinc.map(v => ({ produto_id: id, fornecedor_id: v.fornecedor_id,
-          codigo_fornecedor: v.codigo_fornecedor || null, preferencial: !!v.preferencial })), { onConflict: 'produto_id,fornecedor_id' });
+          codigo_fornecedor: v.codigo_fornecedor || null, preferencial: !!v.preferencial,
+          unidade_compra: v.unidade_compra || null, fator_compra: v.fator_compra || null })), { onConflict: 'produto_id,fornecedor_id' });
         if (error) throw error;
       }
       if (revisar) { const { error } = await db.rpc('produtos_marcar_revisado', { p_ids: [id] }); if (error) throw error; }

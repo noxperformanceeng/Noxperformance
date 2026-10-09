@@ -102,3 +102,12 @@ function combinaBusca(texto, busca) {
 function dataHoraBR(v) {
   return v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 }
+
+// Lê número digitado no padrão brasileiro: "1.234,5" → 1234.5 · "0,5" → 0.5 · "1.000" → 1000 · "0.5" → 0.5
+function lerNumero(v) {
+  v = String(v ?? '').trim().replace(/\s/g, '');
+  if (!v) return null;
+  if (v.includes(',')) v = v.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(v)) v = v.replace(/\./g, '');
+  return Number(v);
+}
