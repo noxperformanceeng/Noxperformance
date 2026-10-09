@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<div class="login-pagina">
+  <div class="login cartao">
+    <div class="marca"><span>NX</span>NOX ERP</div>
+
+    <form id="formEntrar">
+      <div class="campo"><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" required></div>
+      <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" required></div>
+      <button class="btn primario" id="btnEntrar">Entrar</button>
+      <a class="link" id="linkEsqueci">Esqueci minha senha</a>
+    </form>
+
+    <form id="formNovaSenha" hidden>
+      <h2>Criar nova senha</h2>
+      <div class="campo"><label for="novaSenha">Nova senha (mínimo 6 caracteres)</label><input id="novaSenha" type="password" minlength="6" autocomplete="new-password" required></div>
+      <button class="btn primario">Salvar senha</button>
+    </form>
+
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script>
+  const msg = (t, erro) => { const m = document.getElementById('msg'); m.textContent = t; m.style.color = erro ? 'var(--erro)' : 'var(--texto-suave)'; };
+  let recuperando = false;
+
+  // Link de "esqueci a senha" abre esta página com o formulário de nova senha
+  db.auth.onAuthStateChange(evento => {
+    if (evento === 'PASSWORD_RECOVERY') {
+      recuperando = true;
+      document.getElementById('formEntrar').hidden = true;
+      document.getElementById('formNovaSenha').hidden = false;
+    }
+  });
+
+  // Já logado → vai direto ao início
+  db.auth.getSession().then(({ data }) => {
+    setTimeout(() => { if (data.session && !recuperando && !location.hash.includes('type=recovery')) location.href = 'inicio.html'; }, 300);
+  });
+
+  document.getElementById('formEntrar').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('btnEntrar'); btn.disabled = true; msg('Entrando…');
+    const { error } = await db.auth.signInWithPassword({
+      email: document.getElementById('email').value.trim(),
+      password: document.getElementById('senha').value
+    });
+    btn.disabled = false;
+    if (error) return msg('E-mail ou senha incorretos.', true);
+    location.href = 'inicio.html';
+  });
+
+  document.getElementById('linkEsqueci').addEventListener('click', async () => {
+    const email = document.getElementById('email').value.trim();
+    if (!email) return msg('Digite seu e-mail acima e clique de novo.', true);
+    const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] });
+    msg(error ? 'Não foi possível enviar o e-mail.' : 'Enviamos um link para criar nova senha no seu e-mail.', !!error);
+  });
+
+  document.getElementById('formNovaSenha').addEventListener('submit', async e => {
+    e.preventDefault();
+    const { error } = await db.auth.updateUser({ password: document.getElementById('novaSenha').value });
+    if (error) return msg('Não foi possível salvar: ' + error.message, true);
+    location.href = 'inicio.html';
+  });
+</script>
+</body>
+</html>

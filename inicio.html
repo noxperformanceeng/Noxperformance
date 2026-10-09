@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body data-modulo="" data-titulo="Início">
+<main id="conteudo">
+  <h1 id="saudacao">Olá</h1>
+  <p class="sub" id="empresaAtual"></p>
+  <h2>Seus atalhos</h2>
+  <div class="grade" id="atalhos"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/layout.js"></script>
+<script>
+  (async () => {
+    const ctx = await iniciarTela();
+    if (!ctx) return;
+
+    const h = new Date().getHours();
+    const nome = (ctx.usuario.nome || '').split(' ')[0];
+    document.getElementById('saudacao').textContent = (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + ', ' + nome;
+
+    const mostrarEmpresa = () => {
+      const e = ctx.empresas.find(x => x.id === ctx.empresa);
+      document.getElementById('empresaAtual').textContent = 'Visão: ' + (e ? e.nome : 'Consolidado (todas as empresas)');
+    };
+    mostrarEmpresa();
+    window.addEventListener('empresa', mostrarEmpresa);
+
+    const prontos = MENU.flatMap(g => g.itens.map(i => ({ ...i, grupo: g.grupo }))).filter(i => i.arquivo && ctx.pode(i.id));
+    document.getElementById('atalhos').innerHTML = prontos.length
+      ? prontos.map(i => `<a class="atalho" href="${RAIZ + i.arquivo}"><b>${i.nome}</b><small>${i.grupo}</small></a>`).join('')
+      : '<div class="cartao vazio">Ainda não há telas liberadas para você. Fale com o administrador.</div>';
+  })();
+</script>
+</body>
+</html>
