@@ -1,0 +1,117 @@
+/* =====================================================================
+   ERP NOX · style.css — visual de todo o sistema
+   Para mudar cores/fontes de tudo, altere apenas o bloco :root abaixo.
+   ===================================================================== */
+:root {
+  --fundo: #f6f7f9;
+  --superficie: #ffffff;
+  --texto: #1d2129;
+  --texto-suave: #6b7280;
+  --linha: #eceef2;
+  --destaque: #c8102e;          /* vermelho NOX */
+  --destaque-suave: #fdecef;
+  --ok: #15803d;
+  --alerta: #b45309;
+  --erro: #b91c1c;
+  --raio: 10px;
+  --menu-largura: 248px;
+  --fonte: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font-family: var(--fonte); font-size: 14px; color: var(--texto); background: var(--fundo); -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+.sub { color: var(--texto-suave); margin: 0 0 24px; }
+
+/* ---------- Estrutura ---------- */
+.app { display: flex; min-height: 100vh; }
+.menu { width: var(--menu-largura); background: var(--superficie); border-right: 1px solid var(--linha); position: fixed; inset: 0 auto 0 0; overflow-y: auto; padding: 20px 12px; z-index: 20; transition: transform .2s; }
+.menu .marca { display: flex; align-items: center; gap: 10px; padding: 4px 10px 20px; font-weight: 700; font-size: 16px; letter-spacing: .5px; }
+.menu .marca span { width: 30px; height: 30px; border-radius: 8px; background: var(--destaque); color: #fff; display: grid; place-items: center; font-size: 13px; }
+.grupo-titulo { width: 100%; display: flex; justify-content: space-between; align-items: center; background: none; border: 0; padding: 10px 10px 6px; font: 600 11px var(--fonte); color: var(--texto-suave); text-transform: uppercase; letter-spacing: .6px; cursor: pointer; }
+.grupo-titulo::after { content: '›'; font-size: 14px; transition: transform .15s; transform: rotate(90deg); }
+.grupo.fechado .grupo-titulo::after { transform: rotate(0); }
+.grupo.fechado .grupo-itens { display: none; }
+.item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; color: var(--texto); margin: 1px 0; }
+.item:hover { background: var(--fundo); }
+.item.ativo { background: var(--destaque-suave); color: var(--destaque); font-weight: 600; }
+.item.breve { color: #b0b5bd; cursor: default; }
+.item.breve:hover { background: none; }
+.item .tag { font-size: 10px; color: #b0b5bd; }
+
+.principal { flex: 1; margin-left: var(--menu-largura); min-width: 0; }
+.topo { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; background: var(--superficie); border-bottom: 1px solid var(--linha); position: sticky; top: 0; z-index: 10; }
+.topo .usuario { margin-left: auto; display: flex; align-items: center; gap: 14px; color: var(--texto-suave); }
+.topo .usuario b { color: var(--texto); font-weight: 600; }
+.seletor-empresa { width: auto; min-width: 200px; border: 0; background: var(--fundo); font-weight: 500; }
+.btn-menu { display: none; background: none; border: 0; font-size: 22px; cursor: pointer; }
+.conteudo { padding: 28px; max-width: 1280px; }
+
+/* ---------- Componentes ---------- */
+.cartao { background: var(--superficie); border-radius: var(--raio); padding: 20px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+.grade { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.atalho { display: block; background: var(--superficie); border-radius: var(--raio); padding: 18px; box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: box-shadow .15s; }
+.atalho:hover { box-shadow: 0 4px 12px rgba(16,24,40,.08); }
+.atalho small { display: block; color: var(--texto-suave); margin-top: 4px; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 8px; padding: 9px 16px; font: 500 14px var(--fonte); cursor: pointer; background: var(--fundo); color: var(--texto); }
+.btn:hover { filter: brightness(.96); }
+.btn.primario { background: var(--destaque); color: #fff; }
+.btn.discreto { background: none; color: var(--texto-suave); padding: 6px 8px; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+label { display: block; font-size: 12px; color: var(--texto-suave); margin-bottom: 6px; }
+input, select, textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--linha); border-radius: 8px; font: 14px var(--fonte); background: #fff; color: var(--texto); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--destaque); box-shadow: 0 0 0 3px var(--destaque-suave); }
+.campo { margin-bottom: 14px; }
+
+.barra { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; }
+.barra input { max-width: 280px; }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; font-weight: 500; color: var(--texto-suave); padding: 10px 12px; border-bottom: 1px solid var(--linha); }
+td { padding: 11px 12px; border-bottom: 1px solid var(--linha); }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #fafbfc; }
+td select { padding: 6px 8px; min-width: 160px; }
+
+.selo { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; background: var(--fundo); color: var(--texto-suave); }
+.selo.ok { background: #e8f5ec; color: var(--ok); }
+.selo.erro { background: #fdeceb; color: var(--erro); }
+
+.abas { display: flex; gap: 4px; margin-bottom: 16px; }
+.aba { background: none; border: 0; padding: 8px 14px; border-radius: 8px; font: 500 14px var(--fonte); color: var(--texto-suave); cursor: pointer; }
+.aba.ativa { background: var(--superficie); color: var(--texto); box-shadow: 0 1px 2px rgba(16,24,40,.06); }
+
+.modal-fundo { position: fixed; inset: 0; background: rgba(15,18,25,.35); display: grid; place-items: center; z-index: 50; padding: 16px; }
+.modal { background: var(--superficie); border-radius: 14px; padding: 24px; width: 100%; max-width: 440px; }
+.modal .acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+.aviso { position: fixed; bottom: 20px; right: 20px; background: var(--texto); color: #fff; padding: 12px 18px; border-radius: 10px; z-index: 60; box-shadow: 0 6px 20px rgba(0,0,0,.15); animation: subir .2s; }
+.aviso.erro { background: var(--erro); }
+@keyframes subir { from { transform: translateY(10px); opacity: 0; } }
+.vazio { text-align: center; color: var(--texto-suave); padding: 32px; }
+
+/* ---------- Login ---------- */
+.login-pagina { display: grid; place-items: center; min-height: 100vh; padding: 16px; }
+.login { width: 100%; max-width: 380px; }
+.login .marca { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; margin-bottom: 28px; }
+.login .marca span { width: 36px; height: 36px; border-radius: 9px; background: var(--destaque); color: #fff; display: grid; place-items: center; font-size: 14px; }
+.login .btn { width: 100%; justify-content: center; margin-top: 6px; }
+.login .link { display: block; text-align: center; margin-top: 16px; color: var(--texto-suave); font-size: 13px; cursor: pointer; }
+.login .msg { font-size: 13px; margin-top: 12px; text-align: center; }
+
+/* ---------- Celular ---------- */
+@media (max-width: 860px) {
+  .menu { transform: translateX(-100%); box-shadow: 0 0 30px rgba(0,0,0,.12); }
+  .menu.aberto { transform: none; }
+  .principal { margin-left: 0; }
+  .btn-menu { display: block; }
+  .seletor-empresa { min-width: 0; max-width: 46vw; }
+  .topo .usuario span { display: none; }
+  .topo, .conteudo { padding-left: 16px; padding-right: 16px; }
+  .tabela-rolagem { overflow-x: auto; }
+}

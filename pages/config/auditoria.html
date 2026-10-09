@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auditoria · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .filtros { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .mud { font-size: 13px; line-height: 1.6; }
+  .mud .de { color: var(--erro); text-decoration: line-through; }
+  .mud .para { color: var(--ok); }
+  .mud b { font-weight: 500; color: var(--texto-suave); }
+  .acao-incluiu { background: #e8f5ec; color: var(--ok); }
+  .acao-alterou { background: #fff4e5; color: var(--alerta); }
+  .acao-excluiu { background: #fdeceb; color: var(--erro); }
+  tbody tr { cursor: pointer; }
+  pre { background: var(--fundo); padding: 12px; border-radius: 8px; font-size: 12px; overflow: auto; max-height: 50vh; margin: 0; }
+  .lado { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+</style>
+</head>
+<body data-modulo="auditoria" data-titulo="Auditoria">
+<main id="conteudo">
+  <h1>Auditoria</h1>
+  <p class="sub">Toda inclusão, alteração e exclusão de dados: quem fez, quando, em qual tela, o que era e como ficou.</p>
+
+  <div class="cartao filtros">
+    <div><label>De</label><input type="date" id="fDe"></div>
+    <div><label>Até</label><input type="date" id="fAte"></div>
+    <div><label>Usuário</label><select id="fUsuario"><option value="">Todos</option></select></div>
+    <div><label>Tela</label><select id="fTela"><option value="">Todas</option></select></div>
+    <div><label>Ação</label><select id="fAcao"><option value="">Todas</option><option value="incluiu">Incluiu</option><option value="alterou">Alterou</option><option value="excluiu">Excluiu</option></select></div>
+    <div><label>Buscar</label><input id="fBusca" placeholder="valor, nome, código…"></div>
+  </div>
+
+  <div class="cartao tabela-rolagem">
+    <table>
+      <thead><tr><th>Data</th><th>Hora</th><th>Usuário</th><th>Tela</th><th>Ação</th><th>Registro</th><th>O que era → como ficou</th></tr></thead>
+      <tbody id="lista"><tr><td colspan="7" class="vazio">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+  <p class="sub" id="rodape" style="margin-top:12px"></p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script>
+const LIMITE = 1000;
+const TABELAS = { usuarios: 'Usuário', perfis: 'Perfil', modulos: 'Tela', permissoes: 'Permissão do perfil', permissoes_usuario: 'Tela do usuário', empresas: 'Empresa' };
+const IGNORAR = ['criado_em', 'atualizado_em'];
+let linhas = [];
+
+(async () => {
+  const ctx = await iniciarTela();
+  if (!ctx) return;
+  const hoje = new Date(), semana = new Date(Date.now() - 6 * 864e5);
+  const iso = d => d.toLocaleDateString('sv-SE');      // AAAA-MM-DD no horário local
+  document.getElementById('fDe').value = iso(semana);
+  document.getElementById('fAte').value = iso(hoje);
+  ['fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', carregar));
+  ['fUsuario', 'fTela', 'fAcao'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
+  document.getElementById('fBusca').addEventListener('input', desenhar);
+  carregar();
+})();
+
+async function carregar() {
+  const de = document.getElementById('fDe').value, ate = document.getElementById('fAte').value;
+  let q = db.from('auditoria').select('*').order('em', { ascending: false }).limit(LIMITE);
+  if (de) q = q.gte('em', new Date(de + 'T00:00:00').toISOString());
+  if (ate) q = q.lte('em', new Date(ate + 'T23:59:59.999').toISOString());
+  const { data, error } = await q;
+  if (error) return aviso('Erro ao carregar: ' + error.message, true);
+  linhas = data;
+  preencher('fUsuario', [...new Set(data.map(l => l.usuario_nome || '—'))]);
+  preencher('fTela', [...new Set(data.map(l => l.tela || '—'))]);
+  desenhar();
+}
+
+function preencher(id, valores) {
+  const s = document.getElementById(id), atual = s.value;
+  s.innerHTML = s.options[0].outerHTML + valores.sort().map(v => `<option>${esc(v)}</option>`).join('');
+  s.value = valores.includes(atual) ? atual : '';
+}
+
+function fmt(v) {
+  if (v === null || v === undefined || v === '') return '(vazio)';
+  if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+function nomeRegistro(l) {
+  const r = l.depois || l.antes || {};
+  const ident = r.nome || r.email || r.descricao || r.codigo || l.registro || '';
+  return (TABELAS[l.tabela] || l.tabela) + (ident ? ': ' + ident : '');
+}
+
+function resumo(l) {
+  if (l.acao === 'alterou') {
+    return (l.campos || []).filter(c => !IGNORAR.includes(c)).map(c =>
+      `<div><b>${esc(c)}:</b> <span class="de">${esc(fmt(l.antes?.[c]))}</span> → <span class="para">${esc(fmt(l.depois?.[c]))}</span></div>`).join('');
+  }
+  const r = l.acao === 'incluiu' ? l.depois : l.antes;
+  const campos = Object.entries(r || {}).filter(([k, v]) => !IGNORAR.includes(k) && v !== null && v !== '').slice(0, 4);
+  return campos.map(([k, v]) => `<div><b>${esc(k)}:</b> ${esc(fmt(v))}</div>`).join('') + (Object.keys(r || {}).length > 4 ? '<div><b>…</b></div>' : '');
+}
+
+function desenhar() {
+  const u = document.getElementById('fUsuario').value, t = document.getElementById('fTela').value,
+        a = document.getElementById('fAcao').value, b = document.getElementById('fBusca').value.toLowerCase();
+  const vis = linhas.filter(l =>
+    (!u || (l.usuario_nome || '—') === u) && (!t || (l.tela || '—') === t) && (!a || l.acao === a) &&
+    (!b || JSON.stringify(l).toLowerCase().includes(b)));
+
+  document.getElementById('lista').innerHTML = vis.length ? vis.map(l => {
+    const d = new Date(l.em);
+    return `<tr data-id="${l.id}">
+      <td>${d.toLocaleDateString('pt-BR')}</td>
+      <td>${d.toLocaleTimeString('pt-BR')}</td>
+      <td>${esc(l.usuario_nome || '—')}</td>
+      <td>${esc(l.tela || '—')}</td>
+      <td><span class="selo acao-${l.acao}">${l.acao[0].toUpperCase() + l.acao.slice(1)}</span></td>
+      <td>${esc(nomeRegistro(l))}</td>
+      <td class="mud">${resumo(l)}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="vazio">Nenhuma movimentação no período.</td></tr>';
+
+  document.getElementById('rodape').textContent = `${vis.length} de ${linhas.length} registros` +
+    (linhas.length === LIMITE ? ` · mostrando os ${LIMITE} mais recentes; reduza o período para ver mais antigos` : '');
+  document.querySelectorAll('#lista tr[data-id]').forEach(tr => tr.addEventListener('click', () => detalhe(+tr.dataset.id)));
+}
+
+function detalhe(id) {
+  const l = linhas.find(x => x.id === id);
+  const m = abrirModal(`<h2>${esc(nomeRegistro(l))}</h2>
+    <p class="sub">${new Date(l.em).toLocaleString('pt-BR')} · ${esc(l.usuario_nome || '—')} · ${esc(l.tela || '—')}</p>
+    <div class="lado"><div><label>O que era</label><pre>${esc(l.antes ? JSON.stringify(l.antes, null, 2) : '(não existia)')}</pre></div>
+    <div><label>Como ficou</label><pre>${esc(l.depois ? JSON.stringify(l.depois, null, 2) : '(excluído)')}</pre></div></div>
+    <div class="acoes"><button class="btn" id="fechar">Fechar</button></div>`);
+  m.querySelector('.modal').style.maxWidth = '820px';
+  m.querySelector('#fechar').onclick = () => m.remove();
+}
+</script>
+</body>
+</html>
