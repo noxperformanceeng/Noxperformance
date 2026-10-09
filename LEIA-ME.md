@@ -4,7 +4,7 @@
 1. Supabase → SQL Editor → New → abrir `sql/001_base.sql`, copiar tudo, colar → **Run**.
    Depois, uma nova aba (New) com `sql/002_auditoria.sql` → **Run**.
    Depois, `sql/003_acesso_api.sql` → **Run** (libera as tabelas para usuários logados).
-   Produtos: `sql/010_produtos.sql`, depois `sql/011_importar_materia_prima.sql`, depois `sql/012_unidades_compra.sql`, depois `sql/013_atualizar_dados_tiny.sql` (cada um → **Run**).
+   Produtos: `sql/010_produtos.sql`, depois `sql/011_importar_materia_prima.sql`, depois `sql/012_unidades_compra.sql`, depois `sql/013_atualizar_dados_tiny.sql`, depois `sql/014_importar_acabados_semiacabados.sql` (cada um → **Run**).
 2. Authentication → Sign In / Providers → Email: **desligar "Confirm email"** e **desligar "Allow new users to sign up"**
    (só entra quem você cadastrar).
 3. Authentication → Users → **Add user → Create new user** → seu e-mail e senha → marcar **Auto Confirm User**.
