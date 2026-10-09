@@ -84,7 +84,7 @@ async function iniciarTela() {
   const atual = location.href.split('?')[0].split('#')[0];
   const fechados = lerFechados();
 
-  let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><span>NX</span>NOX ERP</a>
+  let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span><b>NOX</b><small>Sistema de gestão</small></span></a>
     <a class="item${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html">Início</a>`;
 
   MENU.forEach(g => {
@@ -116,6 +116,28 @@ async function iniciarTela() {
       </header>
     </div>`;
   document.body.prepend(app);
+  // Ícone da aba e cabeçalho que aparece só na impressão dos relatórios
+  const icone = document.createElement('link'); icone.rel = 'icon'; icone.href = RAIZ + 'assets/img/favicon.png'; document.head.appendChild(icone);
+  const cab = document.createElement('div'); cab.className = 'cabecalho-impressao';
+  cab.innerHTML = `<img src="${RAIZ}assets/img/logo-nox.png" alt=""><div><b>NOX Performance Engineering</b><br>${esc(document.body.dataset.titulo || '')}</div>
+    <div class="info" id="infoImpressao"></div>`;
+  conteudo.prepend(cab);
+  window.addEventListener('beforeprint', () => {
+    document.getElementById('infoImpressao').innerHTML = `Emitido em ${new Date().toLocaleString('pt-BR')}<br>por ${esc(ctx.usuario.nome)}`;
+    // Resumo dos filtros aplicados, impresso acima da tabela
+    document.querySelectorAll('.filtros-impressao').forEach(x => x.remove());
+    document.querySelectorAll('.filtros').forEach(f => {
+      if (f.closest('[hidden]')) return;
+      const itens = [...f.querySelectorAll('div')].map(d => {
+        const campo = d.querySelector('input, select'); if (!campo || !campo.value) return null;
+        const valor = campo.tagName === 'SELECT' ? campo.selectedOptions[0].text : (campo.type === 'date' ? campo.value.split('-').reverse().join('/') : campo.value);
+        return `${d.querySelector('label')?.textContent || ''}: ${valor}`;
+      }).filter(Boolean);
+      const p = document.createElement('div'); p.className = 'filtros-impressao';
+      p.textContent = 'Filtros: ' + (itens.length ? itens.join(' · ') : 'nenhum (todos os registros)');
+      f.after(p);
+    });
+  });
   conteudo.classList.add('conteudo');
   app.querySelector('.principal').appendChild(conteudo);
   document.title = (document.body.dataset.titulo ? document.body.dataset.titulo + ' · ' : '') + 'NOX ERP';

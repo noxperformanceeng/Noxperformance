@@ -8,7 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../assets/css/style.css">
 <style>
-  .filtros { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .mud { font-size: 13px; line-height: 1.6; }
   .mud .de { color: var(--erro); text-decoration: line-through; }
   .mud .para { color: var(--ok); }
@@ -35,6 +34,7 @@
     <div><label>Buscar</label><input id="fBusca" placeholder="valor, nome, código…"></div>
   </div>
 
+  <div class="barra"><span></span><div id="relAuditoria"></div></div>
   <div class="cartao tabela-rolagem">
     <table>
       <thead><tr><th>Data</th><th>Hora</th><th>Usuário</th><th>Tela</th><th>Ação</th><th>Registro</th><th>O que era → como ficou</th></tr></thead>
@@ -53,7 +53,7 @@
 const LIMITE = 1000;
 const TABELAS = { usuarios: 'Usuário', perfis: 'Perfil', modulos: 'Tela', permissoes: 'Permissão do perfil', permissoes_usuario: 'Tela do usuário', empresas: 'Empresa' };
 const IGNORAR = ['criado_em', 'atualizado_em'];
-let linhas = [];
+let linhas = [], visiveis = [];
 
 (async () => {
   const ctx = await iniciarTela();
@@ -65,6 +65,15 @@ let linhas = [];
   ['fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', carregar));
   ['fUsuario', 'fTela', 'fAcao'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
   document.getElementById('fBusca').addEventListener('input', desenhar);
+  botoesRelatorio('relAuditoria', () => ({
+    arquivo: 'auditoria',
+    colunas: ['Data', 'Hora', 'Usuário', 'Tela', 'Ação', 'Registro', 'Campo', 'O que era', 'Como ficou'],
+    linhas: visiveis.flatMap(l => {
+      const d = new Date(l.em), base = [d.toLocaleDateString('pt-BR'), d.toLocaleTimeString('pt-BR'), l.usuario_nome || '', l.tela || '', l.acao, nomeRegistro(l)];
+      if (l.acao !== 'alterou') return [[...base, '', l.antes ? JSON.stringify(l.antes) : '', l.depois ? JSON.stringify(l.depois) : '']];
+      return (l.campos || []).map(c => [...base, c, fmt(l.antes?.[c]), fmt(l.depois?.[c])]);
+    })
+  }));
   carregar();
 })();
 
@@ -113,7 +122,7 @@ function resumo(l) {
 function desenhar() {
   const u = document.getElementById('fUsuario').value, t = document.getElementById('fTela').value,
         a = document.getElementById('fAcao').value, b = document.getElementById('fBusca').value.toLowerCase();
-  const vis = linhas.filter(l =>
+  const vis = visiveis = linhas.filter(l =>
     (!u || (l.usuario_nome || '—') === u) && (!t || (l.tela || '—') === t) && (!a || l.acao === a) &&
     (!b || JSON.stringify(l).toLowerCase().includes(b)));
 

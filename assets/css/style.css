@@ -3,13 +3,19 @@
    Para mudar cores/fontes de tudo, altere apenas o bloco :root abaixo.
    ===================================================================== */
 :root {
-  --fundo: #f6f7f9;
+  /* Identidade NOX: preto grafite, aço escovado e vermelho do anel do logo */
+  --grafite: #111316;           /* menu lateral e login */
+  --grafite-2: #1c1f23;         /* hover no menu */
+  --aco: #c5c9cf;               /* texto do menu (aço escovado) */
+  --aco-escuro: #6f757e;        /* títulos de grupo do menu */
+  --fundo: #f3f4f6;
   --superficie: #ffffff;
-  --texto: #1d2129;
-  --texto-suave: #6b7280;
-  --linha: #eceef2;
-  --destaque: #c8102e;          /* vermelho NOX */
-  --destaque-suave: #fdecef;
+  --texto: #16181b;
+  --texto-suave: #676d75;
+  --linha: #e7e9ec;
+  --destaque: #a7232a;          /* vermelho NOX */
+  --destaque-forte: #8a1c22;
+  --destaque-suave: #f7e9ea;
   --ok: #15803d;
   --alerta: #b45309;
   --erro: #b91c1c;
@@ -28,19 +34,21 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 
 /* ---------- Estrutura ---------- */
 .app { display: flex; min-height: 100vh; }
-.menu { width: var(--menu-largura); background: var(--superficie); border-right: 1px solid var(--linha); position: fixed; inset: 0 auto 0 0; overflow-y: auto; padding: 20px 12px; z-index: 20; transition: transform .2s; }
-.menu .marca { display: flex; align-items: center; gap: 10px; padding: 4px 10px 20px; font-weight: 700; font-size: 16px; letter-spacing: .5px; }
-.menu .marca span { width: 30px; height: 30px; border-radius: 8px; background: var(--destaque); color: #fff; display: grid; place-items: center; font-size: 13px; }
-.grupo-titulo { width: 100%; display: flex; justify-content: space-between; align-items: center; background: none; border: 0; padding: 10px 10px 6px; font: 600 11px var(--fonte); color: var(--texto-suave); text-transform: uppercase; letter-spacing: .6px; cursor: pointer; }
+.menu { width: var(--menu-largura); background: var(--grafite); color: var(--aco); position: fixed; inset: 0 auto 0 0; overflow-y: auto; padding: 20px 12px; z-index: 20; transition: transform .2s; }
+.menu .marca { display: flex; align-items: center; gap: 12px; padding: 0 8px 22px; margin-bottom: 8px; border-bottom: 1px solid var(--grafite-2); }
+.menu .marca img { width: 46px; height: 46px; }
+.menu .marca b { display: block; color: #fff; font-size: 15px; font-weight: 700; letter-spacing: 3px; }
+.menu .marca small { display: block; color: var(--aco-escuro); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+.grupo-titulo { width: 100%; display: flex; justify-content: space-between; align-items: center; background: none; border: 0; padding: 10px 10px 6px; font: 600 11px var(--fonte); color: var(--aco-escuro); text-transform: uppercase; letter-spacing: .6px; cursor: pointer; }
 .grupo-titulo::after { content: '›'; font-size: 14px; transition: transform .15s; transform: rotate(90deg); }
 .grupo.fechado .grupo-titulo::after { transform: rotate(0); }
 .grupo.fechado .grupo-itens { display: none; }
-.item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; color: var(--texto); margin: 1px 0; }
-.item:hover { background: var(--fundo); }
-.item.ativo { background: var(--destaque-suave); color: var(--destaque); font-weight: 600; }
-.item.breve { color: #b0b5bd; cursor: default; }
-.item.breve:hover { background: none; }
-.item .tag { font-size: 10px; color: #b0b5bd; }
+.item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; color: var(--aco); margin: 1px 0; border-left: 3px solid transparent; }
+.item:hover { background: var(--grafite-2); color: #fff; }
+.item.ativo { background: rgba(167,35,42,.22); color: #fff; font-weight: 600; border-left-color: var(--destaque); }
+.item.breve { color: #4a4f57; cursor: default; }
+.item.breve:hover { background: none; color: #4a4f57; }
+.item .tag { font-size: 10px; color: #4a4f57; }
 
 .principal { flex: 1; margin-left: var(--menu-largura); min-width: 0; }
 .topo { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; background: var(--superficie); border-bottom: 1px solid var(--linha); position: sticky; top: 0; z-index: 10; }
@@ -60,6 +68,7 @@ h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 .btn { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 8px; padding: 9px 16px; font: 500 14px var(--fonte); cursor: pointer; background: var(--fundo); color: var(--texto); }
 .btn:hover { filter: brightness(.96); }
 .btn.primario { background: var(--destaque); color: #fff; }
+.btn.primario:hover { background: var(--destaque-forte); filter: none; }
 .btn.discreto { background: none; color: var(--texto-suave); padding: 6px 8px; }
 .btn:disabled { opacity: .5; cursor: default; }
 
@@ -96,13 +105,44 @@ td select { padding: 6px 8px; min-width: 160px; }
 .vazio { text-align: center; color: var(--texto-suave); padding: 32px; }
 
 /* ---------- Login ---------- */
-.login-pagina { display: grid; place-items: center; min-height: 100vh; padding: 16px; }
-.login { width: 100%; max-width: 380px; }
-.login .marca { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; margin-bottom: 28px; }
-.login .marca span { width: 36px; height: 36px; border-radius: 9px; background: var(--destaque); color: #fff; display: grid; place-items: center; font-size: 14px; }
+.login-pagina { display: grid; place-items: center; min-height: 100vh; padding: 16px; background: radial-gradient(circle at 50% 30%, #23262b 0%, var(--grafite) 55%, #08090a 100%); }
+.login { width: 100%; max-width: 380px; background: #17191d; color: var(--aco); border: 1px solid #262a2f; box-shadow: 0 20px 50px rgba(0,0,0,.45); padding: 32px 28px; }
+.login .marca { text-align: center; margin-bottom: 26px; }
+.login .marca img { width: 120px; height: 120px; display: block; margin: 0 auto 12px; }
+.login .marca span { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--aco-escuro); }
+.login label { color: var(--aco-escuro); }
+.login input { background: #0f1113; border-color: #2a2e34; color: #fff; }
+.login input:focus { border-color: var(--destaque); box-shadow: 0 0 0 3px rgba(167,35,42,.25); }
+.login h2 { color: #fff; }
 .login .btn { width: 100%; justify-content: center; margin-top: 6px; }
-.login .link { display: block; text-align: center; margin-top: 16px; color: var(--texto-suave); font-size: 13px; cursor: pointer; }
+.login .link { display: block; text-align: center; margin-top: 16px; color: var(--aco-escuro); font-size: 13px; cursor: pointer; }
+.login .link:hover { color: var(--aco); }
 .login .msg { font-size: 13px; margin-top: 12px; text-align: center; }
+
+/* ---------- Relatórios / impressão ---------- */
+.filtros { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.relatorio-acoes { display: flex; gap: 8px; }
+.relatorio-acoes .btn { background: var(--superficie); box-shadow: inset 0 0 0 1px var(--linha); }
+.relatorio-acoes .btn:hover { box-shadow: inset 0 0 0 1px var(--destaque); color: var(--destaque); filter: none; }
+.filtros-impressao { display: none; }
+.cabecalho-impressao { display: none; }
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  body { background: #fff; font-size: 11px; }
+  .menu, .topo, .abas, .relatorio-acoes, .barra input, .filtros, .btn, .aviso, .nao-imprimir { display: none !important; }
+  .principal { margin: 0; }
+  .conteudo { padding: 0; max-width: none; }
+  .cartao { box-shadow: none; padding: 0; }
+  .tabela-rolagem { overflow: visible; }
+  td, th { padding: 5px 6px; }
+  tr { break-inside: avoid; }
+  select { border: 0; padding: 0; appearance: none; background: none; font: inherit; color: inherit; }
+  .filtros-impressao { display: block; font-size: 10px; color: var(--texto-suave); margin-bottom: 10px; }
+  .cabecalho-impressao { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid var(--destaque); padding-bottom: 8px; margin-bottom: 12px; }
+  .cabecalho-impressao img { width: 48px; height: 48px; }
+  .cabecalho-impressao .info { margin-left: auto; text-align: right; color: var(--texto-suave); font-size: 10px; }
+  h1 { font-size: 16px; } .sub { margin-bottom: 8px; }
+}
 
 /* ---------- Celular ---------- */
 @media (max-width: 860px) {

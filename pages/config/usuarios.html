@@ -21,14 +21,22 @@
 
   <!-- ABA USUÁRIOS -->
   <section id="aba-usuarios">
+    <div class="cartao filtros">
+      <div><label>Buscar</label><input id="busca" placeholder="Nome ou e-mail"></div>
+      <div><label>Perfil</label><select id="fPerfil"><option value="">Todos</option><option value="-">Sem perfil</option></select></div>
+      <div><label>Situação</label><select id="fAtivo"><option value="">Todas</option><option value="1">Ativo</option><option value="0">Inativo</option></select></div>
+      <div><label>Telas extras</label><select id="fExtras"><option value="">Todos</option><option value="1">Com ajuste individual</option></select></div>
+      <div><label>Cadastrado de</label><input type="date" id="fDe"></div>
+      <div><label>até</label><input type="date" id="fAte"></div>
+    </div>
     <div class="barra">
-      <input id="busca" placeholder="Buscar por nome ou e-mail">
-      <small class="sub" style="margin:0">Novo usuário: Supabase → Authentication → Users → Add user (marque "Auto Confirm User"). Ele aparece aqui na hora.</small>
+      <small class="sub nao-imprimir" style="margin:0">Novo usuário: Supabase → Authentication → Users → Add user (marque "Auto Confirm User").</small>
+      <div id="relUsuarios"></div>
     </div>
     <div class="cartao tabela-rolagem">
       <table>
-        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Telas extras</th><th>Situação</th><th></th></tr></thead>
-        <tbody id="listaUsuarios"><tr><td colspan="6" class="vazio">Carregando…</td></tr></tbody>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Telas extras</th><th>Situação</th><th>Cadastro</th><th></th></tr></thead>
+        <tbody id="listaUsuarios"><tr><td colspan="7" class="vazio">Carregando…</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -78,7 +86,14 @@ const NIVEL = { ver: 'Ver', editar: 'Ver e editar', nenhum: 'Bloqueado' };
     document.querySelectorAll('.aba').forEach(x => x.classList.toggle('ativa', x === b));
     document.querySelectorAll('main section').forEach(s => s.hidden = s.id !== 'aba-' + b.dataset.aba);
   }));
-  ligarBusca('busca', 'listaUsuarios');
+  ['busca', 'fPerfil', 'fAtivo', 'fExtras', 'fDe', 'fAte'].forEach(id =>
+    document.getElementById(id).addEventListener(id === 'busca' ? 'input' : 'change', desenharUsuarios));
+  botoesRelatorio('relUsuarios', () => ({
+    arquivo: 'usuarios',
+    colunas: ['Nome', 'E-mail', 'Perfil', 'Telas extras', 'Situação', 'Cadastro'],
+    linhas: usuariosFiltrados().map(u => [u.nome, u.email, perfis.find(p => p.id === u.perfil_id)?.nome || 'Sem perfil',
+      resumoAjustes(u.id), u.ativo ? 'Ativo' : 'Inativo', dataBR(u.criado_em)])
+  }));
   await carregar();
 })();
 
@@ -100,20 +115,40 @@ async function carregar() {
 }
 
 /* ---------- USUÁRIOS ---------- */
+function resumoAjustes(id) {
+  const extras = ajustes.filter(a => a.usuario_id === id);
+  const mais = extras.filter(a => a.nivel !== 'nenhum').length, menos = extras.length - mais;
+  return extras.length ? [mais && `+${mais}`, menos && `−${menos}`].filter(Boolean).join(' / ') : '—';
+}
+
+function usuariosFiltrados() {
+  const v = id => document.getElementById(id).value;
+  const b = v('busca').toLowerCase(), de = v('fDe'), ate = v('fAte');
+  return usuarios.filter(u =>
+    (!b || `${u.nome} ${u.email}`.toLowerCase().includes(b)) &&
+    (!v('fPerfil') || (v('fPerfil') === '-' ? !u.perfil_id : u.perfil_id === v('fPerfil'))) &&
+    (!v('fAtivo') || String(+u.ativo) === v('fAtivo')) &&
+    (!v('fExtras') || ajustes.some(a => a.usuario_id === u.id)) &&
+    (!de || new Date(u.criado_em) >= new Date(de + 'T00:00:00')) &&
+    (!ate || new Date(u.criado_em) <= new Date(ate + 'T23:59:59.999')));
+}
+
 function desenharUsuarios() {
+  const fp = document.getElementById('fPerfil');
+  if (fp.options.length <= 2) fp.innerHTML += perfis.map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('');
+  const lista = usuariosFiltrados();
   const opcoes = sel => '<option value="">— sem perfil —</option>' + perfis.map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc(p.nome)}</option>`).join('');
-  document.getElementById('listaUsuarios').innerHTML = usuarios.length ? usuarios.map(u => {
-    const extras = ajustes.filter(a => a.usuario_id === u.id);
-    const mais = extras.filter(a => a.nivel !== 'nenhum').length, menos = extras.length - mais;
-    const resumo = extras.length ? [mais && `+${mais}`, menos && `−${menos}`].filter(Boolean).join(' / ') : '—';
+  document.getElementById('listaUsuarios').innerHTML = lista.length ? lista.map(u => {
+    const resumo = resumoAjustes(u.id);
     return `<tr>
       <td>${esc(u.nome)}</td>
       <td>${esc(u.email)}</td>
       <td><select data-perfil="${u.id}" ${ctx.admin ? '' : 'disabled'}>${opcoes(u.perfil_id)}</select></td>
       <td>${resumo}</td>
       <td><span class="selo ${u.ativo ? 'ok' : 'erro'}">${u.ativo ? 'Ativo' : 'Inativo'}</span></td>
+      <td>${dataBR(u.criado_em)}</td>
       <td style="text-align:right">${ctx.admin ? `<button class="btn discreto" data-editar="${u.id}">Editar</button>` : ''}</td></tr>`;
-  }).join('') : '<tr><td colspan="6" class="vazio">Nenhum usuário.</td></tr>';
+  }).join('') : '<tr><td colspan="7" class="vazio">Nenhum usuário com esses filtros.</td></tr>';
 
   document.querySelectorAll('[data-perfil]').forEach(s => s.addEventListener('change', async () => {
     const { error } = await db.from('usuarios').update({ perfil_id: s.value || null }).eq('id', s.dataset.perfil);
