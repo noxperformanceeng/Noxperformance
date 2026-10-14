@@ -1,6 +1,10 @@
 # ERP NOX — pacote inicial (Fase 0 + Fase 1)
 
-## 1. Banco (Supabase) — uma vez
+## Automação (desde 14/10/2026)
+O Claude está conectado ao Supabase e ao GitHub: ele aplica os SQL no banco e publica as telas
+direto. Os arquivos da pasta `sql/` ficam como histórico. Não é mais preciso colar SQL no Supabase.
+
+## 1. Banco (Supabase) — referência (instalação manual)
 1. Supabase → SQL Editor → New → abrir `sql/001_base.sql`, copiar tudo, colar → **Run**.
    Depois, uma nova aba (New) com `sql/002_auditoria.sql` → **Run**.
    Depois, `sql/003_acesso_api.sql` → **Run** (libera as tabelas para usuários logados).
