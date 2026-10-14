@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fornecedores · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="fornecedores" data-titulo="Fornecedores">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+const SIT = [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }];
+const CATEGORIAS = ['Matéria-prima', 'Usinagem (terceiro)', 'Corte a laser (terceiro)', 'Pintura (terceiro)', 'Polimento (terceiro)',
+  'Embalagem', 'Ferramentas e abrasivos', 'Fixadores', 'Filtros e componentes', 'Serviços', 'Transporte', 'Outros'];
+
+montarCadastro({
+  tabela: 'fornecedores', modulo: 'fornecedores', titulo: 'Fornecedores', singular: 'fornecedor', plural: 'fornecedores',
+  subtitulo: 'Quem fornece cada item. O vínculo com os produtos é feito na tela de Produtos.',
+  dicaBusca: 'nome, CNPJ, cidade, contato, produto…', ordem: 'nome', revisao: true,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: '', n: 'Todos' }] },
+  periodos: [{ campo: 'atualizado_em', label: 'Última alteração' }, { campo: 'criado_em', label: 'Cadastro' }],
+  campos: [
+    { id: 'nome', label: 'Razão social / nome', obrig: true, col: 2, lista: true },
+    { id: 'nome_fantasia', label: 'Nome fantasia', col: 2 },
+    { id: 'tipo_pessoa', label: 'Tipo', tipo: 'select', opcoes: [{ v: 'PJ', n: 'Pessoa jurídica' }, { v: 'PF', n: 'Pessoa física' }], obrig: true, padrao: 'PJ' },
+    { id: 'cnpj', label: 'CNPJ / CPF', tipo: 'cpfcnpj', lista: true },
+    { id: 'ie', label: 'Inscrição estadual' },
+    { id: 'categoria', label: 'Categoria', tipo: 'select', opcoes: CATEGORIAS, filtro: true, lista: true, filtroVazio: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, obrig: true, padrao: 'ativo' },
+    { id: 'contato', label: 'Contato (pessoa)', secao: 'Contato', col: 2 },
+    { id: 'telefone', label: 'Telefone / WhatsApp', tipo: 'tel', lista: true },
+    { id: 'email', label: 'E-mail', tipo: 'email' },
+    { id: 'site', label: 'Site', col: 2 },
+    { id: 'cep', label: 'CEP', tipo: 'cep', secao: 'Endereço' },
+    { id: 'endereco', label: 'Endereço', col: 2 },
+    { id: 'numero', label: 'Número' },
+    { id: 'complemento', label: 'Complemento' },
+    { id: 'bairro', label: 'Bairro' },
+    { id: 'cidade', label: 'Cidade', lista: true, filtro: true },
+    { id: 'uf', label: 'UF', tipo: 'uf', filtro: true },
+    { id: 'condicao_pagamento', label: 'Condição de pagamento', secao: 'Comercial', col: 2, placeholder: 'ex.: 28 dias boleto, à vista PIX' },
+    { id: 'prazo_pagamento_dias', label: 'Prazo médio de pagamento (dias)', tipo: 'numero' },
+    { id: 'prazo_entrega_dias', label: 'Prazo médio de entrega (dias)', tipo: 'numero' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
+  ],
+  async carregarExtra() {
+    const v = await buscarTodos(() => db.from('produto_fornecedores').select('fornecedor_id, codigo_fornecedor, preferencial, produtos(codigo, descricao, tipo, situacao)').order('id'));
+    const por = {};
+    v.forEach(x => (por[x.fornecedor_id] ||= []).push(x));
+    return { produtos: por };
+  },
+  colunasExtras: [{ label: 'Produtos', texto: (r, e) => String((e.produtos[r.id] || []).length) }],
+  textoBuscaExtra: (r, e) => (e.produtos[r.id] || []).map(x => `${x.produtos?.codigo} ${x.produtos?.descricao} ${x.codigo_fornecedor || ''}`).join(' '),
+  subtituloLinha: r => r.nome_fantasia,
+  secaoExtra: (r, e) => {
+    const ps = e.produtos[r.id] || [];
+    return `<div class="secao">Produtos vinculados (${ps.length})</div>` + (ps.length ? `<table class="lista-mini"><tbody>${ps.map(x =>
+      `<tr><td><b>${esc(x.produtos?.codigo || '')}</b> ${esc(x.produtos?.descricao || '')}</td><td style="color:var(--texto-suave)">${x.codigo_fornecedor ? 'cód. ' + esc(x.codigo_fornecedor) : ''}</td><td>${x.preferencial ? '<span class="tg ok">preferencial</span>' : ''}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub" style="margin:0">Nenhum produto vinculado. O vínculo é feito no cadastro de Produtos.</p>');
+  },
+  pendencias: [
+    { id: 'sem_doc', nome: 'Sem CNPJ/CPF', cor: 'erro', bloqueia: true, teste: r => !r.cnpj },
+    { id: 'doc_inv', nome: 'Documento inválido', cor: 'erro', bloqueia: true, teste: r => r.cnpj && !(r.cnpj.length === 11 ? cpfValido(r.cnpj) : cnpjValido(r.cnpj)) },
+    { id: 'sem_contato', nome: 'Sem telefone/e-mail', cor: 'alerta', bloqueia: true, teste: r => !r.telefone && !r.email },
+    { id: 'sem_cat', nome: 'Sem categoria', cor: 'alerta', bloqueia: true, teste: r => !r.categoria },
+    { id: 'sem_cidade', nome: 'Sem cidade', cor: 'alerta', teste: r => !r.cidade },
+    { id: 'sem_prod', nome: 'Sem produtos vinculados', cor: 'neutro', teste: (r, e) => r.situacao === 'ativo' && !(e.produtos[r.id] || []).length }
+  ],
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  validar: d => d.tipo_pessoa === 'PF' && d.cnpj && d.cnpj.length !== 11 ? 'Pessoa física deve ter CPF (11 dígitos)' : d.tipo_pessoa === 'PJ' && d.cnpj && d.cnpj.length !== 14 ? 'Pessoa jurídica deve ter CNPJ (14 dígitos)' : null,
+  msgDuplicado: 'Já existe fornecedor com este CNPJ/CPF'
+});
+</script>
+</body>
+</html>

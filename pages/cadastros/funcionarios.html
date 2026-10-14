@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Funcionários · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="funcionarios" data-titulo="Funcionários" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+const SIT = [{ v: 'ativo', n: 'Ativo' }, { v: 'ferias', n: 'Férias' }, { v: 'afastado', n: 'Afastado' }, { v: 'desligado', n: 'Desligado' }];
+const CONTRATO = [{ v: 'clt', n: 'CLT' }, { v: 'pj', n: 'PJ' }, { v: 'estagio', n: 'Estágio' }, { v: 'temporario', n: 'Temporário' },
+  { v: 'aprendiz', n: 'Aprendiz' }, { v: 'autonomo', n: 'Autônomo / freelancer' }];
+const SETORES = ['Corte', 'Dobra', 'Solda', 'Polimento / acabamento', 'Montagem', 'Usinagem', 'Pintura', 'Almoxarifado', 'Expedição',
+  'Compras', 'Comercial', 'Financeiro', 'RH', 'Engenharia', 'Administração', 'Limpeza / manutenção'];
+let USUARIOS = [];
+
+montarCadastro({
+  tabela: 'funcionarios', modulo: 'funcionarios', titulo: 'Funcionários', singular: 'funcionário', plural: 'funcionários',
+  subtitulo: 'Cadastro das pessoas, por empresa. Ponto, férias, lançamentos e holerites ficam no RH.',
+  dicaBusca: 'nome, CPF, cargo, setor…', ordem: 'nome', revisao: true, porEmpresa: true,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'ferias', n: 'Férias' }, { v: 'afastado', n: 'Afastados' }, { v: 'desligado', n: 'Desligados' }, { v: '', n: 'Todos' }] },
+  periodos: [{ campo: 'data_admissao', label: 'Admissão' }, { campo: 'data_demissao', label: 'Desligamento' }, { campo: 'atualizado_em', label: 'Última alteração' }],
+  campos: [
+    { id: 'nome', label: 'Nome completo', obrig: true, col: 2, lista: true, secao: 'Dados pessoais' },
+    { id: 'cpf', label: 'CPF', tipo: 'cpf', obrig: true, lista: true },
+    { id: 'rg', label: 'RG' },
+    { id: 'data_nascimento', label: 'Nascimento', tipo: 'data' },
+    { id: 'telefone', label: 'Telefone / WhatsApp', tipo: 'tel' },
+    { id: 'email', label: 'E-mail', tipo: 'email', col: 2 },
+    { id: 'cep', label: 'CEP', tipo: 'cep', secao: 'Endereço' },
+    { id: 'endereco', label: 'Endereço', col: 2 },
+    { id: 'numero', label: 'Número' },
+    { id: 'complemento', label: 'Complemento' },
+    { id: 'bairro', label: 'Bairro' },
+    { id: 'cidade', label: 'Cidade' },
+    { id: 'uf', label: 'UF', tipo: 'uf' },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, secao: 'Contrato',
+      opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
+    { id: 'cargo', label: 'Cargo', lista: true, filtro: true, lista_sugestoes: [] },
+    { id: 'setor', label: 'Setor', lista: true, filtro: true, lista_sugestoes: SETORES },
+    { id: 'tipo_contrato', label: 'Contrato', tipo: 'select', opcoes: CONTRATO, obrig: true, padrao: 'clt', filtro: true },
+    { id: 'data_admissao', label: 'Admissão', tipo: 'data', lista: true },
+    { id: 'data_demissao', label: 'Desligamento', tipo: 'data' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, obrig: true, padrao: 'ativo' },
+    { id: 'jornada', label: 'Jornada', placeholder: 'ex.: seg-sex 07h-17h' },
+    { id: 'salario_base', label: 'Salário base (R$)', tipo: 'moeda' },
+    { id: 'pis', label: 'PIS', secao: 'Documentos e pagamento' },
+    { id: 'ctps', label: 'CTPS' },
+    { id: 'banco', label: 'Banco' },
+    { id: 'agencia', label: 'Agência' },
+    { id: 'conta', label: 'Conta' },
+    { id: 'pix', label: 'Chave PIX', col: 2 },
+    { id: 'contato_emergencia', label: 'Contato de emergência', col: 2, secao: 'Emergência' },
+    { id: 'telefone_emergencia', label: 'Telefone de emergência', tipo: 'tel' },
+    { id: 'usuario_id', label: 'Usuário do sistema', tipo: 'select', secao: 'Acesso ao sistema', col: 2, opcoes: () => USUARIOS,
+      ajuda: 'Liga o funcionário ao login dele (para ver o próprio holerite e férias).' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
+  ],
+  async carregarExtra() {
+    const { data } = await db.rpc('usuarios_nomes');
+    USUARIOS = (data || []).map(u => ({ v: u.id, n: u.nome }));
+    return {};
+  },
+  subtituloLinha: r => ({ clt: 'CLT', pj: 'PJ', estagio: 'Estágio', temporario: 'Temporário', aprendiz: 'Aprendiz', autonomo: 'Autônomo' })[r.tipo_contrato],
+  pendencias: [
+    { id: 'sem_cpf', nome: 'Sem CPF', cor: 'erro', bloqueia: true, teste: r => !r.cpf },
+    { id: 'cpf_inv', nome: 'CPF inválido', cor: 'erro', bloqueia: true, teste: r => r.cpf && !cpfValido(r.cpf) },
+    { id: 'sem_emp', nome: 'Sem empresa', cor: 'erro', bloqueia: true, teste: r => !r.empresa_id },
+    { id: 'sem_cargo', nome: 'Sem cargo/setor', cor: 'alerta', bloqueia: true, teste: r => !r.cargo || !r.setor },
+    { id: 'sem_adm', nome: 'Sem data de admissão', cor: 'alerta', bloqueia: true, teste: r => !r.data_admissao },
+    { id: 'desl_sem_data', nome: 'Desligado sem data', cor: 'alerta', bloqueia: true, teste: r => r.situacao === 'desligado' && !r.data_demissao }
+  ],
+  apagado: r => r.situacao === 'desligado',
+  validar: d => d.data_demissao && d.data_admissao && d.data_demissao < d.data_admissao ? 'Desligamento não pode ser antes da admissão' : null,
+  msgDuplicado: 'Já existe funcionário com este CPF'
+});
+</script>
+</body>
+</html>

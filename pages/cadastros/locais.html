@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Locais de estoque · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="locais" data-titulo="Locais de estoque">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+const AREAS = [{ v: 'estoque', n: 'Estoque' }, { v: 'almoxarifado', n: 'Almoxarifado' }, { v: 'producao', n: 'Produção' },
+  { v: 'expedicao', n: 'Expedição' }, { v: 'quarentena', n: 'Quarentena / avaria' }, { v: 'terceiros', n: 'Em terceiros' }];
+
+montarCadastro({
+  tabela: 'locais_estoque', modulo: 'locais', titulo: 'Locais de estoque', singular: 'local', plural: 'locais',
+  subtitulo: 'Onde cada item fica guardado. O código vira etiqueta para leitura na separação e no inventário.',
+  dicaBusca: 'código, rua, prateleira, descrição…', ordem: 'codigo', revisao: false,
+  abas: { campo: 'area', padrao: '', opcoes: [{ v: '', n: 'Todas as áreas' }, ...AREAS] },
+  campos: [
+    { id: 'codigo', label: 'Código', lista: true, maiusculo: true, ajuda: 'Em branco = monta sozinho com rua-prateleira-posição (ex.: A-02-03)' },
+    { id: 'area', label: 'Área', tipo: 'select', opcoes: AREAS, obrig: true, padrao: 'estoque', lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo', filtro: true },
+    { id: 'deposito', label: 'Depósito / galpão', filtro: true, lista_sugestoes: ['Galpão principal', 'Mezanino'] },
+    { id: 'rua', label: 'Rua / corredor', maiusculo: true, lista: true },
+    { id: 'prateleira', label: 'Prateleira / estante', maiusculo: true, lista: true },
+    { id: 'posicao', label: 'Posição / nível', maiusculo: true, lista: true },
+    { id: 'capacidade', label: 'Capacidade / tamanho', placeholder: 'ex.: caixa 40x30, palete' },
+    { id: 'descricao', label: 'Descrição', col: 4, lista: true, placeholder: 'ex.: tubos inox até 2"' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 }
+  ],
+  subtituloLinha: r => r.deposito,
+  apagado: r => r.situacao === 'inativo',
+  antesSalvar: d => {
+    if (!d.codigo && d.rua) d.codigo = [d.rua, d.prateleira, d.posicao].filter(Boolean).join('-');
+  },
+  validar: d => !d.codigo ? 'Informe o código ou pelo menos a rua' : null,
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  chaveHistorico: r => r.codigo,
+  tituloRegistro: r => r.codigo,
+  msgDuplicado: 'Já existe local com este código'
+});
+</script>
+</body>
+</html>
