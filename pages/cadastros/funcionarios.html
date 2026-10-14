@@ -48,6 +48,9 @@ montarCadastro({
       opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     { id: 'cargo', label: 'Cargo', lista: true, filtro: true, lista_sugestoes: [] },
     { id: 'setor', label: 'Setor', lista: true, filtro: true, lista_sugestoes: SETORES },
+    { id: 'area_custo', label: 'Área de custo', tipo: 'select', lista: true, filtro: true, filtroVazio: true,
+      opcoes: [{ v: 'producao', n: 'Produção (custo do produto)' }, { v: 'administrativo', n: 'Administrativo' }, { v: 'comercial', n: 'Comercial' }],
+      ajuda: 'Define onde a folha desta pessoa entra: produção vai para o custo do produto (precificação); administrativo e comercial são despesas.' },
     { id: 'tipo_contrato', label: 'Contrato', tipo: 'select', opcoes: CONTRATO, obrig: true, padrao: 'clt', filtro: true },
     { id: 'data_admissao', label: 'Admissão', tipo: 'data', lista: true },
     { id: 'data_demissao', label: 'Desligamento', tipo: 'data' },
@@ -77,6 +80,7 @@ montarCadastro({
     { id: 'cpf_inv', nome: 'CPF inválido', cor: 'erro', bloqueia: true, teste: r => r.cpf && !cpfValido(r.cpf) },
     { id: 'sem_emp', nome: 'Sem empresa', cor: 'erro', bloqueia: true, teste: r => !r.empresa_id },
     { id: 'sem_cargo', nome: 'Sem cargo/setor', cor: 'alerta', bloqueia: true, teste: r => !r.cargo || !r.setor },
+    { id: 'sem_area', nome: 'Sem área de custo', cor: 'alerta', bloqueia: true, teste: r => r.situacao !== 'desligado' && !r.area_custo },
     { id: 'sem_adm', nome: 'Sem data de admissão', cor: 'alerta', bloqueia: true, teste: r => !r.data_admissao },
     { id: 'desl_sem_data', nome: 'Desligado sem data', cor: 'alerta', bloqueia: true, teste: r => r.situacao === 'desligado' && !r.data_demissao }
   ],

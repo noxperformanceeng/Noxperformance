@@ -45,6 +45,13 @@ async function montarCadastro(cfg) {
   let linhas = [], extra = {}, nomes = {};
   let aba = cfg.abas ? cfg.abas.padrao ?? '' : '', pendAtual = '', visiveis = [], selecionados = new Set();
   let ordem = { campo: cfg.ordem || campos.find(c => c.lista)?.id, asc: true };
+  // Árvore (opcional): cfg.arvore = { chave: r => '3.01.002', pai: chave => '3.01' | null }
+  // Grupos recolhíveis; o estado fica salvo por tela. Com busca/filtro ativo, mostra tudo que bate.
+  const chaveArv = 'nox_arvore_' + cfg.tabela;
+  let fechados = null;
+  try { const v = localStorage.getItem(chaveArv); if (v) fechados = new Set(JSON.parse(v)); } catch {}
+  const gravarArvore = () => { try { localStorage.setItem(chaveArv, JSON.stringify([...fechados])); } catch {} };
+  const ancestrais = k => { const out = []; let p = cfg.arvore.pai(k); while (p) { out.push(p); p = cfg.arvore.pai(p); } return out; };
 
   const opcoes = c => (typeof c.opcoes === 'function' ? c.opcoes(ctx) : c.opcoes || []).map(o => typeof o === 'object' ? o : { v: o, n: o });
   const rotulo = (c, v) => (opcoes(c).find(o => String(o.v) === String(v))?.n) ?? v;
@@ -169,8 +176,15 @@ async function montarCadastro(cfg) {
     visiveis = filtrar(false);
     contarFiltros(cont);
     const k = ordem.campo, dir = ordem.asc ? 1 : -1;
-    const chave = r => k === '_rev' ? ({ alerta: 0, neutro: 1, ok: 2 }[statusRev(r).cls]) : semAcento(r[k] ?? '￿');
+    const chave = r => k === '_rev' ? ({ alerta: 0, neutro: 1, ok: 2 }[statusRev(r).cls]) : cfg.ordenarPor?.[k] ? cfg.ordenarPor[k](r) : semAcento(r[k] ?? '￿');
     visiveis.sort((a, b) => (chave(a) > chave(b) ? 1 : chave(a) < chave(b) ? -1 : 0) * dir);
+    let mostrados = visiveis, temFilhos = new Set();
+    if (cfg.arvore) {
+      linhas.forEach(r => { const p = cfg.arvore.pai(cfg.arvore.chave(r)); if (p) temFilhos.add(p); });
+      if (!fechados) fechados = new Set([...temFilhos]);            // primeira vez: tudo recolhido nos grupos principais
+      const filtrando = $('#fBusca').value || pendAtual || $('#cFiltBtn').classList.contains('com-filtro');
+      if (!filtrando) mostrados = visiveis.filter(r => !ancestrais(cfg.arvore.chave(r)).some(a => fechados.has(a)));
+    }
 
     $('#cHead').innerHTML = (podeEditar ? '<th style="width:28px" class="nao-imprimir"><input type="checkbox" id="cTodos"></th>' : '') +
       colunas.map(c => `<th class="ord" data-ord="${c.id}">${esc(c.label)}${ordem.campo === c.id ? (ordem.asc ? ' ▲' : ' ▼') : ''}</th>`).join('') +
@@ -179,18 +193,23 @@ async function montarCadastro(cfg) {
     cont.querySelectorAll('th.ord').forEach(th => th.onclick = () => { ordem = { campo: th.dataset.ord, asc: ordem.campo === th.dataset.ord ? !ordem.asc : true }; desenhar(); });
 
     const LIM = 400, ncol = colunas.length + (cfg.colunasExtras || []).length + (cfg.revisao ? 1 : 0) + 1 + (podeEditar ? 1 : 0);
-    $('#cLista').innerHTML = visiveis.length ? visiveis.slice(0, LIM).map(r => {
+    $('#cLista').innerHTML = mostrados.length ? mostrados.slice(0, LIM).map(r => {
       const rv = statusRev(r);
       const pend = r._pend.filter(p => !p.startsWith('_')).map(p => { const d = PEND.find(x => x.id === p); return `<span class="tg ${d.cor}">${esc(d.nome)}</span>`; }).join('');
       return `<tr data-id="${r.id}" class="${cfg.apagado?.(r) ? 'apagado' : ''}" style="cursor:pointer">
         ${podeEditar ? `<td class="nao-imprimir"><input type="checkbox" class="sel" data-id="${r.id}" ${selecionados.has(r.id) ? 'checked' : ''}></td>` : ''}
-        ${colunas.map((c, i) => `<td class="${i === 0 ? 'forte' : ''}">${esc(mostrar(c, r[c.id]))}${i === 0 && cfg.subtituloLinha ? `<small class="sub2">${esc(cfg.subtituloLinha(r, extra) || '')}</small>` : ''}</td>`).join('')}
+        ${colunas.map((c, i) => `<td class="${i === 0 ? 'forte' : ''}">${i === 0 && cfg.arvore ? seta(r) : ''}${esc(mostrar(c, r[c.id]))}${i === 0 && cfg.subtituloLinha ? `<small class="sub2">${esc(cfg.subtituloLinha(r, extra) || '')}</small>` : ''}</td>`).join('')}
         ${(cfg.colunasExtras || []).map(x => `<td>${x.html ? x.html(r, extra) : esc(x.texto(r, extra))}</td>`).join('')}
         ${rv ? `<td class="rev"><span class="tg ${rv.cls}">${rv.t}</span>${rv.cls === 'ok' ? `<small>${dataBR(r.revisado_em)} · ${esc(nomes[r.revisado_por] || '')}</small>` : rv.cls === 'alerta' ? `<small>alterado ${dataBR(r.atualizado_em)} · ${esc(nomes[r.atualizado_por] || '')}</small>` : ''}</td>` : ''}
         <td>${pend}</td></tr>`;
     }).join('') : `<tr><td colspan="${ncol}" class="vazio">Nenhum registro com esses filtros.</td></tr>`;
     $('#cCont').textContent = `${visiveis.length} ${visiveis.length === 1 ? cfg.singular : (cfg.plural || cfg.singular + 's')}`;
-    $('#cRodape').textContent = visiveis.length > LIM ? `Mostrando os ${LIM} primeiros. Use os filtros para refinar (o Exportar Excel leva todos).` : '';
+    if (cfg.arvore) $('#cCont').textContent += mostrados.length < visiveis.length ? ` · ${mostrados.length} à vista (grupos recolhidos)` : '';
+    $('#cRodape').textContent = mostrados.length > LIM ? `Mostrando os ${LIM} primeiros. Use os filtros para refinar (o Exportar Excel leva todos).` : '';
+    cont.querySelectorAll('#cLista .seta').forEach(b => b.onclick = e => {
+      e.stopPropagation(); const k = b.dataset.k;
+      fechados.has(k) ? fechados.delete(k) : fechados.add(k); gravarArvore(); desenhar();
+    });
     cont.querySelectorAll('#cLista tr[data-id]').forEach(tr => tr.onclick = e => {
       if (e.target.classList.contains('sel')) return;
       abrir(linhas.find(r => r.id === +tr.dataset.id));
@@ -201,6 +220,18 @@ async function montarCadastro(cfg) {
       cont.querySelectorAll('#cLista .sel').forEach(c => c.onchange = () => { c.checked ? selecionados.add(+c.dataset.id) : selecionados.delete(+c.dataset.id); desenharLote(); });
     }
     desenharLote();
+  }
+
+  function seta(r) {
+    const k = cfg.arvore.chave(r);
+    if (!temFilhosGlobal().has(k)) return '<span class="seta vazia"></span>';
+    return `<button type="button" class="seta" data-k="${esc(k)}" title="${fechados?.has(k) ? 'Abrir' : 'Recolher'}">${fechados?.has(k) ? '▸' : '▾'}</button>`;
+  }
+  function temFilhosGlobal() { const s = new Set(); linhas.forEach(r => { const p = cfg.arvore.pai(cfg.arvore.chave(r)); if (p) s.add(p); }); return s; }
+  if (cfg.arvore) {
+    $('.barra-lista').insertAdjacentHTML('beforeend', '<span class="arv-acoes nao-imprimir"><button type="button" class="btn discreto fino" id="cAbrirTudo">Abrir tudo</button><button type="button" class="btn discreto fino" id="cFecharTudo">Recolher tudo</button></span>');
+    $('#cAbrirTudo').onclick = () => { fechados = new Set(); gravarArvore(); desenhar(); };
+    $('#cFecharTudo').onclick = () => { fechados = temFilhosGlobal(); gravarArvore(); desenhar(); };
   }
 
   function desenharLote() {
@@ -241,7 +272,7 @@ async function montarCadastro(cfg) {
       }
       case 'uf': return `<select id="${id}" ${dis}><option value="">—</option>${UFS.map(u => `<option${u === val ? ' selected' : ''}>${u}</option>`).join('')}</select>`;
       case 'textarea': return `<textarea id="${id}" rows="2" ${dis}>${esc(val)}</textarea>`;
-      case 'bool': return `<label class="chk" style="margin-top:8px"><input type="checkbox" id="${id}" ${val ? 'checked' : ''} ${dis}> ${esc(c.textoBool || 'Sim')}</label>`;
+      case 'bool': return `<label class="chk"><input type="checkbox" id="${id}" ${val ? 'checked' : ''} ${dis}> ${esc(c.textoBool || 'Sim')}</label>`;
       case 'data': return `<input type="date" id="${id}" value="${esc(String(val).slice(0, 10))}" ${dis}>`;
       case 'numero': case 'moeda': return `<input id="${id}" inputmode="decimal" value="${val === '' ? '' : esc(String(val).replace('.', ','))}" ${dis}>`;
       case 'cpf': case 'cnpj': case 'cpfcnpj': return `<input id="${id}" inputmode="numeric" value="${esc(fmtDoc(val))}" ${dis}>`;

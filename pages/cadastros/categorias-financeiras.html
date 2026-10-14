@@ -29,7 +29,7 @@ const TIPOS = [{ v: 'receita', n: 'Receita' }, { v: 'deducao', n: 'Dedução da 
   { v: 'financeiro', n: 'Resultado financeiro (juros, tarifas)' }, { v: 'transferencia', n: 'Transferência entre contas / empresas' }];
 // Linhas do relatório de gestão (DRE gerencial)
 const DRE = ['Receita bruta', 'Deduções da receita', 'Custo dos produtos vendidos', 'Despesas com vendas', 'Despesas administrativas',
-  'Despesas com pessoal', 'Despesas de ocupação (galpão)', 'Resultado financeiro', 'Impostos sobre o lucro', 'Investimentos', 'Não entra no resultado'];
+  'Despesas com pessoal administrativo', 'Despesas de ocupação (galpão)', 'Resultado financeiro', 'Impostos sobre o lucro', 'Investimentos', 'Não entra no resultado'];
 let TODAS = [];
 const nivel = c => String(c || '').split('.').length;
 const paiDe = r => TODAS.find(x => x.id === r.pai_id);
@@ -90,7 +90,7 @@ montarCadastro({
     { id: 'sem_pai', nome: 'Fora da hierarquia', cor: 'erro', bloqueia: true, teste: r => nivel(r.codigo) > 1 && !r.pai_id },
     { id: 'cod_pai', nome: 'Código diferente do grupo', cor: 'erro', bloqueia: true, teste: r => paiDe(r) && !r.codigo.startsWith(paiDe(r).codigo + '.') },
     { id: 'tipo_pai', nome: 'Tipo diferente do grupo', cor: 'alerta', teste: r => paiDe(r) && paiDe(r).tipo !== r.tipo },
-    { id: 'sem_dre', nome: 'Sem linha no relatório', cor: 'alerta', bloqueia: true, teste: r => r.aceita_lancamento && !r.grupo_dre },
+    { id: 'sem_dre', nome: 'Sem linha no relatório', cor: 'alerta', bloqueia: true, teste: r => r.aceita_lancamento && r.situacao === 'ativo' && !r.grupo_dre },
     { id: 'grupo_vazio', nome: 'Grupo sem subcategorias', cor: 'neutro', teste: r => !r.aceita_lancamento && !TODAS.some(x => x.pai_id === r.id) },
     { id: 'prod_em_grupo', nome: 'Produtos ligados a grupo', cor: 'erro', teste: (r, e) => !r.aceita_lancamento && e.prods[r.id] }
   ],
@@ -98,6 +98,9 @@ montarCadastro({
     { nome: 'Usar em produtos', dados: { aplica_produtos: true } }, { nome: 'Tirar de produtos', dados: { aplica_produtos: false } }],
   apagado: r => r.situacao === 'inativo',
   tituloRegistro: r => `${r.codigo} ${r.nome}`,
+  // Agrupador: abre/recolhe por grupo (1 › 1.01 › 1.01.001) e ordena o código como número (2 antes de 10)
+  arvore: { chave: r => r.codigo, pai: k => k.includes('.') ? k.slice(0, k.lastIndexOf('.')) : null },
+  ordenarPor: { codigo: r => r.codigo.split('.').map(n => n.padStart(4, '0')).join('.') },
   msgDuplicado: 'Já existe categoria com este código'
 });
 </script>

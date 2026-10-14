@@ -206,7 +206,10 @@ td input[type=checkbox], th input[type=checkbox] { width: 16px; height: 16px; }
 .info { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 16px; font-size: 12.5px; color: var(--texto-suave); }
 .info b { color: var(--texto); font-weight: 500; }
 .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto); margin: 0; }
-.ajuda { font-size: 11.5px; color: var(--texto-suave); margin-top: -10px; margin-bottom: 12px; }
+.ajuda { font-size: 11.5px; line-height: 1.35; color: var(--texto-suave); margin: 4px 0 0; }
+.grade-campos { align-items: start; }
+.campo .chk { min-height: 38px; margin: 0; }
+.campo label .obrig { margin-left: 2px; }
 .campo .obrig { color: var(--destaque); }
 @media (max-width: 860px) { .grade-campos { grid-template-columns: 1fr 1fr; } .grade-campos .l3, .grade-campos .l4 { grid-column: span 2; } .cab-tela { flex-direction: column; } }
 
@@ -239,3 +242,9 @@ td input[type=checkbox], th input[type=checkbox] { width: 16px; height: 16px; }
 .tabela-rolagem td { padding: 7px 10px; }
 @media (max-width: 860px) { .barra-ferr .busca { width: 100%; } .tabela-rolagem { max-height: none; } }
 @media print { .barra-ferr .ferr, .barra-lista .lote, .pendencias { display: none !important; } .tabela-rolagem { max-height: none; overflow: visible; } }
+
+/* Árvore recolhível (ex.: categorias financeiras) */
+.seta { display: inline-block; width: 20px; height: 20px; margin-right: 6px; border: 0; background: none; cursor: pointer; color: var(--texto-suave); font-size: 13px; line-height: 20px; border-radius: 5px; padding: 0; vertical-align: middle; }
+.seta:hover { background: var(--fundo); color: var(--texto); }
+.seta.vazia { cursor: default; } .seta.vazia:hover { background: none; }
+.barra-lista .arv-acoes { margin-left: auto; display: flex; gap: 2px; }
