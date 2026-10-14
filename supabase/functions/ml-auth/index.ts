@@ -3,13 +3,17 @@
 // e guardado na conta (ml_contas) ligada ao canal de venda escolhido na tela. Sem login do sistema (o ML chama direto).
 import { adminDb, trocarCodigo, mlGet } from '../_shared/ml.ts';
 
-const pagina = (titulo: string, texto: string, ok: boolean) => new Response(
-  `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${titulo}</title>
-  <body style="font-family:system-ui,sans-serif;max-width:520px;margin:60px auto;padding:0 16px;color:#222">
-  <h2 style="color:${ok ? '#1a7f37' : '#b42318'}">${titulo}</h2><p>${texto}</p><p style="color:#777">Pode fechar esta janela.</p></body></html>`,
-  { headers: { 'Content-Type': 'text/html; charset=utf-8' }, status: ok ? 200 : 400 });
+// O Supabase não exibe páginas HTML nas funções: o resultado volta para a tela Canais de venda do sistema
+const TELA = 'https://noxperformanceeng.github.io/Noxperformance/pages/cadastros/canais-venda.html';
+const pagina = (titulo: string, texto: string, ok: boolean, canal?: number) => {
+  const u = new URL(TELA);
+  u.searchParams.set('ml', ok ? 'ok' : 'erro');
+  u.searchParams.set('msg', `${titulo}: ${texto.replace(/<[^>]+>/g, '')}`.slice(0, 300));
+  if (canal) u.searchParams.set('canal', String(canal));
+  return new Response(null, { status: 302, headers: { Location: u.toString() } });
+};
 
-const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const esc = (s: string) => s;
 
 Deno.serve(async req => {
   const url = new URL(req.url);
@@ -17,7 +21,8 @@ Deno.serve(async req => {
   if (url.searchParams.get('error')) return pagina('Autorização não concluída', esc(url.searchParams.get('error_description') ?? url.searchParams.get('error')!), false);
   if (!code || !state || !/^[0-9a-f-]{36}$/.test(state)) return pagina('Link inválido', 'Gere um novo link de autorização na tela Canais de venda.', false);
   const db = adminDb();
-  const { data: aut } = await db.from('ml_autorizacoes').select('*').eq('state', state).maybeSingle();
+  const { data: aut, error: eAut } = await db.from('ml_autorizacoes').select('*').eq('state', state).maybeSingle();
+  if (eAut) return pagina('Erro interno', eAut.message, false);
   if (!aut || aut.usado_em || Date.now() - Date.parse(aut.criado_em) > 60 * 60 * 1000)
     return pagina('Link vencido ou já usado', 'Gere um novo link de autorização na tela Canais de venda.', false);
   try {
@@ -34,7 +39,7 @@ Deno.serve(async req => {
     if (error) throw error;
     await db.from('ml_autorizacoes').update({ usado_em: new Date().toISOString() }).eq('state', state);
     await db.from('canais_venda').update({ id_externo: String(t.user_id) }).eq('id', aut.canal_id);
-    return pagina('Conta autorizada', `A conta <b>${esc(eu?.nickname ?? String(t.user_id))}</b> foi ligada ao sistema da NOX (somente leitura).`, true);
+    return pagina('Conta autorizada', `A conta <b>${esc(eu?.nickname ?? String(t.user_id))}</b> foi ligada ao sistema da NOX (somente leitura).`, true, aut.canal_id);
   } catch (e) {
     console.error(e);
     return pagina('Não foi possível autorizar', esc(String((e as Error).message ?? e)).slice(0, 300), false);

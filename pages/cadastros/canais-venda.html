@@ -137,6 +137,14 @@ montarCadastro({
   apagado: r => r.situacao === 'inativo',
   msgDuplicado: 'Já existe canal com este nome'
 });
+// Volta da autorização no Mercado Livre: mostra o resultado e limpa o endereço
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (!q.get('ml')) return;
+  const ok = q.get('ml') === 'ok', msg = q.get('msg') || '';
+  history.replaceState(null, '', location.pathname);
+  setTimeout(() => aviso(msg || (ok ? 'Conta autorizada' : 'Autorização não concluída'), !ok), 900);
+})();
 </script>
 </body>
 </html>
