@@ -11,7 +11,7 @@ const MENU = [
     { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
     { id: 'funcionarios',  nome: 'Funcionários',      arquivo: 'pages/cadastros/funcionarios.html' },
     { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' },
-    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: null /* liberar após 020: 'pages/cadastros/categorias-financeiras.html' */ }
+    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' }
   ]},
   { grupo: 'Comercial', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: null },
