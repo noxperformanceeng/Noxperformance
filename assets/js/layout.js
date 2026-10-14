@@ -10,7 +10,8 @@ const MENU = [
     { id: 'clientes',      nome: 'Clientes',          arquivo: 'pages/cadastros/clientes.html' },
     { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
     { id: 'funcionarios',  nome: 'Funcionários',      arquivo: 'pages/cadastros/funcionarios.html' },
-    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' }
+    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' },
+    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: null /* liberar após 020: 'pages/cadastros/categorias-financeiras.html' */ }
   ]},
   { grupo: 'Comercial', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: null },
@@ -66,7 +67,7 @@ function gravarFechados(v) { try { localStorage.setItem('nox_menu_fechados', JSO
 
 // Chame em toda tela: const ctx = await iniciarTela();
 // A tela declara no <body>: data-modulo="id" (vazio = livre p/ todos) e data-titulo="Nome"
-// data-empresa="sim" → mostra o seletor de empresa no topo (só Financeiro, RH e Funcionários).
+// data-empresa="sim" → mostra o seletor de empresa no menu lateral (só Financeiro, RH e Funcionários).
 // Estoque, almoxarifado, produção e precificação são únicos: sem seletor.
 async function iniciarTela() {
   const ctx = await carregarSessao();
@@ -103,17 +104,23 @@ async function iniciarTela() {
   const conteudo = document.getElementById('conteudo');
   const app = document.createElement('div');
   app.className = 'app';
-  app.innerHTML = `<nav class="menu" id="menu">${menuHtml}</nav>
-    <div class="principal">
-      <header class="topo">
-        <button class="btn-menu" id="btnMenu" aria-label="Abrir menu">☰</button>
-        <select id="seletorEmpresa" class="seletor-empresa" title="Empresa"${document.body.dataset.empresa === 'sim' ? '' : ' hidden'}>
+  // Menu lateral: marca, empresa (quando a tela usa), itens e, no rodapé, usuário + Sair.
+  // A barra de cima só aparece no celular (botão ☰): no computador a tela inteira fica para os dados.
+  const usaEmpresa = document.body.dataset.empresa === 'sim';
+  const marca = menuHtml.slice(0, menuHtml.indexOf('</a>') + 4), itens = menuHtml.slice(menuHtml.indexOf('</a>') + 4);
+  app.innerHTML = `<nav class="menu" id="menu">
+      ${marca}
+      ${usaEmpresa ? `<div class="menu-empresa"><label for="seletorEmpresa">Empresa</label>
+        <select id="seletorEmpresa" title="Empresa">
           <option value="">Consolidado (todas)</option>
           ${ctx.empresas.map(e => `<option value="${e.id}"${e.id === ctx.empresa ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}
-        </select>
-        <div class="usuario"><span><b>${esc(ctx.usuario.nome)}</b> · ${esc(ctx.usuario.perfis?.nome || 'sem perfil')}</span>
-          <button class="btn discreto" onclick="sair()">Sair</button></div>
-      </header>
+        </select></div>` : ''}
+      <div class="menu-itens">${itens}</div>
+      <div class="menu-usuario"><div><b>${esc(ctx.usuario.nome)}</b><small>${esc(ctx.usuario.perfis?.nome || 'sem perfil')}</small></div>
+        <button class="btn-sair" type="button" onclick="sair()">Sair</button></div>
+    </nav>
+    <div class="principal">
+      <header class="topo"><button class="btn-menu" id="btnMenu" aria-label="Abrir menu">☰</button><b>${esc(document.body.dataset.titulo || 'NOX')}</b></header>
     </div>`;
   document.body.prepend(app);
   // Ícone da aba e cabeçalho que aparece só na impressão dos relatórios
@@ -146,7 +153,7 @@ async function iniciarTela() {
     const g = b.parentElement; g.classList.toggle('fechado');
     gravarFechados([...app.querySelectorAll('.grupo.fechado')].map(x => x.dataset.grupo));
   }));
-  document.getElementById('seletorEmpresa').addEventListener('change', e => {
+  document.getElementById('seletorEmpresa')?.addEventListener('change', e => {
     ctx.empresa = e.target.value ? Number(e.target.value) : null;
     gravarEmpresa(ctx.empresa);
     window.dispatchEvent(new CustomEvent('empresa', { detail: ctx.empresa }));

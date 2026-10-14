@@ -73,23 +73,31 @@ async function montarCadastro(cfg) {
   cont.innerHTML = `
     <div class="cab-tela"><div><h1>${esc(cfg.titulo)}</h1><p class="sub">${esc(cfg.subtitulo || '')}</p></div>
       ${podeEditar ? `<button class="btn primario" id="cNovo">+ Novo ${esc(cfg.singular)}</button>` : ''}</div>
-    ${cfg.abas ? '<div class="abas" id="cAbas"></div>' : ''}
-    <div class="pendencias" id="cPend"></div>
-    <div class="cartao filtros">
-      <div style="grid-column: span 2"><label>Buscar (palavras em qualquer ordem)</label><input id="fBusca" placeholder="${esc(cfg.dicaBusca || 'nome, documento, cidade…')}"></div>
+    <div class="barra-ferr">
+      ${cfg.abas ? '<div class="abas" id="cAbas"></div>' : '<div></div>'}
+      <div class="ferr">
+        <input id="fBusca" class="busca" type="search" placeholder="Buscar: ${esc(cfg.dicaBusca || 'nome, documento, cidade…')}" title="Palavras em qualquer ordem">
+        <button class="btn fino" type="button" id="cFiltBtn">Filtros<span class="nfilt" id="cFiltN"></span></button>
+        <div id="cRel"></div>
+      </div>
+    </div>
+    <div class="cartao filtros painel-filtros" id="cFilt" hidden>
       ${filtrosCampo.map(c => `<div><label>${esc(c.label)}</label><select data-filtro="${c.id}"><option value="">Todos</option></select></div>`).join('')}
       ${cfg.revisao ? '<div><label>Revisão</label><select id="fRev"><option value="">Todas</option><option value="neutro">Não revisado</option><option value="ok">Revisado</option><option value="alerta">Alterado após revisão</option></select></div>' : ''}
-      <div><label>Período</label><select id="fPerCampo">${(cfg.periodos || [{ campo: 'atualizado_em', label: 'Última alteração' }]).map(p => `<option value="${p.campo}">${esc(p.label)}</option>`).join('')}</select></div>
+      <div><label>Período por</label><select id="fPerCampo" data-fixo="1">${(cfg.periodos || [{ campo: 'atualizado_em', label: 'Última alteração' }]).map(p => `<option value="${p.campo}">${esc(p.label)}</option>`).join('')}</select></div>
       <div><label>De</label><input type="date" id="fDe"></div>
       <div><label>Até</label><input type="date" id="fAte"></div>
+      <div class="limpar"><button class="btn discreto fino" type="button" id="cLimpar">Limpar filtros</button></div>
     </div>
-    <div class="barra"><span id="cCont" class="sub" style="margin:0"></span><div class="lote" id="cLote" hidden></div><div id="cRel"></div></div>
+    <div class="pendencias" id="cPend"></div>
+    <div class="barra-lista"><span id="cCont"></span><div class="lote" id="cLote" hidden></div></div>
     <div class="cartao tabela-rolagem"><table><thead><tr id="cHead"></tr></thead><tbody id="cLista"><tr><td class="vazio">Carregando…</td></tr></tbody></table></div>
-    <p class="sub" id="cRodape" style="margin-top:10px"></p>`;
+    <p class="sub" id="cRodape" style="margin-top:8px"></p>`;
   const $ = s => cont.querySelector(s);
   if (podeEditar) $('#cNovo').onclick = () => abrir(null);
   $('#fBusca').addEventListener('input', desenhar);
   cont.querySelectorAll('.filtros select, .filtros input[type=date]').forEach(e => e.addEventListener('change', desenhar));
+  ligarPainelFiltros(cont, cfg.tabela, desenhar);
   if (cfg.porEmpresa) window.addEventListener('empresa', desenhar);
 
   const colunas = campos.filter(c => c.lista);
@@ -155,13 +163,11 @@ async function montarCadastro(cfg) {
       cont.querySelectorAll('#cAbas .aba').forEach(b => b.onclick = () => { aba = b.dataset.v; selecionados.clear(); desenhar(); });
     }
     const base = filtrar(true);
-    $('#cPend').innerHTML = PEND.length ? '<span>Pendências:</span>' + PEND.map(p => {
-      const n = base.filter(r => r._pend.includes(p.id)).length;
-      return `<button class="pend${pendAtual === p.id ? ' ativa' : ''}${n ? '' : ' zero'}" data-p="${p.id}"><i class="c-${p.cor}"></i>${esc(p.nome)} <b>${n}</b></button>`;
-    }).join('') : '';
+    $('#cPend').innerHTML = desenharPendencias(PEND.map(p => ({ ...p, n: base.filter(r => r._pend.includes(p.id)).length })), pendAtual);
     cont.querySelectorAll('.pend').forEach(b => b.onclick = () => { pendAtual = pendAtual === b.dataset.p ? '' : b.dataset.p; desenhar(); });
 
     visiveis = filtrar(false);
+    contarFiltros(cont);
     const k = ordem.campo, dir = ordem.asc ? 1 : -1;
     const chave = r => k === '_rev' ? ({ alerta: 0, neutro: 1, ok: 2 }[statusRev(r).cls]) : semAcento(r[k] ?? '￿');
     visiveis.sort((a, b) => (chave(a) > chave(b) ? 1 : chave(a) < chave(b) ? -1 : 0) * dir);

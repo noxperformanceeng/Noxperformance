@@ -22,26 +22,31 @@
 </head>
 <body data-modulo="auditoria" data-titulo="Auditoria">
 <main id="conteudo">
-  <h1>Auditoria</h1>
-  <p class="sub">Toda inclusão, alteração e exclusão de dados: quem fez, quando, em qual tela, o que era e como ficou.</p>
+  <div class="cab-tela"><div><h1>Auditoria</h1>
+    <p class="sub">Toda inclusão, alteração e exclusão de dados: quem fez, quando, em qual tela, o que era e como ficou.</p></div></div>
 
-  <div class="cartao filtros">
-    <div><label>De</label><input type="date" id="fDe"></div>
-    <div><label>Até</label><input type="date" id="fAte"></div>
+  <div class="barra-ferr">
+    <div class="periodo filtros"><div><label>De</label><input type="date" id="fDe"></div><div><label>Até</label><input type="date" id="fAte"></div></div>
+    <div class="ferr">
+      <input id="fBusca" class="busca" type="search" placeholder="Buscar: valor, nome, código…">
+      <button class="btn fino" type="button" id="btnFiltros">Filtros<span class="nfilt" id="nFiltros"></span></button>
+      <div id="relAuditoria"></div>
+    </div>
+  </div>
+  <div class="cartao filtros painel-filtros" hidden>
     <div><label>Usuário</label><select id="fUsuario"><option value="">Todos</option></select></div>
     <div><label>Tela</label><select id="fTela"><option value="">Todas</option></select></div>
     <div><label>Ação</label><select id="fAcao"><option value="">Todas</option><option value="incluiu">Incluiu</option><option value="alterou">Alterou</option><option value="excluiu">Excluiu</option></select></div>
-    <div><label>Buscar</label><input id="fBusca" placeholder="valor, nome, código…"></div>
+    <div class="limpar"><button class="btn discreto fino" type="button" id="btnLimpar">Limpar filtros</button></div>
   </div>
-
-  <div class="barra"><span></span><div id="relAuditoria"></div></div>
+  <div class="barra-lista"><span id="contagem"></span></div>
   <div class="cartao tabela-rolagem">
     <table>
       <thead><tr><th>Data</th><th>Hora</th><th>Usuário</th><th>Tela</th><th>Ação</th><th>Registro</th><th>O que era → como ficou</th></tr></thead>
       <tbody id="lista"><tr><td colspan="7" class="vazio">Carregando…</td></tr></tbody>
     </table>
   </div>
-  <p class="sub" id="rodape" style="margin-top:12px"></p>
+  <p class="sub" id="rodape" style="margin-top:8px"></p>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -65,6 +70,7 @@ let linhas = [], visiveis = [];
   ['fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', carregar));
   ['fUsuario', 'fTela', 'fAcao'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
   document.getElementById('fBusca').addEventListener('input', desenhar);
+  ligarPainelFiltros(document.getElementById('conteudo'), 'auditoria', desenhar);
   // Aberta a partir de outra tela (ex.: "Ver histórico" do produto): já filtra e amplia o período
   const busca = new URLSearchParams(location.search).get('busca');
   if (busca) { document.getElementById('fBusca').value = busca; document.getElementById('fDe').value = '2026-01-01'; }
@@ -141,8 +147,9 @@ function desenhar() {
       <td class="mud">${resumo(l)}</td></tr>`;
   }).join('') : '<tr><td colspan="7" class="vazio">Nenhuma movimentação no período.</td></tr>';
 
-  document.getElementById('rodape').textContent = `${vis.length} de ${linhas.length} registros` +
-    (linhas.length === LIMITE ? ` · mostrando os ${LIMITE} mais recentes; reduza o período para ver mais antigos` : '');
+  document.getElementById('contagem').textContent = `${vis.length} de ${linhas.length} registros`;
+  contarFiltros(document.getElementById('conteudo'));
+  document.getElementById('rodape').textContent = (linhas.length === LIMITE ? `Mostrando os ${LIMITE} mais recentes; reduza o período para ver mais antigos` : '');
   document.querySelectorAll('#lista tr[data-id]').forEach(tr => tr.addEventListener('click', () => detalhe(+tr.dataset.id)));
 }
 

@@ -111,3 +111,34 @@ function lerNumero(v) {
   else if (/^-?\d{1,3}(\.\d{3})+$/.test(v)) v = v.replace(/\./g, '');
   return Number(v);
 }
+
+/* ---------- Barra de filtros compacta (comum a todas as telas) ---------- */
+// Painel de filtros recolhível: lembra se estava aberto (por tela) e mostra quantos filtros estão ativos
+function ligarPainelFiltros(raiz, chave, aoMudar) {
+  const painel = raiz.querySelector('.painel-filtros'), btn = raiz.querySelector('#cFiltBtn, #btnFiltros');
+  const k = 'nox_filtros_' + chave;
+  try { if (localStorage.getItem(k) === '1') painel.hidden = false; } catch {}
+  btn.classList.toggle('ativo', !painel.hidden);
+  btn.onclick = () => { painel.hidden = !painel.hidden; btn.classList.toggle('ativo', !painel.hidden); try { localStorage.setItem(k, painel.hidden ? '0' : '1'); } catch {} };
+  const limpar = painel.querySelector('#cLimpar, #btnLimpar');
+  if (limpar) limpar.onclick = () => {
+    painel.querySelectorAll('select').forEach(s => { if (!s.dataset.fixo) s.selectedIndex = 0; });
+    painel.querySelectorAll('input').forEach(i => i.value = '');
+    aoMudar();
+  };
+}
+function contarFiltros(raiz) {
+  const painel = raiz.querySelector('.painel-filtros'); if (!painel) return;
+  const n = [...painel.querySelectorAll('select')].filter(s => !s.dataset.fixo && s.selectedIndex > 0).length
+          + [...painel.querySelectorAll('input[type=date]')].filter(i => i.value).length;
+  const el = raiz.querySelector('#cFiltN, #nFiltros'); if (el) el.textContent = n ? ` · ${n}` : '';
+  raiz.querySelector('#cFiltBtn, #btnFiltros')?.classList.toggle('com-filtro', n > 0);
+}
+// Pendências: mostra só as que têm itens (e a selecionada), numa linha discreta
+function desenharPendencias(lista, atual) {
+  const vis = lista.filter(p => p.n || p.id === atual);
+  if (!lista.length) return '';
+  if (!vis.length) return '<span class="ok-pend">✓ Sem pendências nesta lista</span>';
+  return '<span>Pendências</span>' + vis.map(p =>
+    `<button class="pend${atual === p.id ? ' ativa' : ''}" data-p="${p.id}"><i class="c-${p.cor}"></i>${esc(p.nome)} <b>${p.n}</b></button>`).join('');
+}

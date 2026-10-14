@@ -8,29 +8,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../assets/css/style.css">
 <style>
-  .cab-tela { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
-  .cab-tela .sub { margin: 0; }
-  .abas { flex-wrap: wrap; }
-  .aba .n { color: var(--texto-suave); font-weight: 400; margin-left: 4px; }
-  .pendencias { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
-  .pendencias > span { color: var(--texto-suave); font-size: 12px; margin-right: 2px; }
-  .pend { border: 1px solid var(--linha); background: var(--superficie); border-radius: 20px; padding: 5px 12px; font: 500 12.5px var(--fonte); cursor: pointer; color: var(--texto); display: inline-flex; gap: 6px; align-items: center; }
-  .pend b { font-weight: 600; }
-  .pend i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-  .pend.ativa { border-color: var(--destaque); box-shadow: 0 0 0 1px var(--destaque); }
-  .pend.zero { opacity: .45; }
-  .c-erro { background: var(--erro); } .c-alerta { background: #d97706; } .c-neutro { background: #9aa0a8; }
   td.cod { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 500; }
   td.desc small { display: block; color: var(--texto-suave); font-size: 12px; margin-top: 2px; }
   tr.inativo td { color: #9aa0a8; }
-  .tg { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; margin: 1px 2px 1px 0; white-space: nowrap; }
-  .tg.erro { background: #fdeceb; color: var(--erro); } .tg.alerta { background: #fff4e5; color: #b45309; }
-  .tg.ok { background: #e8f5ec; color: var(--ok); } .tg.neutro { background: var(--fundo); color: var(--texto-suave); }
-  .rev small { display: block; color: var(--texto-suave); font-size: 11px; margin-top: 3px; }
-  th.ord { cursor: pointer; user-select: none; } th.ord:hover { color: var(--texto); }
   td input[type=checkbox], th input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--destaque); }
-  .lote { display: flex; gap: 8px; align-items: center; }
-  .lote span { font-weight: 500; }
   /* janela do produto */
   .modal.produto { max-width: 820px; max-height: 92vh; overflow: auto; }
   .grade-campos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 14px; }
@@ -56,12 +37,17 @@
     <button class="btn primario" id="btnNovo" hidden>+ Novo produto</button>
   </div>
 
-  <div class="abas" id="abasTipo"></div>
-  <div class="pendencias" id="pendencias"></div>
-
-  <div class="cartao filtros">
-    <div style="grid-column: span 2"><label>Buscar (código, descrição, grupo, fornecedor — palavras em qualquer ordem)</label><input id="fBusca" placeholder="ex.: abr inox 25"></div>
+  <div class="barra-ferr">
+    <div class="abas" id="abasTipo"></div>
+    <div class="ferr">
+      <input id="fBusca" class="busca" type="search" placeholder="Buscar: código, descrição, grupo, fornecedor…" title="Palavras em qualquer ordem (ex.: abr inox 25)">
+      <button class="btn fino" type="button" id="btnFiltros">Filtros<span class="nfilt" id="nFiltros"></span></button>
+      <div id="relProdutos"></div>
+    </div>
+  </div>
+  <div class="cartao filtros painel-filtros" hidden>
     <div><label>Grupo</label><select id="fGrupo"><option value="">Todos</option></select></div>
+    <div id="blFCat"><label>Categoria financeira</label><select id="fCat"><option value="">Todas</option><option value="-">Sem categoria</option></select></div>
     <div><label>Fornecedor</label><select id="fForn"><option value="">Todos</option><option value="-">Sem fornecedor</option></select></div>
     <div><label>Situação</label><select id="fSit"><option value="ativo">Ativos</option><option value="inativo">Inativos</option><option value="">Todos</option></select></div>
     <div><label>Revisão</label><select id="fRev"><option value="">Todas</option><option value="nao">Não revisado</option><option value="ok">Revisado</option><option value="alt">Alterado após revisão</option></select></div>
@@ -69,13 +55,10 @@
     <div><label>Movimento no Tiny (desde 2025)</label><select id="fMov"><option value="">Todos</option><option value="sim">Com movimento</option><option value="nao">Sem movimento</option></select></div>
     <div><label>Alterado de</label><input type="date" id="fDe"></div>
     <div><label>até</label><input type="date" id="fAte"></div>
+    <div class="limpar"><button class="btn discreto fino" type="button" id="btnLimpar">Limpar filtros</button></div>
   </div>
-
-  <div class="barra">
-    <span id="contagem" class="sub" style="margin:0"></span>
-    <div class="lote" id="lote" hidden></div>
-    <div id="relProdutos"></div>
-  </div>
+  <div class="pendencias" id="pendencias"></div>
+  <div class="barra-lista"><span id="contagem"></span><div class="lote" id="lote" hidden></div></div>
 
   <div class="cartao tabela-rolagem">
     <table>
@@ -124,12 +107,15 @@ const PEND = [
   { id: 'descricao',      nome: 'Descrição suspeita',    cor: 'erro' },
   { id: 'sem_fornecedor', nome: 'Sem fornecedor',        cor: 'alerta' },
   { id: 'sem_unidade',    nome: 'Sem unidade',           cor: 'alerta' },
+  { id: 'sem_categoria',  nome: 'Sem categoria financeira', cor: 'alerta' },
   { id: 'alterado',       nome: 'Alterado após revisão', cor: 'alerta' },
   { id: 'nao_revisado',   nome: 'Não revisado',          cor: 'neutro' }
 ];
 
 let ctx, podeEditar = false;
-let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {};
+let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {}, categorias = [];
+const catDe = id => categorias.find(c => c.id === id);
+const nomeCat = id => { const c = catDe(id); return c ? `${c.codigo} ${c.nome}` : ''; };
 let tipoAtual = 'materia_prima', pendAtual = '', ordem = { campo: 'codigo', asc: true };
 let visiveis = [], selecionados = new Set();
 
@@ -142,7 +128,8 @@ let visiveis = [], selecionados = new Set();
   document.getElementById('btnNovo').onclick = () => abrirProduto(null);
 
   ['fBusca'].forEach(id => document.getElementById(id).addEventListener('input', desenhar));
-  ['fGrupo', 'fForn', 'fSit', 'fRev', 'fUn', 'fMov', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
+  ligarPainelFiltros(document.getElementById('conteudo'), 'produtos', () => { preencherFiltros(); desenhar(); });
+  ['fGrupo', 'fCat', 'fForn', 'fSit', 'fRev', 'fUn', 'fMov', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
   document.querySelectorAll('th.ord').forEach(th => th.onclick = () => {
     ordem = { campo: th.dataset.ord, asc: ordem.campo === th.dataset.ord ? !ordem.asc : true }; desenhar();
   });
@@ -151,9 +138,9 @@ let visiveis = [], selecionados = new Set();
   };
   botoesRelatorio('relProdutos', () => ({
     arquivo: 'produtos_' + (tipoAtual || 'todos'),
-    colunas: ['Código', 'Descrição', 'Tipo', 'Grupo', 'Unid. estoque', 'Unid. compra', 'Fator', 'Situação', 'Fornecedores', 'NCM', 'Revisão', 'Revisado por', 'Revisado em',
+    colunas: ['Código', 'Descrição', 'Tipo', 'Grupo', 'Categoria financeira', 'Unid. estoque', 'Unid. compra', 'Fator', 'Situação', 'Fornecedores', 'NCM', 'Revisão', 'Revisado por', 'Revisado em',
               'Última alteração', 'Alterado por', 'Pendências', 'Entradas Tiny desde 2025', 'Saldo Tiny 09/10/2026'],
-    linhas: visiveis.map(p => [p.codigo, p.descricao, NOME_TIPO[p.tipo], p.grupo, p.unidade, p.unidade_compra, p.fator_compra ? String(p.fator_compra).replace('.', ',') : '', p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
+    linhas: visiveis.map(p => [p.codigo, p.descricao, NOME_TIPO[p.tipo], p.grupo, nomeCat(p.categoria_financeira_id), p.unidade, p.unidade_compra, p.fator_compra ? String(p.fator_compra).replace('.', ',') : '', p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
       fornDe(p.id).map(v => v.nome).join(', '), p.ncm, statusRevisao(p).texto, nomes[p.revisado_por] || '', dataHoraBR(p.revisado_em),
       dataHoraBR(p.atualizado_em), nomes[p.atualizado_por] || '', [...p._pend].filter(x => x !== 'nao_revisado').map(x => PEND.find(y => y.id === x).nome).join(', '),
       p.ref_tiny?.entradas_2025 ?? '', p.ref_tiny?.saldo_tiny ?? ''])
@@ -172,6 +159,9 @@ async function carregar() {
       db.rpc('produtos_duplicados')
     ]);
     produtos = lista; vinculos = vinc; fornecedores = forn;
+    // Plano de categorias (se a tabela ainda não existir, a tela segue sem ela)
+    const cat = await db.from('categorias_financeiras').select('id, codigo, nome, tipo, aceita_lancamento, aplica_produtos, situacao').order('codigo');
+    categorias = cat.error ? [] : cat.data || [];
     nomes = Object.fromEntries((nm.data || []).map(u => [u.id, u.nome]));
     dups = {};
     (dp.data || []).forEach(d => {
@@ -205,10 +195,18 @@ function pendencias(p) {
   if (/\.(dxf|dwg|pdf|step|stp)\b/i.test(p.descricao) || (p.descricao || '').trim().length < 6) s.add('descricao');
   if (p.situacao === 'ativo' && COMPRADOS.includes(p.tipo) && !vinculos.some(v => v.produto_id === p.id)) s.add('sem_fornecedor');
   if (p.situacao === 'ativo' && !p.unidade) s.add('sem_unidade');
+  // Categoria financeira: obrigatória para o que é comprado (a compra herda a categoria na NF)
+  if (p.situacao === 'ativo' && categorias.length && COMPRADOS.includes(p.tipo) && !p.categoria_financeira_id) s.add('sem_categoria');
   const r = statusRevisao(p).cls;
   if (r === 'alerta') s.add('alterado');
   if (r === 'neutro') s.add('nao_revisado');
   return s;
+}
+
+// Só categorias que recebem lançamento e estão marcadas para produtos (mantém a atual mesmo se mudou)
+function opcoesCat(atual) {
+  return categorias.filter(c => (c.aceita_lancamento && c.aplica_produtos && c.situacao === 'ativo') || c.id === atual)
+    .map(c => `<option value="${c.id}"${c.id === atual ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
 }
 
 function preencherFiltros() {
@@ -219,6 +217,11 @@ function preencherFiltros() {
     el.value = [...el.options].some(o => o.value === atual) ? atual : '';
   };
   opc('fGrupo', [...new Set(base.map(p => p.grupo).filter(Boolean))].sort(), '<option value="">Todos</option>');
+  document.getElementById('blFCat').hidden = !categorias.length;
+  const cats = categorias.filter(c => base.some(p => p.categoria_financeira_id === c.id));
+  const ec = document.getElementById('fCat'), ac = ec.value;
+  ec.innerHTML = '<option value="">Todas</option><option value="-">Sem categoria</option>' + cats.map(c => `<option value="${c.id}">${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
+  ec.value = [...ec.options].some(o => o.value === ac) ? ac : '';
   opc('fUn', [...new Set(base.map(p => p.unidade).filter(Boolean))].sort(), '<option value="">Todas</option><option value="-">Sem unidade</option>');
   const usados = new Set(vinculos.map(v => v.fornecedor_id));
   const fs = fornecedores.filter(f => usados.has(f.id));
@@ -237,6 +240,7 @@ function filtrar(ignorarPend) {
     if (tipoAtual && p.tipo !== tipoAtual) return false;
     if (v('fSit') && p.situacao !== v('fSit')) return false;
     if (v('fGrupo') && p.grupo !== v('fGrupo')) return false;
+    if (v('fCat') && (v('fCat') === '-' ? p.categoria_financeira_id : String(p.categoria_financeira_id) !== v('fCat'))) return false;
     if (v('fUn') && (v('fUn') === '-' ? p.unidade : p.unidade !== v('fUn'))) return false;
     if (v('fForn')) {
       const fs = vinculos.filter(x => x.produto_id === p.id);
@@ -252,7 +256,7 @@ function filtrar(ignorarPend) {
     }
     if (de && new Date(p.atualizado_em) < new Date(de + 'T00:00:00')) return false;
     if (ate && new Date(p.atualizado_em) > new Date(ate + 'T23:59:59.999')) return false;
-    if (busca && !combinaBusca(`${p.codigo} ${p.descricao} ${p.grupo} ${fornDe(p.id).map(f => f.nome + ' ' + (f.codigo_fornecedor || '')).join(' ')}`, busca)) return false;
+    if (busca && !combinaBusca(`${p.codigo} ${p.descricao} ${p.grupo} ${nomeCat(p.categoria_financeira_id)} ${fornDe(p.id).map(f => f.nome + ' ' + (f.codigo_fornecedor || '')).join(' ')}`, busca)) return false;
     if (!ignorarPend && pendAtual && !p._pend.has(pendAtual)) return false;
     return true;
   });
@@ -271,10 +275,8 @@ function desenhar() {
 
   // Pendências (contadas sobre os filtros atuais, sem o filtro de pendência)
   const base = filtrar(true);
-  document.getElementById('pendencias').innerHTML = '<span>Pendências:</span>' + PEND.map(x => {
-    const n = base.filter(p => p._pend.has(x.id)).length;
-    return `<button class="pend${pendAtual === x.id ? ' ativa' : ''}${n ? '' : ' zero'}" data-p="${x.id}"><i class="c-${x.cor}"></i>${x.nome} <b>${n}</b></button>`;
-  }).join('');
+  document.getElementById('pendencias').innerHTML = desenharPendencias(PEND.map(x => ({ ...x, n: base.filter(p => p._pend.has(x.id)).length })), pendAtual);
+  contarFiltros(document.getElementById('conteudo'));
   document.querySelectorAll('.pend').forEach(b => b.onclick = () => { pendAtual = pendAtual === b.dataset.p ? '' : b.dataset.p; desenhar(); });
 
   // Lista
@@ -295,7 +297,7 @@ function desenhar() {
     return `<tr data-id="${p.id}" class="${p.situacao === 'inativo' ? 'inativo' : ''}" style="cursor:pointer">
       <td class="nao-imprimir"><input type="checkbox" class="sel" data-id="${p.id}" ${selecionados.has(p.id) ? 'checked' : ''}></td>
       <td class="cod">${esc(p.codigo || '—')}</td>
-      <td class="desc">${esc(p.descricao)}${p.grupo ? `<small>${esc(p.grupo)}</small>` : ''}</td>
+      <td class="desc">${esc(p.descricao)}${p.grupo || p.categoria_financeira_id ? `<small>${esc([p.grupo, catDe(p.categoria_financeira_id)?.nome].filter(Boolean).join(' · '))}</small>` : ''}</td>
       ${tipoAtual ? '' : `<td>${NOME_TIPO[p.tipo] || p.tipo}</td>`}
       <td>${esc(p.unidade || '')}</td>
       <td>${fs.length ? esc(fs[0].nome) + (fs.length > 1 ? ` <span class="tg neutro">+${fs.length - 1}</span>` : '') : ''}</td>
@@ -322,11 +324,12 @@ function desenharLote() {
   if (el.hidden) return;
   el.innerHTML = `<span>${selecionados.size} selecionado${selecionados.size > 1 ? 's' : ''}</span>
     <button class="btn primario" id="lRev">Marcar como revisados</button>
+    ${categorias.length ? `<select id="lCat" style="max-width:260px"><option value="">Definir categoria financeira…</option>${opcoesCat()}</select>` : ''}
     <button class="btn" id="lInat">Inativar</button><button class="btn" id="lAtiv">Ativar</button>
     <button class="btn discreto" id="lLimpa">Limpar</button>`;
   el.querySelector('#lRev').onclick = async () => {
     // Só revisa quem está completo: pendência impeditiva fica de fora (qualidade do cadastro)
-    const BLOQ = ['duplicado', 'sem_codigo', 'descricao', 'sem_fornecedor', 'sem_unidade'];
+    const BLOQ = ['duplicado', 'sem_codigo', 'descricao', 'sem_fornecedor', 'sem_unidade', 'sem_categoria'];
     const sel = produtos.filter(p => selecionados.has(p.id));
     const ok = sel.filter(p => !BLOQ.some(b => p._pend.has(b))).map(p => p.id);
     const fora = sel.length - ok.length;
@@ -336,6 +339,13 @@ function desenharLote() {
     if (error) return aviso('Não salvou: ' + error.message, true);
     aviso(`${ok.length} revisado(s)` + (fora ? ` · ${fora} com pendência ficaram de fora` : '')); selecionados.clear(); carregar();
   };
+  el.querySelector('#lCat')?.addEventListener('change', async e => {
+    const id = Number(e.target.value); if (!id) return;
+    if (!confirm(`Definir "${nomeCat(id)}" em ${selecionados.size} produto(s)?`)) { e.target.value = ''; return; }
+    const { error } = await db.from('produtos').update({ categoria_financeira_id: id }).in('id', [...selecionados]);
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    aviso('Categoria definida'); selecionados.clear(); carregar();
+  });
   const situacao = async s => {
     if (!confirm(`${s === 'inativo' ? 'Inativar' : 'Ativar'} ${selecionados.size} produto(s)?`)) return;
     const { error } = await db.from('produtos').update({ situacao: s }).in('id', [...selecionados]);
@@ -367,6 +377,7 @@ function abrirProduto(p) {
       <div class="campo"><label>Unid. de estoque / uso</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
       <div class="campo l4"><label>Descrição</label><input id="pDesc" value="${esc(p.descricao || '')}" ${ro}></div>
       <div class="campo l2"><label>Grupo</label><input id="pGrupo" list="dlGrupos" value="${esc(p.grupo || '')}" placeholder="ex.: Tubo, Abraçadeira, Intake" ${ro}></div>
+      <div class="campo l2"${categorias.length ? '' : ' hidden'}><label>Categoria financeira</label><select id="pCat" ${ro}><option value="">— escolher —</option>${opcoesCat(p.categoria_financeira_id)}</select></div>
       <div class="campo"><label>NCM</label><input id="pNcm" value="${esc(p.ncm || '')}" ${ro}></div>
       <div class="campo"><label>GTIN / EAN</label><input id="pGtin" value="${esc(p.gtin || '')}" ${ro}></div>
     </div>
@@ -526,6 +537,7 @@ function abrirProduto(p) {
     if (COM_ENGENHARIA.includes(dados.tipo)) Object.assign(dados, {
       codigo_desenho: $('#pDesenho').value.trim() || null, peso_kg: n('#pPeso'), comprimento_cm: n('#pComp'), largura_cm: n('#pLarg'), altura_cm: n('#pAlt')
     });
+    if (categorias.length) dados.categoria_financeira_id = Number($('#pCat').value) || null;   // só depois do SQL 020
     if (!dados.descricao) return aviso('Informe a descrição', true);
     if (dados.unidade_compra && !(dados.fator_compra > 0)) return aviso(`Informe o fator: quantos ${dados.unidade || 'unid. de estoque'} há em 1 ${dados.unidade_compra}`, true);
     if ([dados.estoque_minimo, dados.peso_kg, dados.comprimento_cm, dados.largura_cm, dados.altura_cm].some(x => x !== undefined && x !== null && isNaN(x)))

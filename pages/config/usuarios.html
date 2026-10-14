@@ -10,29 +10,33 @@
 </head>
 <body data-modulo="usuarios" data-titulo="Usuários e acessos">
 <main id="conteudo">
-  <h1>Usuários e acessos</h1>
-  <p class="sub">Cada usuário recebe um perfil e, se precisar, telas a mais ou a menos só para ele.</p>
+  <div class="cab-tela"><div><h1>Usuários e acessos</h1>
+    <p class="sub">Cada usuário recebe um perfil e, se precisar, telas a mais ou a menos só para ele.</p></div></div>
 
-  <div class="abas">
-    <button class="aba ativa" data-aba="usuarios">Usuários</button>
-    <button class="aba" data-aba="perfis">Perfis</button>
-    <button class="aba" data-aba="empresas">Empresas</button>
+  <div class="barra-ferr">
+    <div class="abas">
+      <button class="aba ativa" data-aba="usuarios">Usuários</button>
+      <button class="aba" data-aba="perfis">Perfis</button>
+      <button class="aba" data-aba="empresas">Empresas</button>
+    </div>
+    <div class="ferr" id="ferrUsuarios">
+      <input id="busca" class="busca" type="search" placeholder="Buscar: nome ou e-mail">
+      <button class="btn fino" type="button" id="btnFiltros">Filtros<span class="nfilt" id="nFiltros"></span></button>
+      <div id="relUsuarios"></div>
+    </div>
   </div>
 
   <!-- ABA USUÁRIOS -->
   <section id="aba-usuarios">
-    <div class="cartao filtros">
-      <div><label>Buscar</label><input id="busca" placeholder="Nome ou e-mail"></div>
+    <div class="cartao filtros painel-filtros" hidden>
       <div><label>Perfil</label><select id="fPerfil"><option value="">Todos</option><option value="-">Sem perfil</option></select></div>
       <div><label>Situação</label><select id="fAtivo"><option value="">Todas</option><option value="1">Ativo</option><option value="0">Inativo</option></select></div>
       <div><label>Telas extras</label><select id="fExtras"><option value="">Todos</option><option value="1">Com ajuste individual</option></select></div>
       <div><label>Cadastrado de</label><input type="date" id="fDe"></div>
       <div><label>até</label><input type="date" id="fAte"></div>
+      <div class="limpar"><button class="btn discreto fino" type="button" id="btnLimpar">Limpar filtros</button></div>
     </div>
-    <div class="barra">
-      <small class="sub nao-imprimir" style="margin:0">Novo usuário: Supabase → Authentication → Users → Add user (marque "Auto Confirm User").</small>
-      <div id="relUsuarios"></div>
-    </div>
+    <div class="barra-lista"><span id="contagem"></span><small class="nao-imprimir" style="margin-left:auto">Novo usuário: Supabase → Authentication → Users → Add user (marque "Auto Confirm User").</small></div>
     <div class="cartao tabela-rolagem">
       <table>
         <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Telas extras</th><th>Situação</th><th>Cadastro</th><th></th></tr></thead>
@@ -85,9 +89,11 @@ const NIVEL = { ver: 'Ver', editar: 'Ver e editar', nenhum: 'Bloqueado' };
   document.querySelectorAll('.aba').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('.aba').forEach(x => x.classList.toggle('ativa', x === b));
     document.querySelectorAll('main section').forEach(s => s.hidden = s.id !== 'aba-' + b.dataset.aba);
+    document.getElementById('ferrUsuarios').hidden = b.dataset.aba !== 'usuarios';
   }));
   ['busca', 'fPerfil', 'fAtivo', 'fExtras', 'fDe', 'fAte'].forEach(id =>
     document.getElementById(id).addEventListener(id === 'busca' ? 'input' : 'change', desenharUsuarios));
+  ligarPainelFiltros(document.getElementById('conteudo'), 'usuarios', desenharUsuarios);
   botoesRelatorio('relUsuarios', () => ({
     arquivo: 'usuarios',
     colunas: ['Nome', 'E-mail', 'Perfil', 'Telas extras', 'Situação', 'Cadastro'],
@@ -150,6 +156,8 @@ function desenharUsuarios() {
       <td style="text-align:right">${ctx.admin ? `<button class="btn discreto" data-editar="${u.id}">Editar</button>` : ''}</td></tr>`;
   }).join('') : '<tr><td colspan="7" class="vazio">Nenhum usuário com esses filtros.</td></tr>';
 
+  document.getElementById('contagem').textContent = `${lista.length} usuário${lista.length === 1 ? '' : 's'}`;
+  contarFiltros(document.getElementById('conteudo'));
   document.querySelectorAll('[data-perfil]').forEach(s => s.addEventListener('change', async () => {
     const { error } = await db.from('usuarios').update({ perfil_id: s.value || null }).eq('id', s.dataset.perfil);
     if (error) return aviso('Não salvou: ' + error.message, true);
