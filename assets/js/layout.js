@@ -11,7 +11,10 @@ const MENU = [
     { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
     { id: 'funcionarios',  nome: 'Funcionários',      arquivo: 'pages/cadastros/funcionarios.html' },
     { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' },
-    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' }
+    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' },
+    { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html' },
+    { id: 'condicoes_pagamento', nome: 'Formas de pagamento', arquivo: 'pages/financeiro/formas-pagamento.html' },
+    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html' }
   ]},
   { grupo: 'Comercial', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: null },
@@ -40,10 +43,7 @@ const MENU = [
     { id: 'pagar',         nome: 'Contas a pagar',    arquivo: 'pages/financeiro/contas-pagar.html' },
     { id: 'receber',       nome: 'Contas a receber',  arquivo: null },
     { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: null },
-    { id: 'notas',         nome: 'Notas fiscais',     arquivo: null },
-    { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html' },
-    { id: 'condicoes_pagamento', nome: 'Formas de pagamento', arquivo: 'pages/financeiro/formas-pagamento.html' },
-    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html' }
+    { id: 'notas',         nome: 'Notas fiscais',     arquivo: null }
   ]},
   { grupo: 'RH', itens: [
     { id: 'colaboradores', nome: 'Colaboradores',     arquivo: null },

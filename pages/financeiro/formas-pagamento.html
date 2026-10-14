@@ -21,6 +21,7 @@ const TIPOS = [{ v: 'boleto', n: 'Boleto' }, { v: 'pix', n: 'PIX' }, { v: 'trans
   { v: 'cartao_debito', n: 'Cartão de débito' }, { v: 'debito_automatico', n: 'Débito automático' }, { v: 'dinheiro', n: 'Dinheiro' }, { v: 'guia', n: 'Guia de imposto (DAS, DARF, GPS…)' }, { v: 'outro', n: 'Outro' }];
 
 montarCadastro({
+  textoNovo: '+ Nova forma',
   tabela: 'formas_pagamento', modulo: 'condicoes_pagamento', titulo: 'Formas de pagamento', singular: 'forma', plural: 'formas',
   subtitulo: 'Como cada título é pago. Boleto e guia pedem o código de barras no contas a pagar.',
   ordem: 'nome', revisao: false,

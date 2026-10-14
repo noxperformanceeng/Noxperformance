@@ -21,6 +21,7 @@ const TIPOS = [{ v: 'corrente', n: 'Conta corrente' }, { v: 'pagamentos', n: 'Co
   { v: 'caixa', n: 'Caixa (dinheiro)' }, { v: 'aplicacao', n: 'Aplicação' }, { v: 'historico', n: 'Histórico (lançamentos antigos sem conciliação)' }];
 
 montarCadastro({
+  textoNovo: '+ Nova conta',
   tabela: 'contas_bancarias', modulo: 'contas_bancarias', titulo: 'Contas bancárias', singular: 'conta', plural: 'contas',
   subtitulo: 'Contas de cada empresa (CNPJ). Pagamentos, recebimentos e conciliação usam estas contas; o seletor de empresa no menu filtra a lista.',
   dicaBusca: 'conta, banco, agência, número…', ordem: 'descricao', revisao: true, porEmpresa: true,

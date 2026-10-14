@@ -81,7 +81,7 @@ async function montarCadastro(cfg) {
   const filtrosCampo = campos.filter(c => c.filtro);
   cont.innerHTML = `
     <div class="cab-tela"><div><h1>${esc(cfg.titulo)}</h1><p class="sub">${esc(cfg.subtitulo || '')}</p></div>
-      ${podeEditar ? `<button class="btn primario" id="cNovo">+ Novo ${esc(cfg.singular)}</button>` : ''}</div>
+      ${podeEditar ? `<button class="btn primario" id="cNovo">${esc(cfg.textoNovo || '+ Novo ' + cfg.singular)}</button>` : ''}</div>
     <div class="barra-ferr">
       ${cfg.abas ? '<div class="abas" id="cAbas"></div>' : '<div></div>'}
       <div class="ferr">
@@ -318,7 +318,7 @@ async function montarCadastro(cfg) {
       ${cfg.revisao ? `<div>Revisão: <b>${r.revisado_em ? dataHoraBR(r.revisado_em) + ' · ' + esc(nomes[r.revisado_por] || '') : 'não revisado'}</b>${statusRev(r).cls === 'alerta' ? ' <span class="tg alerta">alterado depois</span>' : ''}</div>` : ''}
       ${ctx.pode('auditoria') ? `<div><a href="${RAIZ}pages/config/auditoria.html?busca=${encodeURIComponent(cfg.chaveHistorico ? cfg.chaveHistorico(r) : (r.nome || r.codigo || r.id))}" style="color:var(--destaque)">Ver histórico completo →</a></div>` : ''}
     </div>`;
-    const m = abrirModal(`<h2>${novo ? 'Novo ' + esc(cfg.singular) : esc(cfg.tituloRegistro ? cfg.tituloRegistro(r) : r.nome || r.codigo)}</h2>
+    const m = abrirModal(`<h2>${novo ? esc(cfg.textoNovo ? cfg.textoNovo.replace('+ ', '') : 'Novo ' + cfg.singular) : esc(cfg.tituloRegistro ? cfg.tituloRegistro(r) : r.nome || r.codigo)}</h2>
       <div id="cAviso"></div>${html}${dls}
       ${cfg.secaoExtra && !novo ? cfg.secaoExtra(r, extra) : ''}${hist}
       <div class="acoes" style="margin-top:18px"><button class="btn" id="mFechar">${podeEditar ? 'Cancelar' : 'Fechar'}</button>

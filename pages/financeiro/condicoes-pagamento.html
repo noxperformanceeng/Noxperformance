@@ -21,6 +21,7 @@ let FORMAS = [];
 const lerDias = t => String(t || '').split(/[\/;, ]+/).filter(Boolean).map(Number);
 
 montarCadastro({
+  textoNovo: '+ Nova condição',
   tabela: 'condicoes_pagamento', modulo: 'condicoes_pagamento', titulo: 'Condições de pagamento', singular: 'condição', plural: 'condições',
   subtitulo: 'Prazos usados no pedido de compra e no contas a pagar: cada número é uma parcela, em dias a partir da emissão.',
   ordem: 'nome', revisao: false,

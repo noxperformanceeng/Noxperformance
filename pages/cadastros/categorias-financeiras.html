@@ -35,6 +35,7 @@ const nivel = c => String(c || '').split('.').length;
 const paiDe = r => TODAS.find(x => x.id === r.pai_id);
 
 montarCadastro({
+  textoNovo: '+ Nova categoria',
   tabela: 'categorias_financeiras', modulo: 'categorias_fin', titulo: 'Categorias financeiras', singular: 'categoria', plural: 'categorias',
   subtitulo: 'Plano gerencial único para as duas empresas. Produtos, notas de compra e contas a pagar/receber usam estas categorias; os relatórios separam por CNPJ ou consolidam.',
   dicaBusca: 'código, nome, linha do relatório, ID Tiny…', ordem: 'codigo', revisao: true,

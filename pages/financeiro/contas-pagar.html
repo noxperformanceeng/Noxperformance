@@ -103,7 +103,7 @@ function htmlRastreio(r) {
 /* ---------- Pagamentos (baixas) do título ---------- */
 function htmlPagamentos(r) {
   const pgs = extraAtual.pagamentos[r.id] || [];
-  const contasEmp = CONTAS.filter(c => c.empresa_id === r.empresa_id && c.situacao === 'ativo');
+  const contasEmp = CONTAS.filter(c => c.empresa_id === r.empresa_id && c.situacao === 'ativo' && c.tipo !== 'historico');
   return `<div class="secao">Pagamentos · pago ${reais(r.valor_pago)} · saldo ${reais(r.saldo)}</div>
     ${pgs.length ? `<table class="lista-mini"><thead><tr><th>Data</th><th>Valor</th><th>Juros/multa</th><th>Desconto</th><th>Conta</th><th>Identificador</th><th>Conciliado</th><th></th></tr></thead><tbody>
       ${pgs.map(p => `<tr class="${p.estornado ? 'estornado' : ''}"><td>${dataCurta(p.data_pagamento)}</td><td class="num">${reais(p.valor)}</td>
@@ -198,7 +198,7 @@ const cfg = {
     const [f, c, cb, fp, pg, ra] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, situacao').order('nome')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, aplica_produtos, situacao').eq('aceita_lancamento', true).order('codigo')),
-      buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao').order('descricao')),
+      buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, exige_codigo, situacao').order('nome')),
       buscarTodos(() => db.from('pagamentos').select('*').order('data_pagamento')),
       buscarTodos(() => db.from('titulos_pagar_rateio').select('*').order('id'))
@@ -240,6 +240,16 @@ const cfg = {
     window.__ctxNox = ctx;
     modalAtual = m;
     const pode = ctx.pode('pagar', 'editar');
+    // Conta prevista: só as contas ativas da empresa escolhida no título
+    const fEmp = m.querySelector('#f_empresa_id'), fConta = m.querySelector('#f_conta_bancaria_id');
+    if (fEmp && fConta) {
+      const filtrarContas = () => {
+        const emp = Number(fEmp.value), atual = Number(fConta.value);
+        const lista = CONTAS.filter(c => c.empresa_id === emp && c.tipo !== 'historico' && (c.situacao === 'ativo' || c.id === atual));
+        fConta.innerHTML = '<option value="">—</option>' + lista.map(c => `<option value="${c.id}"${c.id === atual ? ' selected' : ''}>${esc(c.descricao)}</option>`).join('');
+      };
+      fEmp.addEventListener('change', filtrarContas); filtrarContas();
+    }
     // Lançamento manual de projeção: emissão acompanha o vencimento
     const fEm = m.querySelector('#f_data_emissao'), fVe = m.querySelector('#f_data_vencimento');
     if (pode && fEm && ['manual', 'recorrente', undefined].includes(r.origem)) {
@@ -324,7 +334,7 @@ const cfg = {
         const total = abertos.reduce((s, r) => s + Number(r.saldo), 0);
         janela(`Pagar ${abertos.length} título(s) · ${reais(total)}`, `<div class="grade">
             <div><label>Data do pagamento</label><input type="date" id="jData" value="${hoje()}"></div>
-            <div><label>Conta</label><select id="jConta">${CONTAS.filter(c => c.empresa_id === emp[0] && c.situacao === 'ativo').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
+            <div><label>Conta</label><select id="jConta">${CONTAS.filter(c => c.empresa_id === emp[0] && c.situacao === 'ativo' && c.tipo !== 'historico').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
             <div><label>Forma</label><select id="jForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</select></div></div>
             <p class="sub" style="margin:0">Cada título é baixado pelo saldo, sem juros/desconto. Para juros ou pagamento parcial, abra o título.</p>`, 'Registrar pagamentos', async m => {
           const data = m.querySelector('#jData').value, contaId = Number(m.querySelector('#jConta').value), formaId = Number(m.querySelector('#jForma').value) || null;
