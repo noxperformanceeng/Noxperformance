@@ -8,9 +8,9 @@ const MENU = [
   { grupo: 'Cadastros', itens: [
     { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
     { id: 'clientes',      nome: 'Clientes',          arquivo: null },
-    { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
-    { id: 'funcionarios',  nome: 'Funcionários',      arquivo: 'pages/cadastros/funcionarios.html' },
-    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' }
+    { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: null /* liberar após 016 */ },
+    { id: 'funcionarios',  nome: 'Funcionários',      arquivo: null /* liberar após 016 */ },
+    { id: 'locais',        nome: 'Locais de estoque', arquivo: null /* liberar após 016 */ }
   ]},
   { grupo: 'Comercial', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: null },
