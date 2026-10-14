@@ -133,7 +133,7 @@ create or replace function public.processar_pedido_ml(p_ml_order_id bigint)
 returns bigint language plpgsql security definer set search_path = public as $$
 declare b record; c record; o jsonb; v_id bigint; v_sit text; v_status text; v_data date; v_prev date; v_tem_receb boolean;
         it jsonb; v_cat_fee bigint; v_cat_fin bigint; v_cat_env bigint; v_fee numeric(14,2) := 0; v_fin numeric(14,2) := 0; v_env numeric(14,2) := 0;
-        v_fee_mp numeric(14,2); v_fin_mp numeric(14,2); v_env_mp numeric(14,2); pg jsonb; fd jsonb; v_comprador text;
+        v_fee_mp numeric(14,2); v_fin_mp numeric(14,2); v_env_mp numeric(14,2); pg jsonb; fd jsonb; v_comprador text; v_itens jsonb; v_encs jsonb;
 begin
   select * into b from public.ml_pedidos_brutos where ml_order_id = p_ml_order_id;
   if not found then raise exception 'Venda % não encontrada', p_ml_order_id; end if;
@@ -180,28 +180,26 @@ begin
 
   select exists (select 1 from public.titulos_receber where pedido_venda_id = v_id and situacao <> 'cancelado') into v_tem_receb;
   if not v_tem_receb then
-    -- itens (e vínculo anúncio × produto pelo SKU)
-    delete from public.pedidos_venda_itens where pedido_id = v_id;
+    -- itens (e vínculo anúncio × produto pelo SKU) e tarifas: regravados pela mesma função da tela
     for it in select * from jsonb_array_elements(coalesce(o->'order_items', '[]'::jsonb)) loop
       insert into public.anuncios (canal_id, anuncio_id, variacao_id, sku, titulo, produto_id)
       values (b.canal_id, it->'item'->>'id', coalesce(it->'item'->>'variation_id', ''), nullif(it->'item'->>'seller_sku', ''), it->'item'->>'title',
               (select id from public.produtos where upper(codigo) = upper(nullif(it->'item'->>'seller_sku', '')) limit 1))
       on conflict (canal_id, anuncio_id, variacao_id) do update set sku = coalesce(excluded.sku, anuncios.sku), titulo = excluded.titulo,
          produto_id = coalesce(anuncios.produto_id, excluded.produto_id);
-      insert into public.pedidos_venda_itens (pedido_id, anuncio_id, variacao_id, sku, descricao, quantidade, valor_unitario)
-      values (v_id, it->'item'->>'id', nullif(it->'item'->>'variation_id', ''), nullif(it->'item'->>'seller_sku', ''), it->'item'->>'title',
-              coalesce((it->>'quantity')::numeric, 1), coalesce((it->>'unit_price')::numeric, 0));
     end loop;
-    -- quantidade de kit: produto × quantidade do anúncio fica no vínculo; o item guarda o que o ML vendeu
-    delete from public.pedidos_venda_encargos where pedido_id = v_id;
+    select coalesce(jsonb_agg(jsonb_build_object('anuncio_id', x->'item'->>'id', 'variacao_id', x->'item'->>'variation_id', 'sku', x->'item'->>'seller_sku',
+             'descricao', x->'item'->>'title', 'quantidade', coalesce((x->>'quantity')::numeric, 1), 'valor_unitario', coalesce((x->>'unit_price')::numeric, 0))), '[]')
+      into v_itens from jsonb_array_elements(coalesce(o->'order_items', '[]'::jsonb)) x;
     select categoria_financeira_id into v_cat_fee from public.encargos_tipos where plataforma = 'mercado_livre' and codigo = 'tarifa_venda';
     select categoria_financeira_id into v_cat_fin from public.encargos_tipos where plataforma = 'mercado_livre' and codigo = 'parcelamento';
     select categoria_financeira_id into v_cat_env from public.encargos_tipos where plataforma = 'mercado_livre'
       and codigo = case when b.envio_custos->>'logistic_type' = 'fulfillment' or o->'shipping'->>'logistic_type' = 'fulfillment' then 'envio_full' else 'envio' end;
-    if v_fee <> 0 then insert into public.pedidos_venda_encargos (pedido_id, tipo_codigo, descricao, categoria_financeira_id, valor) values (v_id, 'tarifa_venda', 'Tarifa de venda', v_cat_fee, v_fee); end if;
-    if v_fin <> 0 then insert into public.pedidos_venda_encargos (pedido_id, tipo_codigo, descricao, categoria_financeira_id, valor) values (v_id, 'parcelamento', 'Taxa de parcelamento', v_cat_fin, v_fin); end if;
-    if v_env <> 0 then insert into public.pedidos_venda_encargos (pedido_id, tipo_codigo, descricao, categoria_financeira_id, valor) values (v_id, 'envio', 'Tarifa de envio', v_cat_env, v_env); end if;
-    perform public.pedido_venda_recalcular(v_id);
+    v_encs := jsonb_build_array(
+      jsonb_build_object('tipo_codigo', 'tarifa_venda', 'descricao', 'Tarifa de venda', 'categoria_financeira_id', v_cat_fee, 'valor', v_fee),
+      jsonb_build_object('tipo_codigo', 'parcelamento', 'descricao', 'Taxa de parcelamento', 'categoria_financeira_id', v_cat_fin, 'valor', v_fin),
+      jsonb_build_object('tipo_codigo', 'envio', 'descricao', 'Tarifa de envio', 'categoria_financeira_id', v_cat_env, 'valor', v_env));
+    perform public.salvar_pedido_venda(jsonb_build_object('id', v_id), v_itens, v_encs);
   end if;
 
   -- situação: cancelada no ML cancela o pedido e os títulos em aberto sem recebimento

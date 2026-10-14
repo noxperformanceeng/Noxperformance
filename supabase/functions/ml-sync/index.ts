@@ -10,13 +10,13 @@ Deno.serve(async req => {
   // quem está pedindo (login do sistema)
   const usuario = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } });
   const { data: pode } = await usuario.rpc('pode', { p_modulo: 'canais_venda', p_nivel: 'editar' });
-  if (pode !== true) return resp({ erro: 'Sem permissão' }, 403);
+  if (pode !== true) return resp({ erro: 'Sem permissão' });
 
   const { canal_id, de, ate } = await req.json().catch(() => ({}));
-  if (!canal_id || !/^\d{4}-\d{2}-\d{2}$/.test(de ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(ate ?? '')) return resp({ erro: 'Informe canal, de e até (aaaa-mm-dd)' }, 400);
+  if (!canal_id || !/^\d{4}-\d{2}-\d{2}$/.test(de ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(ate ?? '')) return resp({ erro: 'Informe canal, de e até (aaaa-mm-dd)' });
   const db = adminDb();
   const { data: conta } = await db.from('ml_contas').select('*').eq('canal_id', canal_id).maybeSingle();
-  if (!conta) return resp({ erro: 'Canal sem conta do ML autorizada' }, 400);
+  if (!conta) return resp({ erro: 'Canal sem conta do ML autorizada' });
   const inicio = Date.now(), res = { encontradas: 0, gravadas: 0, puladas: 0, erros: [] as string[], parcial: false };
   try {
     const token = await tokenValido(db, conta as Conta);
@@ -42,6 +42,6 @@ Deno.serve(async req => {
     await db.from('ml_contas').update({ ultima_sync: new Date().toISOString() }).eq('id', conta.id);
     return resp(res);
   } catch (e) {
-    return resp({ ...res, erro: String((e as Error).message ?? e) }, 500);
+    return resp({ ...res, erro: String((e as Error).message ?? e) });
   }
 });
