@@ -45,18 +45,20 @@ create unique index if not exists clientes_doc_uk  on public.clientes (cpf_cnpj)
 create unique index if not exists clientes_tiny_uk on public.clientes (id_tiny) where id_tiny is not null;
 create index if not exists clientes_nome_trgm on public.clientes using gin (public.texto_norm(nome) extensions.gin_trgm_ops);
 
-drop trigger if exists carimbo on public.clientes;
-create trigger carimbo before insert or update on public.clientes for each row execute function public.carimbo_cadastro();
+create or replace trigger carimbo before insert or update on public.clientes for each row execute function public.carimbo_cadastro();
 
 alter table public.clientes enable row level security;
-drop policy if exists "ver clientes"     on public.clientes;
-drop policy if exists "incluir clientes" on public.clientes;
-drop policy if exists "alterar clientes" on public.clientes;
-create policy "ver clientes"     on public.clientes for select to authenticated
+do $$ begin if not exists (select 1 from pg_policies where tablename='clientes' and policyname='ver clientes') then
+  create policy "ver clientes"     on public.clientes for select to authenticated
   using (public.pode('clientes') or public.pode('pedidos') or public.pode('receber'));
-create policy "incluir clientes" on public.clientes for insert to authenticated with check (public.pode('clientes','editar'));
-create policy "alterar clientes" on public.clientes for update to authenticated
+end if; end $$;
+do $$ begin if not exists (select 1 from pg_policies where tablename='clientes' and policyname='incluir clientes') then
+  create policy "incluir clientes" on public.clientes for insert to authenticated with check (public.pode('clientes','editar'));
+end if; end $$;
+do $$ begin if not exists (select 1 from pg_policies where tablename='clientes' and policyname='alterar clientes') then
+  create policy "alterar clientes" on public.clientes for update to authenticated
   using (public.pode('clientes','editar')) with check (public.pode('clientes','editar'));
+end if; end $$;
 
 grant select, insert, update on public.clientes to authenticated;
 grant usage, select on all sequences in schema public to authenticated;

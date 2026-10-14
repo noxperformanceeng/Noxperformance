@@ -3,7 +3,7 @@
 -- Cadastros: Fornecedores (completo), Locais de estoque, Funcionários.
 -- Todos com: última alteração (quem/quando), revisão (quem/quando),
 -- auditoria completa e acesso pelas telas liberadas no perfil.
--- Pode rodar mais de uma vez.
+-- Pode rodar mais de uma vez. Sem comandos destrutivos (nada é removido ou sobrescrito em dados).
 -- =====================================================================
 
 -- ---------- Carimbo genérico de criação/alteração ----------
@@ -47,14 +47,11 @@ alter table public.fornecedores
   add column if not exists revisado_em          timestamptz,
   add column if not exists revisado_por         uuid references public.usuarios(id),
   add column if not exists criado_por           uuid references public.usuarios(id),
-  add column if not exists atualizado_em        timestamptz not null default now(),
+  add column if not exists atualizado_em        timestamptz,   -- vazio nos antigos; preenchido na próxima alteração
   add column if not exists atualizado_por       uuid references public.usuarios(id);
 do $$ begin
   alter table public.fornecedores add constraint fornecedores_tipo_pessoa check (tipo_pessoa in ('PJ','PF'));
 exception when duplicate_object then null; end $$;
-alter table public.fornecedores disable trigger auditoria;
-update public.fornecedores set atualizado_em = criado_em where atualizado_em > criado_em and revisado_em is null and atualizado_por is null;
-alter table public.fornecedores enable trigger auditoria;
 
 -- ---------- LOCAIS DE ESTOQUE ----------
 create table if not exists public.locais_estoque (
@@ -126,12 +123,9 @@ create unique index if not exists funcionarios_cpf_uk on public.funcionarios (cp
 create index if not exists funcionarios_empresa_idx on public.funcionarios (empresa_id, situacao);
 
 -- ---------- Gatilhos de carimbo ----------
-drop trigger if exists carimbo on public.fornecedores;
-create trigger carimbo before insert or update on public.fornecedores for each row execute function public.carimbo_cadastro();
-drop trigger if exists carimbo on public.locais_estoque;
-create trigger carimbo before insert or update on public.locais_estoque for each row execute function public.carimbo_cadastro();
-drop trigger if exists carimbo on public.funcionarios;
-create trigger carimbo before insert or update on public.funcionarios for each row execute function public.carimbo_cadastro();
+create or replace trigger carimbo before insert or update on public.fornecedores for each row execute function public.carimbo_cadastro();
+create or replace trigger carimbo before insert or update on public.locais_estoque for each row execute function public.carimbo_cadastro();
+create or replace trigger carimbo before insert or update on public.funcionarios for each row execute function public.carimbo_cadastro();
 
 -- ---------- Marcar como revisado (hora do servidor) ----------
 create or replace function public.marcar_revisado(p_tabela text, p_ids bigint[])
@@ -153,23 +147,29 @@ end $$;
 alter table public.locais_estoque enable row level security;
 alter table public.funcionarios   enable row level security;
 
-drop policy if exists "ver locais"     on public.locais_estoque;
-drop policy if exists "incluir locais" on public.locais_estoque;
-drop policy if exists "alterar locais" on public.locais_estoque;
-create policy "ver locais"     on public.locais_estoque for select to authenticated
+do $$ begin if not exists (select 1 from pg_policies where tablename='locais_estoque' and policyname='ver locais') then
+  create policy "ver locais"     on public.locais_estoque for select to authenticated
   using (public.pode('locais') or public.pode('estoque') or public.pode('almoxarifado') or public.pode('inventario'));
-create policy "incluir locais" on public.locais_estoque for insert to authenticated with check (public.pode('locais','editar'));
-create policy "alterar locais" on public.locais_estoque for update to authenticated
+end if; end $$;
+do $$ begin if not exists (select 1 from pg_policies where tablename='locais_estoque' and policyname='incluir locais') then
+  create policy "incluir locais" on public.locais_estoque for insert to authenticated with check (public.pode('locais','editar'));
+end if; end $$;
+do $$ begin if not exists (select 1 from pg_policies where tablename='locais_estoque' and policyname='alterar locais') then
+  create policy "alterar locais" on public.locais_estoque for update to authenticated
   using (public.pode('locais','editar')) with check (public.pode('locais','editar'));
+end if; end $$;
 
-drop policy if exists "ver funcionarios"     on public.funcionarios;
-drop policy if exists "incluir funcionarios" on public.funcionarios;
-drop policy if exists "alterar funcionarios" on public.funcionarios;
-create policy "ver funcionarios"     on public.funcionarios for select to authenticated
+do $$ begin if not exists (select 1 from pg_policies where tablename='funcionarios' and policyname='ver funcionarios') then
+  create policy "ver funcionarios"     on public.funcionarios for select to authenticated
   using (public.pode('funcionarios') or public.pode('colaboradores'));
-create policy "incluir funcionarios" on public.funcionarios for insert to authenticated with check (public.pode('funcionarios','editar'));
-create policy "alterar funcionarios" on public.funcionarios for update to authenticated
+end if; end $$;
+do $$ begin if not exists (select 1 from pg_policies where tablename='funcionarios' and policyname='incluir funcionarios') then
+  create policy "incluir funcionarios" on public.funcionarios for insert to authenticated with check (public.pode('funcionarios','editar'));
+end if; end $$;
+do $$ begin if not exists (select 1 from pg_policies where tablename='funcionarios' and policyname='alterar funcionarios') then
+  create policy "alterar funcionarios" on public.funcionarios for update to authenticated
   using (public.pode('funcionarios','editar')) with check (public.pode('funcionarios','editar'));
+end if; end $$;
 -- Locais e funcionários não se apagam: inativa / desliga (histórico preservado).
 
 grant select, insert, update on public.locais_estoque, public.funcionarios to authenticated;
