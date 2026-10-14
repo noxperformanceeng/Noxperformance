@@ -74,6 +74,8 @@ async function montarCadastro(cfg) {
     { id: '_alterado', nome: 'Alterado após revisão', cor: 'alerta', teste: r => statusRev(r).cls === 'alerta' },
     { id: '_nao_rev', nome: 'Não revisado', cor: 'neutro', teste: r => statusRev(r).cls === 'neutro' }] : [])];
   const pendDe = r => PEND.filter(p => p.teste(r, extra, ctx)).map(p => p.id);
+  // Aba: igual ao valor do campo, ou regra própria (ex.: "Em aberto" = aberto + programado + parcial)
+  const naAba = (r, v) => { const o = cfg.abas.opcoes.find(x => String(x.v) === v); return o?.teste ? o.teste(r) : String(r[cfg.abas.campo]) === v; };
 
   /* ---------- Esqueleto da tela ---------- */
   const filtrosCampo = campos.filter(c => c.filtro);
@@ -89,6 +91,7 @@ async function montarCadastro(cfg) {
       </div>
     </div>
     <div class="cartao filtros painel-filtros" id="cFilt" hidden>
+      ${(cfg.filtrosExtras || []).map(f => `<div><label>${esc(f.label)}</label><select data-filtro-extra="${f.id}"><option value="">Todos</option>${f.opcoes.map(o => `<option value="${esc(o.v)}"${o.v === f.padrao ? ' selected' : ''}>${esc(o.n)}</option>`).join('')}</select></div>`).join('')}
       ${filtrosCampo.map(c => `<div><label>${esc(c.label)}</label><select data-filtro="${c.id}"><option value="">Todos</option></select></div>`).join('')}
       ${cfg.revisao ? '<div><label>Revisão</label><select id="fRev"><option value="">Todas</option><option value="neutro">Não revisado</option><option value="ok">Revisado</option><option value="alerta">Alterado após revisão</option></select></div>' : ''}
       <div><label>Período por</label><select id="fPerCampo" data-fixo="1">${(cfg.periodos || [{ campo: 'atualizado_em', label: 'Última alteração' }]).map(p => `<option value="${p.campo}">${esc(p.label)}</option>`).join('')}</select></div>
@@ -98,7 +101,7 @@ async function montarCadastro(cfg) {
     </div>
     <div class="pendencias" id="cPend"></div>
     <div class="barra-lista"><span id="cCont"></span><div class="lote" id="cLote" hidden></div></div>
-    <div class="cartao tabela-rolagem"><table><thead><tr id="cHead"></tr></thead><tbody id="cLista"><tr><td class="vazio">Carregando…</td></tr></tbody></table></div>
+    <div class="cartao tabela-rolagem"><table><thead><tr id="cHead"></tr></thead><tbody id="cLista"><tr><td class="vazio">Carregando…</td></tr></tbody><tfoot id="cTotais"></tfoot></table></div>
     <p class="sub" id="cRodape" style="margin-top:8px"></p>`;
   const $ = s => cont.querySelector(s);
   if (podeEditar) $('#cNovo').onclick = () => abrir(null);
@@ -128,7 +131,7 @@ async function montarCadastro(cfg) {
       ]);
       linhas = lista;
       nomes = Object.fromEntries((nm.data || []).map(u => [u.id, u.nome]));
-      extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas) : {};
+      extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas, ctx) : {};
       linhas.forEach(r => r._pend = pendDe(r));
       filtrosCampo.forEach(c => {
         const el = cont.querySelector(`[data-filtro="${c.id}"]`), atual = el.value;
@@ -146,8 +149,12 @@ async function montarCadastro(cfg) {
   function filtrar(ignorarPend) {
     const busca = $('#fBusca').value, de = $('#fDe').value, ate = $('#fAte').value, pc = $('#fPerCampo').value;
     return linhas.filter(r => {
-      if (cfg.abas && aba !== '' && String(r[cfg.abas.campo]) !== aba) return false;
+      if (cfg.abas && aba !== '' && !naAba(r, aba)) return false;
       if (cfg.porEmpresa && ctx.empresa && r.empresa_id !== ctx.empresa) return false;
+      for (const f of cfg.filtrosExtras || []) {
+        const v = cont.querySelector(`[data-filtro-extra="${f.id}"]`).value;
+        if (v && !f.teste(r, v, extra)) return false;
+      }
       for (const c of filtrosCampo) {
         const v = cont.querySelector(`[data-filtro="${c.id}"]`).value;
         if (v === '__vazio' ? (r[c.id] !== null && r[c.id] !== '') : (v && String(r[c.id]) !== v)) return false;
@@ -166,7 +173,7 @@ async function montarCadastro(cfg) {
   function desenhar() {
     if (cfg.abas) {
       const base = linhas.filter(r => !cfg.porEmpresa || !ctx.empresa || r.empresa_id === ctx.empresa);
-      $('#cAbas').innerHTML = cfg.abas.opcoes.map(o => `<button class="aba${String(o.v) === aba ? ' ativa' : ''}" data-v="${esc(o.v)}">${esc(o.n)}<span class="n">${base.filter(r => o.v === '' || String(r[cfg.abas.campo]) === String(o.v)).length}</span></button>`).join('');
+      $('#cAbas').innerHTML = cfg.abas.opcoes.map(o => `<button class="aba${String(o.v) === aba ? ' ativa' : ''}" data-v="${esc(o.v)}">${esc(o.n)}<span class="n">${base.filter(r => o.v === '' || naAba(r, String(o.v))).length}</span></button>`).join('');
       cont.querySelectorAll('#cAbas .aba').forEach(b => b.onclick = () => { aba = b.dataset.v; selecionados.clear(); desenhar(); });
     }
     const base = filtrar(true);
@@ -198,12 +205,17 @@ async function montarCadastro(cfg) {
       const pend = r._pend.filter(p => !p.startsWith('_')).map(p => { const d = PEND.find(x => x.id === p); return `<span class="tg ${d.cor}">${esc(d.nome)}</span>`; }).join('');
       return `<tr data-id="${r.id}" class="${cfg.apagado?.(r) ? 'apagado' : ''}" style="cursor:pointer">
         ${podeEditar ? `<td class="nao-imprimir"><input type="checkbox" class="sel" data-id="${r.id}" ${selecionados.has(r.id) ? 'checked' : ''}></td>` : ''}
-        ${colunas.map((c, i) => `<td class="${i === 0 ? 'forte' : ''}">${i === 0 && cfg.arvore ? seta(r) : ''}${esc(mostrar(c, r[c.id]))}${i === 0 && cfg.subtituloLinha ? `<small class="sub2">${esc(cfg.subtituloLinha(r, extra) || '')}</small>` : ''}</td>`).join('')}
+        ${colunas.map((c, i) => `<td class="${i === 0 ? 'forte' : ''}${['moeda', 'numero'].includes(c.tipo) ? ' num' : ''}">${i === 0 && cfg.arvore ? seta(r) : ''}${esc(mostrar(c, r[c.id]))}${i === 0 && cfg.subtituloLinha ? `<small class="sub2">${esc(cfg.subtituloLinha(r, extra) || '')}</small>` : ''}</td>`).join('')}
         ${(cfg.colunasExtras || []).map(x => `<td>${x.html ? x.html(r, extra) : esc(x.texto(r, extra))}</td>`).join('')}
         ${rv ? `<td class="rev"><span class="tg ${rv.cls}">${rv.t}</span>${rv.cls === 'ok' ? `<small>${dataBR(r.revisado_em)} · ${esc(nomes[r.revisado_por] || '')}</small>` : rv.cls === 'alerta' ? `<small>alterado ${dataBR(r.atualizado_em)} · ${esc(nomes[r.atualizado_por] || '')}</small>` : ''}</td>` : ''}
         <td>${pend}</td></tr>`;
     }).join('') : `<tr><td colspan="${ncol}" class="vazio">Nenhum registro com esses filtros.</td></tr>`;
+    if (cfg.totais) {
+      const tot = c => visiveis.reduce((s, r) => s + Number(cfg.valorTotal ? cfg.valorTotal(r, c.id) : r[c.id] || 0), 0);
+      $('#cTotais').innerHTML = visiveis.length ? `<tr>${podeEditar ? '<td class="nao-imprimir"></td>' : ''}${colunas.map((c, i) => `<td class="${cfg.totais.includes(c.id) ? 'num' : ''}">${i === 0 ? 'Total' : cfg.totais.includes(c.id) ? esc(mostrar(c, tot(c))) : ''}</td>`).join('')}<td colspan="${(cfg.colunasExtras || []).length + (cfg.revisao ? 1 : 0) + 1}"></td></tr>` : '';
+    }
     $('#cCont').textContent = `${visiveis.length} ${visiveis.length === 1 ? cfg.singular : (cfg.plural || cfg.singular + 's')}`;
+    if (cfg.resumo) { let el = $('#cResumo'); if (!el) { $('#cCont').insertAdjacentHTML('afterend', '<span class="resumo" id="cResumo"></span>'); el = $('#cResumo'); } el.innerHTML = cfg.resumo(visiveis, extra); }
     if (cfg.arvore) $('#cCont').textContent += mostrados.length < visiveis.length ? ` · ${mostrados.length} à vista (grupos recolhidos)` : '';
     $('#cRodape').textContent = mostrados.length > LIM ? `Mostrando os ${LIM} primeiros. Use os filtros para refinar (o Exportar Excel leva todos).` : '';
     cont.querySelectorAll('#cLista .seta').forEach(b => b.onclick = e => {
@@ -253,6 +265,10 @@ async function montarCadastro(cfg) {
       aviso(`${ok.length} revisado(s)` + (fora ? ` · ${fora} com pendência ficaram de fora` : '')); selecionados.clear(); carregar();
     };
     (cfg.acoesLote || []).forEach((a, i) => el.querySelector(`[data-lote="${i}"]`).onclick = async () => {
+      if (a.executar) {   // ação com janela própria: recebe as linhas e uma função para recarregar
+        const sel = linhas.filter(r => selecionados.has(r.id));
+        return a.executar(sel, () => { selecionados.clear(); carregar(); }, ctx);
+      }
       if (!confirm(`${a.nome}: ${selecionados.size} registro(s)?`)) return;
       const { error } = await db.from(cfg.tabela).update(a.dados).in('id', [...selecionados]);
       if (error) return aviso('Não salvou: ' + error.message, true);
@@ -274,7 +290,7 @@ async function montarCadastro(cfg) {
       case 'textarea': return `<textarea id="${id}" rows="2" ${dis}>${esc(val)}</textarea>`;
       case 'bool': return `<label class="chk"><input type="checkbox" id="${id}" ${val ? 'checked' : ''} ${dis}> ${esc(c.textoBool || 'Sim')}</label>`;
       case 'data': return `<input type="date" id="${id}" value="${esc(String(val).slice(0, 10))}" ${dis}>`;
-      case 'numero': case 'moeda': return `<input id="${id}" inputmode="decimal" value="${val === '' ? '' : esc(String(val).replace('.', ','))}" ${dis}>`;
+      case 'numero': case 'moeda': return `<input id="${id}" inputmode="decimal" value="${val === '' ? '' : esc(c.tipo === 'moeda' ? Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(val).replace('.', ','))}" ${dis}>`;
       case 'cpf': case 'cnpj': case 'cpfcnpj': return `<input id="${id}" inputmode="numeric" value="${esc(fmtDoc(val))}" ${dis}>`;
       case 'cep': return `<input id="${id}" inputmode="numeric" value="${esc(fmtCEP(val))}" placeholder="00000-000" ${dis}>`;
       default: return `<input id="${id}" type="${c.tipo === 'email' ? 'email' : c.tipo === 'tel' ? 'tel' : 'text'}" value="${esc(val)}" ${c.lista_sugestoes ? `list="dl_${c.id}"` : ''} placeholder="${esc(c.placeholder || '')}" ${dis}>`;
@@ -365,13 +381,16 @@ async function montarCadastro(cfg) {
       m.querySelectorAll('.acoes .btn').forEach(b => b.disabled = true);
       try {
         let id = r.id;
-        if (novo) {
+        if (cfg.salvar) {          // gravação própria da tela (ex.: título + rateio numa transação)
+          id = await cfg.salvar(dados, r, m, novo);
+        } else if (novo) {
           const { data, error } = await db.from(cfg.tabela).insert(dados).select('id').single();
           if (error) throw error; id = data.id;
         } else {
           const { error } = await db.from(cfg.tabela).update(dados).eq('id', id);
           if (error) throw error;
         }
+        if (cfg.depoisSalvar) await cfg.depoisSalvar(id, dados, r, m);
         if (revisar) { const { error } = await db.rpc('marcar_revisado', { p_tabela: cfg.tabela, p_ids: [id] }); if (error) throw error; }
         m.remove(); aviso(revisar ? 'Salvo e revisado' : 'Salvo'); carregar();
       } catch (e) {
@@ -383,5 +402,6 @@ async function montarCadastro(cfg) {
     if (cfg.revisao) q('#mRevisar').onclick = () => salvar(true);
   }
 
+  cfg.recarregar = carregar;
   await carregar();
 }

@@ -69,10 +69,29 @@ montarCadastro({
       ajuda: 'Liga o funcionário ao login dele (para ver o próprio holerite e férias).' },
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
   ],
-  async carregarExtra() {
+  async carregarExtra(linhas, ctx) {
     const { data } = await db.rpc('usuarios_nomes');
     USUARIOS = (data || []).map(u => ({ v: u.id, n: u.nome }));
-    return {};
+    // Acesso ao sistema (telas e ações) — só para quem cuida de usuários
+    if (!ctx.pode('usuarios')) return { acesso: null };
+    const r = await Promise.all([db.from('usuarios').select('id, perfil_id, ativo, perfis(nome)'), db.from('permissoes_usuario').select('usuario_id, modulo_id, nivel'),
+      db.from('usuario_acoes').select('usuario_id, acao_id, permitido'), db.from('acoes').select('id, nome'), db.from('modulos').select('id, nome')]);
+    const [us, aj, ua, ac, mo] = r.map(x => x.error ? [] : x.data || []);
+    return { acesso: { us, aj, ua, ac, mo } };
+  },
+  secaoExtra: (r, e) => {
+    if (!e.acesso || !r.usuario_id) return '';
+    const u = e.acesso.us.find(x => x.id === r.usuario_id); if (!u) return '';
+    const nome = id => e.acesso.mo.find(m => m.id === id)?.nome || id;
+    const mais = e.acesso.aj.filter(x => x.usuario_id === u.id && x.nivel !== 'nenhum').map(x => nome(x.modulo_id));
+    const menos = e.acesso.aj.filter(x => x.usuario_id === u.id && x.nivel === 'nenhum').map(x => nome(x.modulo_id));
+    const acoes = e.acesso.ua.filter(x => x.usuario_id === u.id && x.permitido).map(x => e.acesso.ac.find(a => a.id === x.acao_id)?.nome).filter(Boolean);
+    return `<div class="secao">Telas e ações no sistema</div><div class="info">
+      <div>Perfil: <b>${esc(u.perfis?.nome || 'sem perfil')}</b>${u.ativo ? '' : ' · <b>login inativo</b>'}</div>
+      <div>Telas a mais: <b>${esc(mais.join(', ') || '—')}</b></div>
+      <div>Telas bloqueadas: <b>${esc(menos.join(', ') || '—')}</b></div>
+      <div>Ações liberadas: <b>${esc(u.perfil_id === 'admin' ? 'todas (gestor)' : acoes.join(', ') || 'só as do perfil')}</b></div>
+      <div><a href="${RAIZ}pages/config/usuarios.html?usuario=${encodeURIComponent(u.id)}" style="color:var(--destaque)">Ajustar telas e ações →</a></div></div>`;
   },
   subtituloLinha: r => ({ clt: 'CLT', pj: 'PJ', estagio: 'Estágio', temporario: 'Temporário', aprendiz: 'Aprendiz', autonomo: 'Autônomo' })[r.tipo_contrato],
   pendencias: [

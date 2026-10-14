@@ -37,10 +37,13 @@ const MENU = [
     { id: 'precificacao',    nome: 'Precificação',    arquivo: null }
   ]},
   { grupo: 'Financeiro', itens: [
-    { id: 'pagar',         nome: 'Contas a pagar',    arquivo: null },
+    { id: 'pagar',         nome: 'Contas a pagar',    arquivo: 'pages/financeiro/contas-pagar.html' },
     { id: 'receber',       nome: 'Contas a receber',  arquivo: null },
     { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: null },
-    { id: 'notas',         nome: 'Notas fiscais',     arquivo: null }
+    { id: 'notas',         nome: 'Notas fiscais',     arquivo: null },
+    { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html' },
+    { id: 'condicoes_pagamento', nome: 'Formas de pagamento', arquivo: 'pages/financeiro/formas-pagamento.html' },
+    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html' }
   ]},
   { grupo: 'RH', itens: [
     { id: 'colaboradores', nome: 'Colaboradores',     arquivo: null },

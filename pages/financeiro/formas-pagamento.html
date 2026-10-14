@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formas de pagamento · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="condicoes_pagamento" data-titulo="Formas de pagamento">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+const TIPOS = [{ v: 'boleto', n: 'Boleto' }, { v: 'pix', n: 'PIX' }, { v: 'transferencia', n: 'Transferência / TED' }, { v: 'cartao_credito', n: 'Cartão de crédito' },
+  { v: 'cartao_debito', n: 'Cartão de débito' }, { v: 'debito_automatico', n: 'Débito automático' }, { v: 'dinheiro', n: 'Dinheiro' }, { v: 'guia', n: 'Guia de imposto (DAS, DARF, GPS…)' }, { v: 'outro', n: 'Outro' }];
+
+montarCadastro({
+  tabela: 'formas_pagamento', modulo: 'condicoes_pagamento', titulo: 'Formas de pagamento', singular: 'forma', plural: 'formas',
+  subtitulo: 'Como cada título é pago. Boleto e guia pedem o código de barras no contas a pagar.',
+  ordem: 'nome', revisao: false,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativas' }, { v: 'inativo', n: 'Inativas' }, { v: '', n: 'Todas' }] },
+  campos: [
+    { id: 'nome', label: 'Nome', obrig: true, col: 2, lista: true },
+    { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPOS, obrig: true, padrao: 'boleto', lista: true, filtro: true },
+    { id: 'exige_codigo', label: 'Código de barras', tipo: 'bool', textoBool: 'Pede código de barras', lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativa' }, { v: 'inativo', n: 'Inativa' }], obrig: true, padrao: 'ativo' }
+  ],
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  msgDuplicado: 'Já existe forma de pagamento com este nome'
+});
+</script>
+</body>
+</html>

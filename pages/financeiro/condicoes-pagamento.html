@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Condições de pagamento · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="condicoes_pagamento" data-titulo="Condições de pagamento">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+let FORMAS = [];
+const lerDias = t => String(t || '').split(/[\/;, ]+/).filter(Boolean).map(Number);
+
+montarCadastro({
+  tabela: 'condicoes_pagamento', modulo: 'condicoes_pagamento', titulo: 'Condições de pagamento', singular: 'condição', plural: 'condições',
+  subtitulo: 'Prazos usados no pedido de compra e no contas a pagar: cada número é uma parcela, em dias a partir da emissão.',
+  ordem: 'nome', revisao: false,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativas' }, { v: 'inativo', n: 'Inativas' }, { v: '', n: 'Todas' }] },
+  campos: [
+    { id: 'nome', label: 'Nome', obrig: true, col: 2, lista: true, placeholder: 'ex.: 28/56/84' },
+    { id: 'dias_txt', label: 'Dias de cada parcela', obrig: true, col: 2, placeholder: 'ex.: 28/56/84  ou  0 para à vista',
+      ajuda: 'Separe por barra. 0 = à vista.', semExportar: true },
+    { id: 'forma_padrao_id', label: 'Forma de pagamento padrão', tipo: 'select', opcoes: () => FORMAS, col: 2, lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativa' }, { v: 'inativo', n: 'Inativa' }], obrig: true, padrao: 'ativo' }
+  ],
+  async carregarExtra(linhas) {
+    const { data } = await db.from('formas_pagamento').select('id, nome').eq('situacao', 'ativo').order('nome');
+    FORMAS = (data || []).map(f => ({ v: f.id, n: f.nome }));
+    linhas.forEach(r => r.dias_txt = (r.dias || []).join('/'));
+    return {};
+  },
+  colunasExtras: [{ label: 'Parcelas', texto: r => String((r.dias || []).length) }, { label: 'Dias', texto: r => (r.dias || []).join(' / ') }],
+  antesSalvar: d => { d.dias = lerDias(d.dias_txt); delete d.dias_txt; if (d.forma_padrao_id) d.forma_padrao_id = Number(d.forma_padrao_id); },
+  validar: d => !d.dias.length || d.dias.some(x => isNaN(x) || x < 0) ? 'Dias inválidos: use números separados por barra (ex.: 28/56/84)'
+    : d.dias.some((x, i) => i && x <= d.dias.at(i - 1)) ? 'Os dias precisam estar em ordem crescente' : null,
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  msgDuplicado: 'Já existe condição com este nome'
+});
+</script>
+</body>
+</html>

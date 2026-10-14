@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contas a pagar · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
+  .sub-ed td { padding: 3px 4px; border: 0; }
+  .sub-ed input, .sub-ed select { padding: 6px 8px; font-size: 13px; }
+  .sub-ed .rm { background: none; border: 0; color: var(--erro); cursor: pointer; font-size: 16px; }
+  .sub-ed .soma { font-size: 12px; margin-top: 6px; color: var(--texto-suave); }
+  .sub-ed .soma.erro { color: var(--erro); font-weight: 600; }
+  .pg-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; margin-top: 8px; padding: 10px; border: 1px solid var(--linha); border-radius: 8px; }
+  .pg-form label { font-size: 11px; margin-bottom: 2px; }
+  .pg-form .l2 { grid-column: span 2; }
+  .pg-form .acao { display: flex; align-items: flex-end; }
+  .mini-modal .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 12px 0; }
+  tr.estornado td { text-decoration: line-through; color: var(--texto-suave); }
+</style>
+</head>
+<body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+/* =====================================================================
+   Contas a pagar
+   - Títulos por empresa (CNPJ); o seletor de empresa no menu filtra (ou consolida).
+   - Compra de produto entra pela NF/pedido de compra; aqui, manualmente, só despesas.
+   - Pagamento = registro de baixa (parcial ou total). Saldo e situação o banco calcula.
+   - Título + rateio por categoria são gravados juntos (função salvar_titulo_pagar).
+   ===================================================================== */
+const SIT = [{ v: 'aberto', n: 'Aberto' }, { v: 'programado', n: 'Programado' }, { v: 'parcial', n: 'Pago parcial' }, { v: 'pago', n: 'Pago' }, { v: 'cancelado', n: 'Cancelado' }];
+const ORIGENS = [{ v: 'manual', n: 'Manual (despesa)' }, { v: 'recorrente', n: 'Recorrente' }, { v: 'nf_entrada', n: 'NF de entrada' },
+  { v: 'pedido_compra', n: 'Pedido de compra' }, { v: 'importacao', n: 'Importado do Tiny' }];
+const ABERTOS = ['aberto', 'programado', 'parcial'];
+const hoje = () => new Date().toLocaleDateString('sv-SE');
+const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('sv-SE'); };
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+// Data prevista = programada para pagar, senão o vencimento
+const prevista = r => r.data_programada || r.data_vencimento;
+const dias = r => Math.round((Date.parse(prevista(r) + 'T12:00:00') - Date.parse(hoje() + 'T12:00:00')) / 864e5);
+// Prazo (aging) — faixas pela data prevista
+const FAIXAS = [
+  { v: 'vencido', n: 'Vencido', t: d => d < 0 }, { v: 'hoje', n: 'Hoje', t: d => d === 0 }, { v: 'amanha', n: 'Amanhã', t: d => d === 1 },
+  { v: '3', n: 'Em 2 a 3 dias', t: d => d >= 2 && d <= 3 }, { v: '7', n: 'Em 4 a 7 dias', t: d => d >= 4 && d <= 7 },
+  { v: '10', n: 'Em 8 a 10 dias', t: d => d >= 8 && d <= 10 }, { v: '30', n: 'Em 11 a 30 dias', t: d => d >= 11 && d <= 30 },
+  { v: 'mais', n: 'Mais de 30 dias', t: d => d > 30 }];
+const faixa = r => ABERTOS.includes(r.situacao) ? FAIXAS.find(f => f.t(dias(r))).v : r.situacao;
+const textoPrazo = r => { if (r.situacao === 'pago') return 'pago'; if (r.situacao === 'cancelado') return 'cancelado';
+  const d = dias(r); return d < 0 ? `vencido há ${-d} dia${d === -1 ? '' : 's'}` : d === 0 ? 'hoje' : d === 1 ? 'amanhã' : `em ${d} dias`; };
+const vencido = r => ABERTOS.includes(r.situacao) && dias(r) < 0;
+let ACOES = new Set();   // ações liberadas para quem está usando (estornar, cancelar…)
+
+let FORN = [], CATS = [], CONTAS = [], FORMAS = [], EMPRESAS = [], modalAtual = null, extraAtual = {};
+const cat = id => CATS.find(c => c.id === id);
+const conta = id => CONTAS.find(c => c.id === id);
+const forma = id => FORMAS.find(f => f.id === id);
+
+/* ---------- Rateio (várias categorias no mesmo título) ---------- */
+const optCats = sel => '<option value="">— categoria —</option>' + CATS.filter(c => c.ativo || c.id === sel)
+  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
+const linhaRateio = (x = {}) => `<tr><td><select data-k="categoria_financeira_id">${optCats(x.categoria_financeira_id)}</select></td>
+  <td style="width:150px"><input data-k="valor" inputmode="decimal" value="${x.valor != null ? Number(x.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}"></td>
+  <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
+function lerRateio() {
+  return [...(modalAtual?.querySelectorAll('#rateio tbody tr') || [])]
+    .map(tr => ({ categoria_financeira_id: Number(tr.querySelector('[data-k=categoria_financeira_id]').value) || null, valor: lerNumero(tr.querySelector('[data-k=valor]').value) }))
+    .filter(x => x.categoria_financeira_id || x.valor);
+}
+function conferirRateio() {
+  const el = modalAtual?.querySelector('#rateioSoma'); if (!el) return;
+  const linhas = lerRateio(), soma = linhas.reduce((s, x) => s + (x.valor || 0), 0), valor = lerNumero(modalAtual.querySelector('#f_valor').value) || 0;
+  el.textContent = linhas.length ? `Soma das categorias: ${reais(soma)} de ${reais(valor)}${Math.abs(soma - valor) > 0.005 ? ` · falta ${reais(valor - soma)}` : ' · fechado'}` : 'O título vai inteiro para a categoria escolhida acima.';
+  el.classList.toggle('erro', linhas.length > 0 && Math.abs(soma - valor) > 0.005);
+}
+
+/* ---------- Rastreio da compra até o pagamento ---------- */
+function htmlRastreio(r) {
+  const ref = r.origem_ref || {}, pgs = (extraAtual.pagamentos[r.id] || []).filter(p => !p.estornado);
+  const etapa = (ok, txt) => `<span class="${ok ? 'ok' : ''}">${esc(txt)}</span>`;
+  const compra = ['nf_entrada', 'pedido_compra'].includes(r.origem) || r.pedido_compra_id || ref.pedido;
+  return `<div class="secao">Rastreio</div><div class="rastreio">${compra ? [
+      etapa(ref.necessidade, ref.necessidade ? `Necessidade ${ref.necessidade}` : 'Necessidade'),
+      etapa(ref.orcamento, ref.orcamento ? `Orçamento ${ref.orcamento}` : 'Orçamento'),
+      etapa(r.pedido_compra_id || ref.pedido, ref.pedido ? `Pedido ${ref.pedido}` : 'Pedido de compra'),
+      etapa(ref.aprovado_por, 'Aprovação'), etapa(ref.recebimento, 'Recebimento'),
+      etapa(r.nf_entrada_id || ref.nf, ref.nf ? `NF ${ref.nf}` : 'NF de entrada')].join('<i>›</i>') + '<i>›</i>'
+    : `<span class="ok">${esc(ORIGENS.find(o => o.v === r.origem)?.n || 'Manual')}</span><i>›</i>`}
+    ${etapa(true, 'Título')}<i>›</i>${etapa(pgs.length, pgs.length ? `Pago ${dataCurta(pgs.at(-1).data_pagamento)}` : 'Pagamento')}<i>›</i>${etapa(pgs.length && pgs.every(p => p.conciliado), 'Conciliado')}</div>
+    ${compra ? '<p class="sub" style="margin:6px 0 0;font-size:12px">As etapas da compra se ligam aqui quando pedido de compra e entrada de NF estiverem no sistema.</p>' : ''}`;
+}
+
+/* ---------- Pagamentos (baixas) do título ---------- */
+function htmlPagamentos(r) {
+  const pgs = extraAtual.pagamentos[r.id] || [];
+  const contasEmp = CONTAS.filter(c => c.empresa_id === r.empresa_id && c.situacao === 'ativo');
+  return `<div class="secao">Pagamentos · pago ${reais(r.valor_pago)} · saldo ${reais(r.saldo)}</div>
+    ${pgs.length ? `<table class="lista-mini"><thead><tr><th>Data</th><th>Valor</th><th>Juros/multa</th><th>Desconto</th><th>Conta</th><th>Identificador</th><th>Conciliado</th><th></th></tr></thead><tbody>
+      ${pgs.map(p => `<tr class="${p.estornado ? 'estornado' : ''}"><td>${dataCurta(p.data_pagamento)}</td><td class="num">${reais(p.valor)}</td>
+        <td class="num">${p.juros || p.multa ? reais(Number(p.juros) + Number(p.multa)) : ''}</td><td class="num">${p.desconto ? reais(p.desconto) : ''}</td>
+        <td>${esc(conta(p.conta_bancaria_id)?.descricao || '')}</td><td>${esc(p.identificador || '')}</td>
+        <td>${p.estornado ? 'estornado' : `<label class="chk"><input type="checkbox" data-conc="${p.id}" ${p.conciliado ? 'checked' : ''} ${ACOES.has('pagar.conciliar') ? '' : 'disabled'}> ${p.conciliado ? dataCurta(p.conciliado_em) : ''}</label>`}</td>
+        <td>${p.estornado || p.conciliado || !ACOES.has('pagar.estornar') ? '' : `<button type="button" class="btn discreto fino" data-estornar="${p.id}">Estornar</button>`}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub" style="margin:0 0 6px">Nenhum pagamento registrado.</p>'}
+    ${ABERTOS.includes(r.situacao) ? `<div class="pg-form" id="pgForm">
+      <div><label>Data do pagamento</label><input type="date" id="pgData" value="${hoje()}"></div>
+      <div><label>Valor abatido (R$)</label><input id="pgValor" inputmode="decimal" value="${String(r.saldo).replace('.', ',')}"></div>
+      <div><label>Juros + multa (R$)</label><input id="pgJuros" inputmode="decimal" placeholder="0,00"></div>
+      <div><label>Desconto (R$)</label><input id="pgDesc" inputmode="decimal" placeholder="0,00"></div>
+      <div class="l2"><label>Conta</label><select id="pgConta">${contasEmp.map(c => `<option value="${c.id}"${c.id === r.conta_bancaria_id ? ' selected' : ''}>${esc(c.descricao)}</option>`).join('')}</select></div>
+      <div><label>Forma</label><select id="pgForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}"${f.id === r.forma_pagamento_id ? ' selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
+      <div><label>Identificador / autenticação</label><input id="pgIdent"></div>
+      <div class="acao" style="grid-column: span 4; justify-content:flex-end"><button type="button" class="btn primario" id="pgRegistrar">Registrar pagamento</button></div>
+    </div>` : ''}`;
+}
+
+async function registrarPagamento(r) {
+  const q = s => modalAtual.querySelector(s);
+  const p = { titulo_id: r.id, data_pagamento: q('#pgData').value, valor: lerNumero(q('#pgValor').value), juros: lerNumero(q('#pgJuros').value) || 0,
+    desconto: lerNumero(q('#pgDesc').value) || 0, conta_bancaria_id: Number(q('#pgConta').value) || null,
+    forma_pagamento_id: Number(q('#pgForma').value) || null, identificador: q('#pgIdent').value.trim() || null };
+  if (!p.data_pagamento) return aviso('Informe a data do pagamento', true);
+  if (!(p.valor > 0)) return aviso('Informe o valor pago', true);
+  if (p.valor > Number(r.saldo) + 0.005) return aviso(`Valor maior que o saldo (${reais(r.saldo)})`, true);
+  if (!p.conta_bancaria_id) return aviso('Escolha a conta de onde saiu o pagamento (cadastre em Contas bancárias)', true);
+  const { error } = await db.from('pagamentos').insert(p);
+  if (error) return aviso('Não salvou: ' + error.message, true);
+  aviso(p.valor >= Number(r.saldo) - 0.005 ? 'Título quitado' : 'Pagamento parcial registrado');
+  modalAtual.remove(); cfg.recarregar();
+}
+
+/* ---------- Janelinha para ações em lote ---------- */
+function janela(titulo, corpo, botao, aoConfirmar) {
+  const m = abrirModal(`<div class="mini-modal"><h2>${esc(titulo)}</h2>${corpo}<div class="acoes"><button class="btn" id="jCancelar">Cancelar</button><button class="btn primario" id="jOk">${esc(botao)}</button></div></div>`);
+  m.querySelector('#jCancelar').onclick = () => m.remove();
+  m.querySelector('#jOk').onclick = async () => { const fechar = await aoConfirmar(m); if (fechar !== false) m.remove(); };
+  return m;
+}
+
+const cfg = {
+  tabela: 'titulos_pagar', modulo: 'pagar', titulo: 'Contas a pagar', singular: 'título', plural: 'títulos',
+  subtitulo: 'Títulos por empresa. Compra de produto entra pela NF/pedido de compra; aqui, manualmente, só despesas. Saldo e situação são calculados pelos pagamentos.',
+  dicaBusca: 'fornecedor, documento, categoria, conta…', ordem: 'data_vencimento', revisao: false, porEmpresa: true,
+  filtrosExtras: [
+    { id: 'grupo', label: 'Situação', opcoes: [{ v: 'abertos', n: 'Em aberto (a pagar)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'programados', n: 'Programados' },
+        { v: 'parcial', n: 'Pago parcial' }, { v: 'pago', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }],
+      teste: (r, v) => v === 'abertos' ? ABERTOS.includes(r.situacao) : v === 'vencidos' ? vencido(r) : v === 'programados' ? r.situacao === 'programado' : r.situacao === v },
+    { id: 'prazo', label: 'Prazo (data prevista)', opcoes: FAIXAS.map(f => ({ v: f.v, n: f.n })), teste: (r, v) => faixa(r) === v },
+    { id: 'tipo', label: 'Real ou projeção', opcoes: [{ v: 'real', n: 'Só reais' }, { v: 'projecao', n: 'Só projeções' }], teste: (r, v) => (v === 'projecao') === !!r.projecao },
+    { id: 'conc', label: 'Conciliação', opcoes: [{ v: 'nao', n: 'Pago e não conciliado' }, { v: 'sim', n: 'Conciliado' }],
+      teste: (r, v, e) => { const p = (e.pagamentos[r.id] || []).filter(x => !x.estornado); return p.length > 0 && (v === 'sim' ? p.every(x => x.conciliado) : p.some(x => !x.conciliado)); } }
+  ],
+  totais: ['valor', 'saldo'],
+  valorTotal: (r, c) => r.situacao === 'cancelado' ? 0 : r[c],
+  // Ordem padrão: o que ainda vai ser pago primeiro (pela data prevista); pagos depois, do mais recente
+  ordenarPor: { data_vencimento: r => (ABERTOS.includes(r.situacao) ? '0' + prevista(r) : '1' + (9e15 - Date.parse(r.data_pagamento || r.data_vencimento))) },
+  periodos: [{ campo: 'data_vencimento', label: 'Vencimento' }, { campo: 'data_pagamento', label: 'Pagamento' }, { campo: 'data_emissao', label: 'Emissão' },
+    { campo: 'data_competencia', label: 'Competência' }, { campo: 'data_programada', label: 'Programado para' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
+  campos: [
+    { id: 'data_vencimento', label: 'Vencimento', tipo: 'data', obrig: true, lista: true },
+    { id: 'data_emissao', label: 'Emissão', tipo: 'data', obrig: true, lista: true, ajuda: 'A competência segue esta data.' },
+    { id: 'data_pagamento', label: 'Pagamento', tipo: 'data', somenteLeitura: true, lista: true, ajuda: 'Preenchida ao registrar o pagamento (data do último pagamento).' },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true,
+      opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
+    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN },
+    { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato' },
+    { id: 'descricao', label: 'Descrição', col: 3 },
+    { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
+      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Para dividir em várias categorias, use o rateio abaixo.' },
+    { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true },
+    { id: 'saldo', label: 'Saldo (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'data_competencia', label: 'Competência', tipo: 'data', somenteLeitura: true, secao: 'Competência e parcelas', ajuda: 'Automática: igual à data de emissão.' },
+    { id: 'parcela', label: 'Parcela', tipo: 'numero' },
+    { id: 'parcelas', label: 'de (total de parcelas)', tipo: 'numero' },
+    { id: 'data_programada', label: 'Programado para', tipo: 'data', secao: 'Como vai ser pago' },
+    { id: 'conta_bancaria_id', label: 'Conta prevista', tipo: 'select', filtro: true, opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
+    { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', filtro: true, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
+    { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 4 },
+    { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, secao: 'Situação' },
+    { id: 'projecao', label: 'Projeção', tipo: 'bool', textoBool: 'Valor estimado (projeção)', ajuda: 'Desmarque quando chegar a conta/boleto real.' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'aberto' },
+    { id: 'valor_pago', label: 'Pago (R$)', tipo: 'moeda', somenteLeitura: true },
+    { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 }
+  ],
+  async carregarExtra(linhas, ctx) {
+    window.__ctxNox = ctx;
+    const [f, c, cb, fp, pg, ra] = await Promise.all([
+      buscarTodos(() => db.from('fornecedores').select('id, nome, situacao').order('nome')),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, aplica_produtos, situacao').eq('aceita_lancamento', true).order('codigo')),
+      buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao').order('descricao')),
+      buscarTodos(() => db.from('formas_pagamento').select('id, nome, exige_codigo, situacao').order('nome')),
+      buscarTodos(() => db.from('pagamentos').select('*').order('data_pagamento')),
+      buscarTodos(() => db.from('titulos_pagar_rateio').select('*').order('id'))
+    ]);
+    const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
+    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: x.nome }));
+    CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' }));
+    CONTAS = cb; FORMAS = fp.filter(x => x.situacao === 'ativo');
+    const pagamentos = {}, rateio = {};
+    pg.forEach(p => (pagamentos[p.titulo_id] ||= []).push(p));
+    ra.forEach(x => (rateio[x.titulo_id] ||= []).push(x));
+    extraAtual = { pagamentos, rateio };
+    return extraAtual;
+  },
+  colunasExtras: [
+    { label: 'Categoria', texto: (r, e) => (e.rateio[r.id] || []).length ? 'Rateio: ' + e.rateio[r.id].map(x => `${cat(x.categoria_financeira_id)?.nome || '?'} ${reais(x.valor)}`).join(' | ') : (cat(r.categoria_financeira_id)?.nome || ''),
+      html: (r, e) => (e.rateio[r.id] || []).length ? `<span title="${esc(e.rateio[r.id].map(x => `${cat(x.categoria_financeira_id)?.nome}: ${reais(x.valor)}`).join('\n'))}">${esc(cat(e.rateio[r.id][0].categoria_financeira_id)?.nome || '')} <small class="sub2" style="display:inline">+${e.rateio[r.id].length - 1}</small></span>` : esc(cat(r.categoria_financeira_id)?.nome || '') },
+    { label: 'Prazo', texto: r => textoPrazo(r), html: r => `<span class="prazo p-${faixa(r)}">${textoPrazo(r)}</span>` },
+    { label: 'Conta', texto: (r, e) => { const p = (e.pagamentos[r.id] || []).filter(x => !x.estornado); return conta(p.length ? p.at(-1).conta_bancaria_id : r.conta_bancaria_id)?.descricao || ''; } }
+  ],
+  textoBuscaExtra: r => `${cat(r.categoria_financeira_id)?.codigo || ''} ${conta(r.conta_bancaria_id)?.descricao || ''} ${r.descricao || ''}`,
+  subtituloLinha: r => [r.projecao ? 'projeção' : '', r.parcela && r.parcelas ? `parcela ${r.parcela}/${r.parcelas}` : '', ORIGENS.find(o => o.v === r.origem)?.n].filter(Boolean).join(' · '),
+  resumo: v => {
+    window.__visiveisNox = v;
+    const venc = v.filter(vencido);
+    return (venc.length ? `<span class="vermelho">Vencido <b>${reais(venc.reduce((s, r) => s + Number(r.saldo), 0))}</b> (${venc.length})</span>` : '')
+      + `<button type="button" class="btn discreto fino nao-imprimir" id="btnAging" title="Saldo a pagar por faixa de prazo, por empresa">Relatório de prazos (aging)</button>`;
+  },
+  pendencias: [
+    { id: 'vencido', nome: 'Vencido', cor: 'erro', teste: vencido },
+    { id: 'sem_cat', nome: 'Sem categoria (importado)', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !r.categoria_financeira_id && !(e.rateio[r.id] || []).length },
+    { id: 'produto_sem_pedido', nome: 'Compra de produto sem pedido', cor: 'alerta',
+      teste: (r, e) => ['manual', 'recorrente'].includes(r.origem) && [r.categoria_financeira_id, ...(e.rateio[r.id] || []).map(x => x.categoria_financeira_id)].some(id => cat(id)?.aplica_produtos) },
+    { id: 'sem_codigo', nome: 'Boleto sem código de barras', cor: 'neutro', teste: r => ABERTOS.includes(r.situacao) && forma(r.forma_pagamento_id)?.exige_codigo && !r.codigo_barras },
+    { id: 'nao_conc', nome: 'Pago e não conciliado', cor: 'neutro', teste: (r, e) => (e.pagamentos[r.id] || []).some(p => !p.estornado && !p.conciliado) }
+  ],
+  apagado: r => r.situacao === 'cancelado' || r.situacao === 'pago',
+  aoAbrir(m, r, ctx) {
+    window.__ctxNox = ctx;
+    modalAtual = m;
+    const pode = ctx.pode('pagar', 'editar');
+    // Lançamento manual de projeção: emissão acompanha o vencimento
+    const fEm = m.querySelector('#f_data_emissao'), fVe = m.querySelector('#f_data_vencimento');
+    if (pode && fEm && ['manual', 'recorrente', undefined].includes(r.origem)) {
+      fEm.closest('.campo').insertAdjacentHTML('beforeend', `<label class="chk" style="margin-top:6px"><input type="checkbox" id="emIgualVenc" ${r.id && r.data_emissao && r.data_emissao === r.data_vencimento ? 'checked' : ''}> Emissão = vencimento (projeção)</label>`);
+      const chk = m.querySelector('#emIgualVenc');
+      const sincronizar = () => { if (chk.checked) fEm.value = fVe.value; fEm.readOnly = chk.checked; };
+      chk.onchange = sincronizar; fVe.addEventListener('input', sincronizar); fVe.addEventListener('change', sincronizar); sincronizar();
+    }
+    // Rateio
+    const el = document.createElement('div');
+    el.className = 'sub-ed'; el.id = 'rateio';
+    const temRateio = !!(r.id && (extraAtual.rateio[r.id] || []).length);
+    el.innerHTML = `<div class="secao">Categorias do título</div>
+      <button type="button" class="btn discreto fino" id="abrirRateio" ${temRateio ? 'hidden' : ''}>Dividir em mais de uma categoria…</button>
+      <div id="rateioCorpo" ${temRateio ? '' : 'hidden'}><table><thead><tr><th>Categoria</th><th>Valor (R$)</th><th></th></tr></thead><tbody>${((r.id && extraAtual.rateio[r.id]) || []).map(linhaRateio).join('')}</tbody></table>
+      ${pode ? '<button type="button" class="btn fino" id="addRateio" style="margin-top:6px">+ Categoria</button>' : ''}<div class="soma" id="rateioSoma"></div></div>`;
+    const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent.startsWith('Pagamentos')) || [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Histórico') || m.querySelector('.acoes');
+    antes.parentNode.insertBefore(el, antes);
+    const tb = el.querySelector('tbody');
+    el.querySelector('#abrirRateio').onclick = e => { e.target.hidden = true; el.querySelector('#rateioCorpo').hidden = false; if (!tb.children.length) { tb.insertAdjacentHTML('beforeend', linhaRateio({ categoria_financeira_id: Number(m.querySelector('#f_categoria_financeira_id').value) || null, valor: lerNumero(m.querySelector('#f_valor').value) || null })); tb.insertAdjacentHTML('beforeend', linhaRateio()); } conferirRateio(); };
+    if (pode) {
+      el.querySelector('#addRateio').onclick = () => { tb.insertAdjacentHTML('beforeend', linhaRateio()); conferirRateio(); };
+      el.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); conferirRateio(); } });
+      el.addEventListener('input', conferirRateio); el.addEventListener('change', conferirRateio);
+      m.querySelector('#f_valor')?.addEventListener('input', conferirRateio);
+    } else el.querySelectorAll('input, select').forEach(i => i.disabled = true);
+    conferirRateio();
+    // Pagamentos
+    if (!r.id || !pode) return;
+    m.querySelector('#pgRegistrar')?.addEventListener('click', () => registrarPagamento(r));
+    m.querySelectorAll('[data-estornar]').forEach(b => b.onclick = async () => {
+      if (!confirm('Estornar este pagamento? O saldo do título volta.')) return;
+      const { error } = await db.from('pagamentos').update({ estornado: true }).eq('id', +b.dataset.estornar);
+      if (error) return aviso('Não salvou: ' + error.message, true);
+      aviso('Pagamento estornado'); m.remove(); cfg.recarregar();
+    });
+    m.querySelectorAll('[data-conc]').forEach(c => c.onchange = async () => {
+      const { error } = await db.from('pagamentos').update({ conciliado: c.checked }).eq('id', +c.dataset.conc);
+      if (error) { c.checked = !c.checked; return aviso('Não salvou: ' + error.message, true); }
+      aviso(c.checked ? 'Conciliado' : 'Conciliação desfeita');
+    });
+  },
+  secaoExtra: r => htmlRastreio(r) + htmlPagamentos(r),
+  antesSalvar: d => {
+    ['empresa_id', 'fornecedor_id', 'categoria_financeira_id', 'conta_bancaria_id', 'forma_pagamento_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); });
+    if (d.codigo_barras) d.codigo_barras = soDigitos(d.codigo_barras) || d.codigo_barras;
+    d.origem ||= 'manual';
+  },
+  validar: (d, r) => {
+    const rat = lerRateio();
+    if (rat.some(x => !x.categoria_financeira_id || !(x.valor > 0))) return 'Rateio: cada linha precisa de categoria e valor';
+    if (rat.length && Math.abs(rat.reduce((s, x) => s + x.valor, 0) - d.valor) > 0.005) return 'O rateio precisa somar exatamente o valor do título';
+    if (!rat.length && !d.categoria_financeira_id) return 'Informe a categoria financeira (ou faça o rateio)';
+    if (d.data_emissao && d.data_vencimento < d.data_emissao) return 'O vencimento não pode ser antes da emissão';
+    if (d.parcela && d.parcelas && d.parcela > d.parcelas) return 'A parcela não pode ser maior que o total de parcelas';
+    if (d.conta_bancaria_id && conta(d.conta_bancaria_id)?.empresa_id !== d.empresa_id) return 'A conta prevista é de outra empresa';
+    if (r?.id && Number(r.valor_pago) > d.valor) return `O valor não pode ficar abaixo do que já foi pago (${reais(r.valor_pago)})`;
+    return null;
+  },
+  async salvar(dados, r, m, novo) {
+    const rat = lerRateio();
+    const { data, error } = await db.rpc('salvar_titulo_pagar', { p_titulo: { ...dados, id: novo ? null : r.id }, p_rateio: rat.length || (r.id && (extraAtual.rateio[r.id] || []).length) ? rat : null });
+    if (error) throw error;
+    return data;
+  },
+  acoesLote: [
+    { nome: 'Programar pagamento', executar: (sel, pronto) => {
+        const abertos = sel.filter(r => ABERTOS.includes(r.situacao));
+        if (!abertos.length) return aviso('Selecione títulos em aberto', true);
+        janela(`Programar ${abertos.length} título(s)`, `<div class="grade"><div><label>Pagar em</label><input type="date" id="jData" value="${hoje()}"></div></div>`, 'Programar', async m => {
+          const data = m.querySelector('#jData').value; if (!data) { aviso('Informe a data', true); return false; }
+          const { error } = await db.from('titulos_pagar').update({ data_programada: data }).in('id', abertos.map(r => r.id));
+          if (error) { aviso('Não salvou: ' + error.message, true); return false; }
+          aviso('Programado'); pronto();
+        });
+      } },
+    { nome: 'Pagar (baixa total)', executar: (sel, pronto) => {
+        const abertos = sel.filter(r => ABERTOS.includes(r.situacao));
+        if (!abertos.length) return aviso('Selecione títulos em aberto', true);
+        const emp = [...new Set(abertos.map(r => r.empresa_id))];
+        if (emp.length > 1) return aviso('Selecione títulos de uma empresa só (as contas são por empresa)', true);
+        const total = abertos.reduce((s, r) => s + Number(r.saldo), 0);
+        janela(`Pagar ${abertos.length} título(s) · ${reais(total)}`, `<div class="grade">
+            <div><label>Data do pagamento</label><input type="date" id="jData" value="${hoje()}"></div>
+            <div><label>Conta</label><select id="jConta">${CONTAS.filter(c => c.empresa_id === emp[0] && c.situacao === 'ativo').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
+            <div><label>Forma</label><select id="jForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</select></div></div>
+            <p class="sub" style="margin:0">Cada título é baixado pelo saldo, sem juros/desconto. Para juros ou pagamento parcial, abra o título.</p>`, 'Registrar pagamentos', async m => {
+          const data = m.querySelector('#jData').value, contaId = Number(m.querySelector('#jConta').value), formaId = Number(m.querySelector('#jForma').value) || null;
+          if (!data || !contaId) { aviso('Informe data e conta', true); return false; }
+          const { error } = await db.from('pagamentos').insert(abertos.map(r => ({ titulo_id: r.id, data_pagamento: data, valor: Number(r.saldo), conta_bancaria_id: contaId, forma_pagamento_id: formaId })));
+          if (error) { aviso('Não salvou: ' + error.message, true); return false; }
+          aviso(`${abertos.length} pagamento(s) registrado(s)`); pronto();
+        });
+      } },
+    { nome: 'Cancelar título', executar: (sel, pronto) => {
+        if (!ACOES.has('pagar.cancelar')) return aviso('Cancelar título precisa de permissão do gestor', true);
+        const ok = sel.filter(r => ABERTOS.includes(r.situacao) && !Number(r.valor_pago));
+        if (!ok.length) return aviso('Só títulos em aberto e sem pagamento podem ser cancelados (estorne o pagamento antes)', true);
+        janela(`Cancelar ${ok.length} título(s)`, '<div class="grade"><div style="grid-column: span 2"><label>Motivo</label><input id="jMotivo" placeholder="ex.: lançado em duplicidade"></div></div>', 'Cancelar títulos', async m => {
+          const motivo = m.querySelector('#jMotivo').value.trim(); if (!motivo) { aviso('Informe o motivo', true); return false; }
+          const { error } = await db.from('titulos_pagar').update({ situacao: 'cancelado', motivo_cancelamento: motivo }).in('id', ok.map(r => r.id));
+          if (error) { aviso('Não salvou: ' + error.message, true); return false; }
+          aviso('Cancelado'); pronto();
+        });
+      } }
+  ],
+  tituloRegistro: r => [FORN.find(f => f.v === r.fornecedor_id)?.n, r.documento].filter(Boolean).join(' · ') || 'Título',
+  chaveHistorico: r => r.documento || r.id,
+  msgDuplicado: 'Título duplicado'
+};
+/* ---------- Projeção: títulos estimados de uma vez (ex.: aluguel até dezembro) ---------- */
+function abrirProjecao(ctx) {
+  const ano = hoje().slice(0, 4), mes = hoje().slice(0, 7);
+  const empOpts = ctx.empresas.map(e => `<option value="${e.id}"${e.id === (ctx.empresa || ctx.empresas[0]?.id) ? ' selected' : ''}>${esc(e.nome)}</option>`).join('');
+  const m = janela('Nova projeção', `<p class="sub" style="margin:0 0 6px">Cria um título por mês com valor estimado (emissão = vencimento). Quando a conta real chegar, ajuste o valor e desmarque "projeção".</p>
+    <div class="grade">
+      <div><label>Empresa</label><select id="pjEmp">${empOpts}</select></div>
+      <div><label>Fornecedor</label><select id="pjForn"><option value="">—</option>${FORN.map(f => `<option value="${f.v}">${esc(f.n)}</option>`).join('')}</select></div>
+      <div style="grid-column: span 2"><label>Categoria financeira</label><select id="pjCat">${optCats(null)}</select></div>
+      <div><label>Descrição / documento</label><input id="pjDoc" placeholder="ex.: Aluguel galpão"></div>
+      <div><label>Valor por mês (R$)</label><input id="pjValor" inputmode="decimal"></div>
+      <div><label>Dia do vencimento</label><input id="pjDia" inputmode="numeric" value="10"></div>
+      <div><label>Forma de pagamento</label><select id="pjForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</select></div>
+      <div><label>Do mês</label><input type="month" id="pjIni" value="${mes}"></div>
+      <div><label>Até o mês</label><input type="month" id="pjFim" value="${ano}-12"></div>
+    </div><p class="sub" id="pjPrevia" style="margin:0"></p>`, 'Criar títulos', async mm => {
+      const q = s => mm.querySelector(s);
+      const p = { empresa_id: Number(q('#pjEmp').value), fornecedor_id: Number(q('#pjForn').value) || null, categoria_financeira_id: Number(q('#pjCat').value) || null,
+        valor: lerNumero(q('#pjValor').value), dia: Number(q('#pjDia').value), inicio: q('#pjIni').value + '-01', fim: q('#pjFim').value + '-01',
+        documento: q('#pjDoc').value.trim(), descricao: q('#pjDoc').value.trim(), forma_pagamento_id: Number(q('#pjForma').value) || null };
+      if (!p.fornecedor_id || !p.categoria_financeira_id || !(p.valor > 0) || !p.dia || !q('#pjIni').value || !q('#pjFim').value) { aviso('Preencha fornecedor, categoria, valor, dia e meses', true); return false; }
+      const { data, error } = await db.rpc('gerar_projecao', { p });
+      if (error) { aviso('Não criou: ' + error.message, true); return false; }
+      aviso(`${data} título(s) de projeção criados`); cfg.recarregar();
+    });
+  const previa = () => {
+    const q = s => m.querySelector(s), i = q('#pjIni').value, f = q('#pjFim').value, v = lerNumero(q('#pjValor').value) || 0;
+    if (!i || !f) return;
+    const n = (Number(f.slice(0, 4)) - Number(i.slice(0, 4))) * 12 + Number(f.slice(5)) - Number(i.slice(5)) + 1;
+    q('#pjPrevia').textContent = n > 0 ? `Serão criados ${n} título(s), vencendo todo dia ${q('#pjDia').value || '?'} · total ${reais(n * v)}` : 'O último mês precisa ser depois do primeiro';
+  };
+  m.querySelectorAll('input').forEach(i => i.addEventListener('input', previa)); previa();
+}
+
+/* ---------- Relatório de prazos (aging): saldo a pagar por faixa, por empresa ---------- */
+function relatorioAging(visiveis, ctx) {
+  const abertos = visiveis.filter(r => ABERTOS.includes(r.situacao));
+  const emps = ctx.empresas.filter(e => abertos.some(r => r.empresa_id === e.id));
+  const linhas = FAIXAS.map(f => { const rs = abertos.filter(r => faixa(r) === f.v);
+    return [f.n, rs.length, ...emps.map(e => rs.filter(r => r.empresa_id === e.id).reduce((s, r) => s + Number(r.saldo), 0).toFixed(2).replace('.', ',')),
+      rs.reduce((s, r) => s + Number(r.saldo), 0).toFixed(2).replace('.', ',')]; });
+  exportarExcel('contas_pagar_aging', ['Prazo (data prevista)', 'Títulos', ...emps.map(e => e.nome), 'Total (R$)'], linhas);
+}
+
+montarCadastro(cfg).then(() => {
+  const novo = document.getElementById('cNovo');
+  if (novo) {
+    const caixa = document.createElement('div'); caixa.style.cssText = 'display:flex;gap:6px;align-items:center';
+    novo.replaceWith(caixa); caixa.innerHTML = '<button class="btn fino" id="cProjecao" title="Criar títulos estimados de uma vez (ex.: aluguel até dezembro)">+ Projeção</button>'; caixa.appendChild(novo);
+    document.getElementById('cProjecao').onclick = () => abrirProjecao(window.__ctxNox);
+  }
+  document.addEventListener('click', e => { if (e.target.id === 'btnAging') relatorioAging(window.__visiveisNox || [], window.__ctxNox); });
+});
+</script>
+</body>
+</html>

@@ -78,6 +78,7 @@
 <script src="../../assets/js/layout.js"></script>
 <script>
 let ctx, perfis = [], modulos = [], permissoes = [], ajustes = [], usuarios = [];
+let acoes = [], perfilAcoes = [], usuarioAcoes = [];   // ações sensíveis (estornar, cancelar…), por perfil e por pessoa
 const GRUPOS = { cadastros: 'Cadastros', comercial: 'Comercial', suprimentos: 'Suprimentos', producao: 'Produção', engenharia: 'Engenharia', financeiro: 'Financeiro', rh: 'RH', config: 'Configurações' };
 const NIVEL = { ver: 'Ver', editar: 'Ver e editar', nenhum: 'Bloqueado' };
 
@@ -101,6 +102,9 @@ const NIVEL = { ver: 'Ver', editar: 'Ver e editar', nenhum: 'Bloqueado' };
       resumoAjustes(u.id), u.ativo ? 'Ativo' : 'Inativo', dataBR(u.criado_em)])
   }));
   await carregar();
+  // Vindo do cadastro de funcionário: abre direto o usuário
+  const alvo = new URLSearchParams(location.search).get('usuario');
+  if (alvo && ctx.admin && usuarios.some(u => u.id === alvo)) editarUsuario(alvo);
 })();
 
 async function carregar() {
@@ -115,12 +119,19 @@ async function carregar() {
   const erro = r.find(x => x.error);
   if (erro) return aviso('Erro ao carregar: ' + erro.error.message, true);
   [perfis, modulos, permissoes, ajustes, usuarios] = r.map(x => x.data);
+  // Ações (se a estrutura ainda não existir no banco, a tela segue sem elas)
+  const ra = await Promise.all([db.from('acoes').select('*').order('ordem'), db.from('perfil_acoes').select('*'), db.from('usuario_acoes').select('*')]);
+  [acoes, perfilAcoes, usuarioAcoes] = ra.map(x => x.error ? [] : x.data || []);
   desenharUsuarios();
   desenharSeletorPerfil();
   desenharEmpresas(r[5].data);
 }
 
 /* ---------- USUÁRIOS ---------- */
+function resumoAcoes(id) {
+  const lib = usuarioAcoes.filter(x => x.usuario_id === id && x.permitido).map(x => acoes.find(a => a.id === x.acao_id)?.nome).filter(Boolean);
+  return lib.length ? ` · ações: ${lib.join(', ')}` : '';
+}
 function resumoAjustes(id) {
   const extras = ajustes.filter(a => a.usuario_id === id);
   const mais = extras.filter(a => a.nivel !== 'nenhum').length, menos = extras.length - mais;
@@ -145,7 +156,7 @@ function desenharUsuarios() {
   const lista = usuariosFiltrados();
   const opcoes = sel => '<option value="">— sem perfil —</option>' + perfis.map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc(p.nome)}</option>`).join('');
   document.getElementById('listaUsuarios').innerHTML = lista.length ? lista.map(u => {
-    const resumo = resumoAjustes(u.id);
+    const resumo = resumoAjustes(u.id) + esc(resumoAcoes(u.id));
     return `<tr>
       <td>${esc(u.nome)}</td>
       <td>${esc(u.email)}</td>
@@ -191,7 +202,16 @@ function editarUsuario(id) {
     <div class="campo"><label>Nome</label><input id="mNome" value="${esc(u.nome)}"></div>
     <div class="campo"><label>Situação</label><select id="mAtivo"><option value="1"${u.ativo ? ' selected' : ''}>Ativo</option><option value="0"${u.ativo ? '' : ' selected'}>Inativo (não entra no sistema)</option></select></div>
     <label>Telas deste usuário — perfil base: <b>${esc(nomePerfil)}</b></label>
-    <div style="max-height:46vh;overflow:auto;margin-bottom:12px"><table>${linhas}</table></div>
+    <div style="max-height:40vh;overflow:auto;margin-bottom:12px"><table>${linhas}</table></div>
+    ${acoes.length ? `<label>Ações sensíveis — além de ver/editar a tela (padrão: só o gestor)</label>
+    <div style="max-height:24vh;overflow:auto;margin-bottom:12px"><table>${acoes.map(a => {
+      const doPerf = u.perfil_id === 'admin' || perfilAcoes.some(x => x.perfil_id === u.perfil_id && x.acao_id === a.id);
+      const aj = usuarioAcoes.find(x => x.usuario_id === id && x.acao_id === a.id);
+      const v = aj ? (aj.permitido ? 'sim' : 'nao') : '';
+      return `<tr><td style="color:var(--texto-suave)">${esc(modulos.find(m => m.id === a.modulo_id)?.nome || '')}</td><td>${esc(a.nome)}<small class="sub2">${esc(a.descricao || '')}</small></td><td>
+        <select data-acao="${a.id}" ${ctx.admin ? '' : 'disabled'}><option value="">Padrão do perfil: ${doPerf ? 'pode' : 'não pode'}</option>
+        <option value="sim"${v === 'sim' ? ' selected' : ''}>Liberar para esta pessoa</option><option value="nao"${v === 'nao' ? ' selected' : ''}>Bloquear para esta pessoa</option></select></td></tr>`;
+    }).join('')}</table></div>` : ''}
     <div class="acoes"><button class="btn" id="mCancelar">Cancelar</button><button class="btn primario" id="mSalvar">Salvar</button></div>`);
   modal.querySelector('.modal').style.maxWidth = '640px';
   modal.querySelector('#mCancelar').onclick = () => modal.remove();
@@ -203,7 +223,12 @@ function editarUsuario(id) {
     const limpar = escolhas.filter(s => !s.value).map(s => s.dataset.tela);
     const r2 = gravar.length ? await db.from('permissoes_usuario').upsert(gravar) : {};
     const r3 = limpar.length ? await db.from('permissoes_usuario').delete().eq('usuario_id', id).in('modulo_id', limpar) : {};
-    const erro = r1.error || r2.error || r3.error;
+    const esc2 = [...modal.querySelectorAll('[data-acao]')];
+    const gAc = esc2.filter(x => x.value).map(x => ({ usuario_id: id, acao_id: x.dataset.acao, permitido: x.value === 'sim' }));
+    const lAc = esc2.filter(x => !x.value).map(x => x.dataset.acao);
+    const r4 = ctx.admin && gAc.length ? await db.from('usuario_acoes').upsert(gAc) : {};
+    const r5 = ctx.admin && lAc.length ? await db.from('usuario_acoes').delete().eq('usuario_id', id).in('acao_id', lAc) : {};
+    const erro = r1.error || r2.error || r3.error || r4.error || r5.error;
     if (erro) return aviso('Não salvou: ' + erro.message, true);
     modal.remove(); aviso('Usuário salvo'); carregar();
   };
