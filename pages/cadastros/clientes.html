@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clientes · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .contatos-ed table { width: 100%; border-collapse: collapse; }
+  .contatos-ed th { text-align: left; font-size: 12px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
+  .contatos-ed td { padding: 2px 4px; }
+  .contatos-ed input { width: 100%; }
+  .contatos-ed .rm { background: none; border: 0; color: var(--erro); cursor: pointer; font-size: 16px; }
+</style>
+</head>
+<body data-modulo="clientes" data-titulo="Clientes">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+const SIT = [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }, { v: 'bloqueado', n: 'Bloqueado' }];
+const TIPOS = [{ v: 'consumidor', n: 'Consumidor final' }, { v: 'revenda', n: 'Revenda / loja' }, { v: 'distribuidor', n: 'Distribuidor' },
+  { v: 'oficina', n: 'Oficina / instalador' }, { v: 'representante', n: 'Representante' }, { v: 'outro', n: 'Outro' }];
+let REPS = [], VENDEDORES = [];   // carregados junto com a lista
+const ehRep = r => r.tipo_cliente === 'representante';
+const CANAIS = ['Mercado Livre', 'Shopee', 'Amazon', 'Magalu', 'Americanas', 'Shein', 'TikTok Shop', 'Site próprio', 'Venda direta', 'WhatsApp', 'Instagram', 'Representante', 'Indicação', 'Feira / evento', 'Outro'];
+const B2B = r => ['revenda', 'distribuidor', 'oficina'].includes(r.tipo_cliente);
+
+// ----- Contatos (lista dentro do cliente) -----
+let modalAtual = null;
+const linhaContato = (c = {}) => `<tr>${['nome', 'setor', 'email', 'telefone', 'ramal'].map(k =>
+  `<td><input data-k="${k}" value="${esc(c[k] || '')}" ${k === 'ramal' ? 'style="max-width:70px"' : ''}></td>`).join('')}
+  <td><button type="button" class="rm" title="Remover">×</button></td></tr>`;
+function editorContatos(m, r, ctx) {
+  modalAtual = m;
+  const pode = ctx.pode('clientes', 'editar');
+  const el = document.createElement('div');
+  el.className = 'contatos-ed';
+  el.innerHTML = `<div class="secao">Contatos (pessoas na empresa do cliente)</div>
+    <table><thead><tr><th>Nome</th><th>Setor</th><th>E-mail</th><th>Telefone</th><th>Ramal</th><th></th></tr></thead>
+    <tbody>${(r.contatos || []).map(linhaContato).join('')}</tbody></table>
+    ${pode ? '<button type="button" class="btn" id="addContato" style="margin-top:6px">+ Contato</button>' : ''}`;
+  const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Histórico') || m.querySelector('.acoes');
+  antes.parentNode.insertBefore(el, antes);
+  const tb = el.querySelector('tbody');
+  if (!pode) { el.querySelectorAll('input').forEach(i => i.disabled = true); el.querySelectorAll('.rm').forEach(b => b.remove()); return; }
+  el.querySelector('#addContato').onclick = () => { tb.insertAdjacentHTML('beforeend', linhaContato()); tb.lastElementChild.querySelector('input').focus(); };
+  tb.addEventListener('click', e => { if (e.target.classList.contains('rm')) e.target.closest('tr').remove(); });
+}
+function lerContatos() {
+  return [...(modalAtual?.querySelectorAll('.contatos-ed tbody tr') || [])]
+    .map(tr => Object.fromEntries([...tr.querySelectorAll('input')].map(i => [i.dataset.k, i.value.trim()])))
+    .filter(c => Object.values(c).some(Boolean));
+}
+
+montarCadastro({
+  tabela: 'clientes', modulo: 'clientes', titulo: 'Clientes', singular: 'cliente', plural: 'clientes',
+  subtitulo: 'Consumidores de marketplace, revendas, distribuidores e venda direta. Clientes do Mercado Livre não trazem telefone/e-mail.',
+  dicaBusca: 'nome, CPF/CNPJ, cidade, contato, ID Tiny…', ordem: 'nome', revisao: true,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: 'bloqueado', n: 'Bloqueados' }, { v: '', n: 'Todos' }] },
+  periodos: [{ campo: 'criado_em', label: 'Cadastro' }, { campo: 'atualizado_em', label: 'Última alteração' }],
+  campos: [
+    { id: 'nome', label: 'Nome / razão social', obrig: true, col: 2, lista: true },
+    { id: 'nome_fantasia', label: 'Nome fantasia', col: 2 },
+    { id: 'tipo_pessoa', label: 'Pessoa', tipo: 'select', opcoes: [{ v: 'F', n: 'Física' }, { v: 'J', n: 'Jurídica' }], obrig: true, padrao: 'F', filtro: true },
+    { id: 'cpf_cnpj', label: 'CPF / CNPJ', tipo: 'cpfcnpj', lista: true },
+    { id: 'rg_ie', label: 'RG / Inscrição estadual' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, obrig: true, padrao: 'ativo' },
+    { id: 'tipo_cliente', label: 'Tipo de cliente', tipo: 'select', opcoes: TIPOS, obrig: true, padrao: 'consumidor', filtro: true, lista: true, col: 2 },
+    { id: 'canal_origem', label: 'Canal de origem do cadastro', tipo: 'select', opcoes: CANAIS, filtro: true, filtroVazio: true, col: 2,
+      ajuda: 'Onde o cliente surgiu. A plataforma de cada venda fica no pedido.' },
+    { id: 'representante_id', label: 'Representante', tipo: 'select', opcoes: () => REPS, filtro: true, filtroVazio: true, lista: true, col: 2,
+      ajuda: 'Quem trouxe / atende este cliente. Base para vendas e comissão por representante.' },
+    { id: 'vendedor_id', label: 'Vendedor interno', tipo: 'select', opcoes: () => VENDEDORES, filtro: true, filtroVazio: true },
+    { id: 'empresa_id', label: 'Empresa que fatura', tipo: 'select', opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), filtro: true },
+    { id: 'comissao_pct', label: 'Comissão do representante (%)', tipo: 'numero', secao: 'Dados do representante', ajuda: 'Só para tipo Representante.' },
+    { id: 'regiao_atuacao', label: 'Região de atuação', col: 3, placeholder: 'ex.: interior SP, Sul, PR/SC', filtro: true },
+    { id: 'celular', label: 'Celular / WhatsApp', tipo: 'tel', secao: 'Contato', lista: true },
+    { id: 'telefone', label: 'Telefone fixo', tipo: 'tel' },
+    { id: 'email', label: 'E-mail', tipo: 'email', col: 2 },
+    { id: 'cep', label: 'CEP', tipo: 'cep', secao: 'Endereço' },
+    { id: 'endereco', label: 'Endereço', col: 2 },
+    { id: 'numero', label: 'Número' },
+    { id: 'complemento', label: 'Complemento' },
+    { id: 'bairro', label: 'Bairro' },
+    { id: 'cidade', label: 'Cidade', lista: true, filtro: true },
+    { id: 'uf', label: 'UF', tipo: 'uf', filtro: true },
+    { id: 'condicao_pagamento', label: 'Condição de pagamento', secao: 'Comercial', col: 2, placeholder: 'ex.: 28 dias boleto, à vista PIX' },
+    { id: 'limite_credito', label: 'Limite de crédito (R$)', tipo: 'moeda' },
+    { id: 'id_tiny', label: 'ID no Tiny', ajuda: 'Preenchido pela integração; evita cliente duplicado.' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
+  ],
+  async carregarExtra(linhas) {
+    REPS = linhas.filter(ehRep).map(r => ({ v: r.id, n: r.nome })).sort((a, b) => a.n.localeCompare(b.n));
+    const { data } = await db.rpc('usuarios_nomes');
+    VENDEDORES = (data || []).map(u => ({ v: u.id, n: u.nome }));
+    const carteira = {};
+    linhas.forEach(r => { if (r.representante_id) carteira[r.representante_id] = (carteira[r.representante_id] || 0) + 1; });
+    return { carteira };
+  },
+  colunasExtras: [{ label: 'Clientes na carteira', texto: (r, e) => ehRep(r) ? String(e.carteira[r.id] || 0) : '' },{ label: 'Contatos', texto: r => (r.contatos || []).map(c => [c.nome, c.setor, c.email, c.telefone].filter(Boolean).join(' · ')).join(' | '),
+                    html: r => (r.contatos || []).length ? String(r.contatos.length) : '' }],
+  textoBuscaExtra: r => (r.contatos || []).map(c => Object.values(c).join(' ')).join(' '),
+  subtituloLinha: r => [r.nome_fantasia, r.canal_origem].filter(Boolean).join(' · '),
+  aoAbrir: editorContatos,
+  antesSalvar: d => {
+    d.contatos = lerContatos();
+    if (d.representante_id) d.representante_id = Number(d.representante_id);
+    if (d.empresa_id) d.empresa_id = Number(d.empresa_id);
+    if (d.tipo_cliente !== 'representante') { d.comissao_pct = null; d.regiao_atuacao = null; }
+  },
+  pendencias: [
+    { id: 'sem_doc', nome: 'Sem CPF/CNPJ', cor: 'erro', bloqueia: true, teste: r => !r.cpf_cnpj },
+    { id: 'doc_inv', nome: 'Documento inválido', cor: 'erro', bloqueia: true, teste: r => r.cpf_cnpj && !(r.cpf_cnpj.length === 11 ? cpfValido(r.cpf_cnpj) : cnpjValido(r.cpf_cnpj)) },
+    { id: 'sem_end', nome: 'Endereço incompleto', cor: 'alerta', bloqueia: true, teste: r => !r.endereco || !r.cidade || !r.uf || !r.cep },
+    { id: 'sem_canal', nome: 'Sem canal de origem', cor: 'neutro', teste: r => !r.canal_origem },
+    { id: 'b2b_sem_contato', nome: 'Revenda sem contato', cor: 'alerta', bloqueia: true, teste: r => B2B(r) && !r.celular && !r.telefone && !r.email && !(r.contatos || []).length },
+    { id: 'b2b_sem_ie', nome: 'PJ sem inscrição estadual', cor: 'neutro', teste: r => r.tipo_pessoa === 'J' && !r.rg_ie },
+    { id: 'rep_sem_com', nome: 'Representante sem comissão', cor: 'alerta', bloqueia: true, teste: r => ehRep(r) && r.comissao_pct == null },
+    { id: 'rep_sem_reg', nome: 'Representante sem região', cor: 'neutro', teste: r => ehRep(r) && !r.regiao_atuacao },
+    { id: 'b2b_sem_pgto', nome: 'Revenda sem condição de pagamento', cor: 'neutro', teste: r => B2B(r) && !r.condicao_pagamento }
+  ],
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }, { nome: 'Bloquear', dados: { situacao: 'bloqueado' } }],
+  apagado: r => r.situacao !== 'ativo',
+  validar: (d, r) => {
+    const r_id = () => r?.id;
+    if (d.tipo_pessoa === 'F' && d.cpf_cnpj && d.cpf_cnpj.length !== 11) return 'Pessoa física deve ter CPF (11 dígitos)';
+    if (d.tipo_pessoa === 'J' && d.cpf_cnpj && d.cpf_cnpj.length !== 14) return 'Pessoa jurídica deve ter CNPJ (14 dígitos)';
+    if (r_id(d) && d.representante_id === r_id(d)) return 'O cliente não pode ser o próprio representante';
+    if (d.comissao_pct !== null && (d.comissao_pct < 0 || d.comissao_pct > 100)) return 'Comissão deve ficar entre 0 e 100%';
+    const ruim = d.contatos.find(c => c.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email));
+    if (ruim) return `E-mail inválido no contato ${ruim.nome || ''}`;
+    if (d.contatos.some(c => !c.nome)) return 'Informe o nome de cada contato';
+    return null;
+  },
+  msgDuplicado: 'Já existe cliente com este CPF/CNPJ ou ID do Tiny'
+});
+</script>
+</body>
+</html>
