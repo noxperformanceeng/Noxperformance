@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pedidos de venda · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .tot-ped { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 8px; }
+  .tot-ped b { font-variant-numeric: tabular-nums; }
+  .acoes-ped { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .sub-ed .ro { color: var(--texto-suave); font-size: 12px; }
+</style>
+</head>
+<body data-modulo="pedidos" data-titulo="Pedidos de venda" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+/* =====================================================================
+   Pedidos de venda — uma lista só para marketplace e distribuidores
+   - Marketplace: o pedido chega pela importação/integração, com nº da venda, pacote, envio e as tarifas
+     separadas. Daqui se abre a venda direto na plataforma.
+   - Distribuidor/venda direta: digitado pelo atendimento, com condição de pagamento.
+   - "Gerar títulos a receber" leva o pedido para o financeiro (marketplace: valor líquido com a composição
+     receita − tarifas; distribuidor: parcelas pela condição).
+   - A NF continua sendo emitida no Tiny; número, série e chave ficam no pedido.
+   ===================================================================== */
+const SIT = [{ v: 'orcamento', n: 'Orçamento' }, { v: 'aberto', n: 'Aberto' }, { v: 'faturado', n: 'Faturado (NF)' }, { v: 'enviado', n: 'Enviado' },
+  { v: 'entregue', n: 'Entregue' }, { v: 'devolvido', n: 'Devolvido' }, { v: 'cancelado', n: 'Cancelado' }];
+const TIPOS = [{ v: 'marketplace', n: 'Marketplace' }, { v: 'distribuidor', n: 'Distribuidor' }, { v: 'direta', n: 'Venda direta' }];
+const LOG = [{ v: 'full', n: 'Full' }, { v: 'flex', n: 'Flex' }, { v: 'coleta', n: 'Coleta' }, { v: 'agencia', n: 'Agência' }, { v: 'correios', n: 'Correios' },
+  { v: 'transportadora', n: 'Transportadora' }, { v: 'retira', n: 'Retira' }, { v: 'outro', n: 'Outro' }];
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const num2 = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+let CANAIS = [], CLIENTES = [], PRODS = [], CATS = [], TIPOS_ENC = [], CONDS = [], FORMAS = [], ACOES = new Set(), modalAtual = null, ex = {};
+const canal = id => CANAIS.find(c => c.id === id);
+const cli = id => CLIENTES.find(c => c.id === id);
+const prod = id => PRODS.find(p => p.id === id);
+const cat = id => CATS.find(c => c.id === id);
+const linkVenda = r => { const c = canal(r.canal_id); if (!c?.link_pedido || !r.numero_externo) return null;
+  return c.link_pedido.replace('{pedido}', encodeURIComponent(r.numero_externo)).replace('{pack}', encodeURIComponent(r.pack_id || r.numero_externo)).replace('{envio}', encodeURIComponent(r.envio_id || '')); };
+const linkEnvio = r => { const c = canal(r.canal_id); if (!c?.link_envio || !(r.envio_id || r.codigo_rastreio)) return null;
+  return c.link_envio.replace('{envio}', encodeURIComponent(r.envio_id || '')).replace('{rastreio}', encodeURIComponent(r.codigo_rastreio || '')); };
+const recebStatus = (r, e) => { const ts = (e.titulos[r.id] || []).filter(t => t.situacao !== 'cancelado');
+  if (!ts.length) return ''; if (ts.every(t => t.situacao === 'recebido')) return 'recebido';
+  return ts.some(t => Number(t.valor_recebido) > 0) ? 'parcial' : 'a receber'; };
+
+/* ---------- Itens ---------- */
+const optProds = sel => '<option value="">— produto —</option>' + PRODS.filter(p => p.situacao === 'ativo' || p.id === sel)
+  .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo || '—') + ' · ' + p.descricao)}</option>`).join('');
+const linhaItem = (x = {}) => `<tr data-anuncio-ref="${x.anuncio_ref || ''}" data-anuncio="${esc(x.anuncio_id || '')}" data-variacao="${esc(x.variacao_id || '')}" data-sku="${esc(x.sku || '')}" data-desc="${esc(x.descricao || '')}">
+  <td><select data-k="produto_id">${optProds(x.produto_id)}</select>${x.anuncio_id || x.sku ? `<div class="ro">${esc([x.anuncio_id, x.variacao_id, x.sku && 'SKU ' + x.sku, x.descricao].filter(Boolean).join(' · '))}</div>` : ''}</td>
+  <td style="width:80px"><input data-k="quantidade" inputmode="decimal" value="${num2(x.quantidade ?? 1)}"></td>
+  <td style="width:110px"><input data-k="valor_unitario" inputmode="decimal" value="${num2(x.valor_unitario)}"></td>
+  <td style="width:90px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num2(x.desconto) : ''}" placeholder="0,00"></td>
+  <td style="width:100px" class="num" data-k="total"></td>
+  <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
+function lerItens() {
+  return [...(modalAtual?.querySelectorAll('#itens tbody tr') || [])].map(tr => ({
+    produto_id: Number(tr.querySelector('[data-k=produto_id]').value) || null, anuncio_ref: Number(tr.dataset.anuncioRef) || null,
+    anuncio_id: tr.dataset.anuncio || null, variacao_id: tr.dataset.variacao || null, sku: tr.dataset.sku || null, descricao: tr.dataset.desc || null,
+    quantidade: lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, valor_unitario: lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0,
+    desconto: lerNumero(tr.querySelector('[data-k=desconto]').value) || 0 })).filter(x => x.produto_id || x.quantidade && x.valor_unitario || x.anuncio_id || x.sku);
+}
+
+/* ---------- Encargos (tarifas, envio, comissão…) ---------- */
+const tiposDoCanal = canalId => { const p = canal(canalId)?.plataforma; return TIPOS_ENC.filter(t => t.situacao === 'ativo' && (t.plataforma === p || t.plataforma === 'geral') && !t.codigo.startsWith('diferenca_') && t.codigo !== 'frete_cliente'); };
+const linhaEnc = (x = {}, canalId) => `<tr>
+  <td><select data-k="tipo_codigo"><option value="">— tipo —</option>${tiposDoCanal(canalId).map(t => `<option value="${esc(t.codigo)}" data-cat="${t.categoria_financeira_id || ''}"${t.codigo === x.tipo_codigo ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></td>
+  <td><select data-k="categoria_financeira_id"><option value="">— categoria —</option>${CATS.map(c => `<option value="${c.id}"${c.id === x.categoria_financeira_id ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></td>
+  <td style="width:120px"><input data-k="valor" inputmode="decimal" value="${num2(x.valor)}"></td>
+  <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
+function lerEncargos() {
+  return [...(modalAtual?.querySelectorAll('#encargos tbody tr') || [])].map(tr => {
+    const s = tr.querySelector('[data-k=tipo_codigo]');
+    return { tipo_codigo: s.value || null, descricao: s.value ? s.selectedOptions[0].textContent : null,
+      categoria_financeira_id: Number(tr.querySelector('[data-k=categoria_financeira_id]').value) || null, valor: lerNumero(tr.querySelector('[data-k=valor]').value) || 0 };
+  }).filter(x => x.valor);
+}
+
+function recalcular() {
+  if (!modalAtual) return;
+  let prodT = 0;
+  modalAtual.querySelectorAll('#itens tbody tr').forEach(tr => {
+    const q = lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, u = lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0, d = lerNumero(tr.querySelector('[data-k=desconto]').value) || 0;
+    const t = Math.round((q * u - d) * 100) / 100; prodT += t; tr.querySelector('[data-k=total]').textContent = reais(t);
+  });
+  const v = id => lerNumero(modalAtual.querySelector('#f_' + id)?.value) || 0;
+  const total = prodT - v('desconto') + v('frete_cliente') + v('outras_receitas');
+  const enc = lerEncargos().reduce((s, x) => s + x.valor, 0);
+  modalAtual.querySelector('#totPed').innerHTML = `<span>Produtos <b>${reais(prodT)}</b></span><span>Total do pedido <b>${reais(total)}</b></span>
+    <span>Tarifas/encargos <b class="${enc ? 'valor-neg' : ''}">${enc ? '− ' + reais(enc) : reais(0)}</b></span><span>Líquido a receber <b>${reais(total - enc)}</b></span>`;
+}
+
+/* ---------- Rastreio e financeiro do pedido ---------- */
+function secaoPedido(r) {
+  const ts = (ex.titulos[r.id] || []), lv = linkVenda(r), le = linkEnvio(r);
+  const etapa = (ok, t) => `<span class="${ok ? 'ok' : ''}">${esc(t)}</span>`;
+  const ativos = ts.filter(t => t.situacao !== 'cancelado');
+  return `<div class="secao">Rastreio</div>
+    <div class="rastreio">${etapa(true, (canal(r.canal_id)?.nome || 'Pedido') + (r.numero_externo ? ' · ' + r.numero_externo : ''))}<i>›</i>${etapa(r.nf_numero, r.nf_numero ? 'NF ' + r.nf_numero : 'NF (Tiny)')}<i>›</i>
+      ${etapa(r.data_envio || ['enviado', 'entregue'].includes(r.situacao), r.data_envio ? 'Enviado ' + dataCurta(r.data_envio) : 'Envio')}<i>›</i>${etapa(ativos.length, 'Título a receber')}<i>›</i>
+      ${etapa(ativos.length && ativos.every(t => t.situacao === 'recebido'), 'Recebido')}<i>›</i>${etapa(ativos.length && ativos.every(t => ex.conciliados.has(t.id)), 'Conciliado')}</div>
+    ${lv || le ? `<p style="margin:8px 0 0;font-size:13px">${lv ? `<a class="ext" href="${esc(lv)}" target="_blank" rel="noopener">Abrir a venda na plataforma</a>` : ''}${le ? ` &nbsp; <a class="ext" href="${esc(le)}" target="_blank" rel="noopener">Abrir o envio</a>` : ''}</p>` : ''}
+    <div class="secao">Contas a receber</div>
+    ${ts.length ? `<table class="lista-mini"><thead><tr><th>Documento</th><th>Vencimento / liberação</th><th>Valor</th><th>Recebido</th><th>Situação</th></tr></thead><tbody>
+      ${ts.map(t => `<tr${t.situacao === 'cancelado' ? ' class="estornado"' : ''}><td><a href="../financeiro/contas-receber.html?titulo=${t.id}" style="color:var(--destaque)">${esc(t.documento || '#' + t.id)}</a></td><td>${dataCurta(t.data_vencimento)}</td>
+        <td class="num">${reais(t.valor)}</td><td class="num">${reais(t.valor_recebido)}</td><td>${esc(t.situacao)}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub" style="margin:0">Ainda sem título a receber.</p>'}
+    <div class="acoes-ped">
+      ${!ativos.length && !['orcamento', 'cancelado'].includes(r.situacao) && ex.podeReceber ? '<button type="button" class="btn" id="btnGerar">Gerar títulos a receber</button>' : ''}
+      ${r.situacao !== 'cancelado' && ACOES.has('pedidos.cancelar') ? '<button type="button" class="btn discreto" id="btnCancelarPed">Cancelar pedido…</button>' : ''}
+    </div>`;
+}
+
+const cfg = {
+  textoNovo: '+ Novo pedido',
+  tabela: 'pedidos_venda', modulo: 'pedidos', titulo: 'Pedidos de venda', singular: 'pedido', plural: 'pedidos',
+  subtitulo: 'Marketplace (importado/integrado) e distribuidores (digitado aqui) numa lista só. A NF continua no Tiny.',
+  dicaBusca: 'nº da venda, pacote, envio, rastreio, cliente, NF, SKU…', ordem: 'data_pedido', revisao: false, porEmpresa: true,
+  abas: { campo: 'tipo', padrao: '', opcoes: [{ v: '', n: 'Todos' }, { v: 'marketplace', n: 'Marketplace' },
+    { v: 'distr', n: 'Distribuidores e diretas', teste: r => r.tipo !== 'marketplace' }] },
+  filtrosExtras: [
+    { id: 'receb', label: 'Recebimento', opcoes: [{ v: 'sem', n: 'Sem título a receber' }, { v: 'a receber', n: 'A receber' }, { v: 'parcial', n: 'Recebido parcial' }, { v: 'recebido', n: 'Recebido' }],
+      teste: (r, v, e) => v === 'sem' ? !recebStatus(r, e) : recebStatus(r, e) === v },
+    { id: 'nf', label: 'Nota fiscal', opcoes: [{ v: 'com', n: 'Com NF' }, { v: 'sem', n: 'Sem NF' }], teste: (r, v) => (v === 'com') === !!r.nf_numero }
+  ],
+  totais: ['valor_total', 'encargos', 'valor_liquido'],
+  valorTotal: (r, c) => r.situacao === 'cancelado' ? 0 : r[c],
+  ordenarPor: { data_pedido: r => String(9e15 - Date.parse(r.data_pedido)) + String(1e12 - r.id).padStart(13, '0') },
+  periodos: [{ campo: 'data_pedido', label: 'Data do pedido' }, { campo: 'nf_data', label: 'Data da NF' }, { campo: 'data_envio', label: 'Envio' },
+    { campo: 'data_prev_recebimento', label: 'Previsão de recebimento' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
+  campos: [
+    { id: 'data_pedido', label: 'Data', tipo: 'data', obrig: true, lista: true, padrao: () => new Date().toLocaleDateString('sv-SE') },
+    { id: 'canal_id', label: 'Canal', tipo: 'select', obrig: true, lista: true, filtro: true, opcoes: () => CANAIS.filter(c => c.situacao === 'ativo').map(c => ({ v: c.id, n: c.nome })) },
+    { id: 'numero_externo', label: 'Nº da venda', lista: true, ajuda: 'Número da venda na plataforma (marketplace) ou do pedido do cliente.' },
+    { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPOS, obrig: true, padrao: 'distribuidor', filtro: true },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
+    { id: 'cliente_id', label: 'Cliente', tipo: 'select', col: 2, filtro: true, opcoes: () => CLIENTES.filter(c => c.situacao !== 'inativo' && c.tipo_cliente !== 'representante').map(c => ({ v: c.id, n: c.nome + (c.tipo_cliente !== 'consumidor' ? ` (${c.tipo_cliente})` : '') })) },
+    { id: 'cliente_nome', label: 'Comprador (como veio)', col: 2, ajuda: 'Nome do comprador na plataforma quando ainda não há cadastro.' },
+    { id: 'representante_id', label: 'Representante', tipo: 'select', filtro: true, opcoes: () => CLIENTES.filter(c => c.tipo_cliente === 'representante').map(c => ({ v: c.id, n: c.nome })) },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, lista: true, filtro: true, padrao: 'aberto', ajuda: 'Cancelar: botão "Cancelar pedido" (cancela também os títulos em aberto).' },
+    { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'encargos', label: 'Tarifas (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'valor_liquido', label: 'Líquido (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'desconto', label: 'Desconto no pedido (R$)', tipo: 'moeda', secao: 'Valores e pagamento' },
+    { id: 'frete_cliente', label: 'Frete cobrado do cliente (R$)', tipo: 'moeda' },
+    { id: 'outras_receitas', label: 'Outras receitas (R$)', tipo: 'moeda' },
+    { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Distribuidor: gera as parcelas.' },
+    { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
+    { id: 'data_prev_recebimento', label: 'Previsão de liberação', tipo: 'data', ajuda: 'Marketplace: data prevista do repasse.' },
+    { id: 'pack_id', label: 'Pacote / carrinho', secao: 'Envio e rastreio' },
+    { id: 'envio_id', label: 'Nº do envio' },
+    { id: 'codigo_rastreio', label: 'Código de rastreio' },
+    { id: 'logistica', label: 'Logística', tipo: 'select', opcoes: LOG, filtro: true },
+    { id: 'data_envio', label: 'Enviado em', tipo: 'data' },
+    { id: 'data_entrega', label: 'Entregue em', tipo: 'data' },
+    { id: 'nf_numero', label: 'NF nº', secao: 'Nota fiscal (emitida no Tiny)' },
+    { id: 'nf_serie', label: 'Série' },
+    { id: 'nf_data', label: 'Emissão da NF', tipo: 'data' },
+    { id: 'nf_chave', label: 'Chave de acesso', col: 4 },
+    { id: 'origem', label: 'Origem', tipo: 'select', somenteLeitura: true, filtro: true, padrao: 'manual',
+      opcoes: [{ v: 'manual', n: 'Digitado' }, { v: 'planilha', n: 'Planilha' }, { v: 'tiny', n: 'Tiny' }, { v: 'api', n: 'Integração' }], secao: 'Observações' },
+    { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 3, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
+    { id: 'observacoes', label: 'Observações (vão para a NF/cliente)', tipo: 'textarea', col: 2 },
+    { id: 'observacoes_internas', label: 'Observações internas', tipo: 'textarea', col: 2 }
+  ],
+  async carregarExtra(linhas, ctx) {
+    window.__ctxNox = ctx;
+    const [c, cl, p, ca, te, co, fo, it, en, ti, rc] = await Promise.all([
+      buscarTodos(() => db.from('canais_venda').select('*').order('nome')),
+      buscarTodos(() => db.from('clientes').select('id, nome, tipo_cliente, situacao, representante_id').order('nome')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao').in('tipo', ['acabado', 'kit', 'semiacabado']).order('descricao')),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').order('codigo')),
+      buscarTodos(() => db.from('encargos_tipos').select('*').order('nome')),
+      buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
+      buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
+      buscarTodos(() => db.from('pedidos_venda_itens').select('*').order('id')),
+      buscarTodos(() => db.from('pedidos_venda_encargos').select('*').order('id')),
+      ctx.pode('receber') ? buscarTodos(() => db.from('titulos_receber').select('id, pedido_venda_id, documento, valor, valor_recebido, situacao, data_vencimento').not('pedido_venda_id', 'is', null)) : [],
+      ctx.pode('receber') ? buscarTodos(() => db.from('recebimentos').select('titulo_id, conciliado, estornado')) : []
+    ]);
+    const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
+    CANAIS = c; CLIENTES = cl; PRODS = p; CATS = ca; TIPOS_ENC = te; CONDS = co; FORMAS = fo;
+    const itens = {}, encargos = {}, titulos = {};
+    it.forEach(x => (itens[x.pedido_id] ||= []).push(x));
+    en.forEach(x => (encargos[x.pedido_id] ||= []).push(x));
+    ti.forEach(x => (titulos[x.pedido_venda_id] ||= []).push(x));
+    const recPorTit = {}; rc.filter(x => !x.estornado).forEach(x => (recPorTit[x.titulo_id] ||= []).push(x));
+    const conciliados = new Set(Object.entries(recPorTit).filter(([, l]) => l.every(x => x.conciliado)).map(([k]) => Number(k)));
+    ex = { itens, encargos, titulos, conciliados, podeReceber: ctx.pode('receber', 'editar'), veReceber: ctx.pode('receber') };
+    return ex;
+  },
+  colunasExtras: [
+    { label: 'Cliente', texto: r => cli(r.cliente_id)?.nome || r.cliente_nome || '' },
+    { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${Number(i.quantidade).toLocaleString('pt-BR')}× ${prod(i.produto_id)?.codigo || i.sku || i.descricao || '?'}`).join(', ') },
+    { label: 'Recebimento', texto: (r, e) => recebStatus(r, e), html: (r, e) => { const s = recebStatus(r, e); return s ? `<span class="tg ${s === 'recebido' ? 'ok' : 'neutro'}">${s}</span>` : ''; } },
+    { label: 'Venda', texto: r => linkVenda(r) || '', html: r => linkVenda(r) ? `<a class="ext" href="${esc(linkVenda(r))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">abrir</a>` : '' }
+  ],
+  textoBuscaExtra: (r, e) => [r.pack_id, r.envio_id, r.codigo_rastreio, r.nf_numero, r.nf_chave, cli(r.cliente_id)?.nome,
+    ...(e.itens[r.id] || []).flatMap(i => [i.sku, i.anuncio_id, i.descricao, prod(i.produto_id)?.codigo, prod(i.produto_id)?.descricao])].filter(Boolean).join(' '),
+  subtituloLinha: r => [TIPOS.find(t => t.v === r.tipo)?.n, r.pack_id && r.pack_id !== r.numero_externo ? 'pacote ' + r.pack_id : '', r.nf_numero ? 'NF ' + r.nf_numero : ''].filter(Boolean).join(' · '),
+  pendencias: [
+    { id: 'sem_prod', nome: 'Item sem produto vinculado', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && (e.itens[r.id] || []).some(i => !i.produto_id) },
+    { id: 'sem_itens', nome: 'Sem itens', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !(e.itens[r.id] || []).length },
+    { id: 'sem_titulo', nome: 'Faturado sem título a receber', cor: 'alerta', teste: (r, e) => e.veReceber && ['faturado', 'enviado', 'entregue'].includes(r.situacao) && !recebStatus(r, e) },
+    { id: 'sem_nf', nome: 'Enviado sem NF', cor: 'alerta', teste: r => ['enviado', 'entregue'].includes(r.situacao) && !r.nf_numero },
+    { id: 'sem_cliente', nome: 'Distribuidor sem cadastro', cor: 'alerta', teste: r => r.tipo !== 'marketplace' && r.situacao !== 'cancelado' && !r.cliente_id },
+    { id: 'enc_sem_cat', nome: 'Tarifa sem categoria', cor: 'erro', teste: (r, e) => (e.encargos[r.id] || []).some(x => !x.categoria_financeira_id) }
+  ],
+  apagado: r => r.situacao === 'cancelado',
+  aoAbrir(m, r, ctx) {
+    modalAtual = m;
+    const pode = ctx.pode('pedidos', 'editar');
+    const fSit = m.querySelector('#f_situacao');
+    if (fSit && r.situacao !== 'cancelado') fSit.querySelector('option[value=cancelado]')?.remove();
+    if (fSit && r.situacao === 'cancelado') fSit.disabled = true;
+    const fCanal = m.querySelector('#f_canal_id'), fTipo = m.querySelector('#f_tipo'), fEmp = m.querySelector('#f_empresa_id');
+    // Canal define tipo e empresa (conta de marketplace é de um CNPJ)
+    const aplicarCanal = () => {
+      const c = canal(Number(fCanal.value)); if (!c) return;
+      if (fTipo && !r.id) fTipo.value = ['distribuidor', 'direta'].includes(c.plataforma) ? c.plataforma : 'marketplace';
+      if (fEmp && c.empresa_id) { fEmp.value = c.empresa_id; fEmp.disabled = true; } else if (fEmp) fEmp.disabled = !pode;
+      m.querySelectorAll('#encargos [data-k=tipo_codigo]').forEach(s => { const v = s.value; s.innerHTML = '<option value="">— tipo —</option>' + tiposDoCanal(c.id).map(t => `<option value="${esc(t.codigo)}" data-cat="${t.categoria_financeira_id || ''}"${t.codigo === v ? ' selected' : ''}>${esc(t.nome)}</option>`).join(''); });
+    };
+    // Itens e encargos
+    const box = document.createElement('div');
+    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Produto</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th class="num">Total</th><th></th></tr></thead>
+        <tbody>${((r.id && ex.itens[r.id]) || []).map(linhaItem).join('') || (r.id ? '' : linhaItem())}</tbody></table>
+        ${pode ? '<button type="button" class="btn fino" id="addItem" style="margin-top:6px">+ Item</button>' : ''}</div>
+      <div class="sub-ed" id="encargos"><div class="secao">Tarifas e encargos da venda</div><table><thead><tr><th>Tipo</th><th>Categoria</th><th>Valor (R$)</th><th></th></tr></thead>
+        <tbody>${((r.id && ex.encargos[r.id]) || []).map(x => linhaEnc(x, r.canal_id)).join('')}</tbody></table>
+        ${pode ? '<button type="button" class="btn fino" id="addEnc" style="margin-top:6px">+ Tarifa / encargo</button>' : ''}
+        <div class="tot-ped" id="totPed"></div></div>`;
+    const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Valores e pagamento');
+    antes.parentNode.insertBefore(box, antes);
+    if (pode) {
+      m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaItem()); recalcular(); };
+      m.querySelector('#addEnc').onclick = () => { m.querySelector('#encargos tbody').insertAdjacentHTML('beforeend', linhaEnc({}, Number(fCanal.value))); };
+      box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); recalcular(); } });
+      box.addEventListener('change', e => {
+        if (e.target.dataset.k === 'tipo_codigo') { const c = Number(e.target.selectedOptions[0]?.dataset.cat); if (c) e.target.closest('tr').querySelector('[data-k=categoria_financeira_id]').value = c; }
+        recalcular();
+      });
+      box.addEventListener('input', recalcular);
+      ['desconto', 'frete_cliente', 'outras_receitas'].forEach(id => m.querySelector('#f_' + id)?.addEventListener('input', recalcular));
+      fCanal.addEventListener('change', aplicarCanal);
+    } else box.querySelectorAll('input, select').forEach(i => i.disabled = true);
+    aplicarCanal(); recalcular();
+    // Ações do pedido
+    m.querySelector('#btnGerar')?.addEventListener('click', async () => {
+      if (!confirm('Gerar os títulos a receber deste pedido? (salve antes as alterações)')) return;
+      const { data, error } = await db.rpc('gerar_titulos_pedido', { p_pedido_id: r.id });
+      if (error) return aviso('Não gerou: ' + error.message, true);
+      aviso(`${data} título(s) a receber gerado(s)`); m.remove(); cfg.recarregar();
+    });
+    m.querySelector('#btnCancelarPed')?.addEventListener('click', async () => {
+      const motivo = prompt('Motivo do cancelamento:'); if (!motivo) return;
+      const { error } = await db.rpc('cancelar_pedido_venda', { p_id: r.id, p_motivo: motivo });
+      if (error) return aviso('Não cancelou: ' + error.message, true);
+      aviso('Pedido cancelado (títulos em aberto também)'); m.remove(); cfg.recarregar();
+    });
+  },
+  secaoExtra: r => secaoPedido(r),
+  antesSalvar: (d, r) => {
+    ['canal_id', 'cliente_id', 'representante_id', 'condicao_pagamento_id', 'forma_pagamento_id', 'empresa_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); });
+    const fEmp = modalAtual.querySelector('#f_empresa_id'); if (fEmp?.disabled) d.empresa_id = Number(fEmp.value);
+    ['desconto', 'frete_cliente', 'outras_receitas'].forEach(k => d[k] = d[k] || 0);
+    if (r.situacao === 'cancelado') delete d.situacao;
+  },
+  validar: d => {
+    const itens = lerItens(), encs = lerEncargos(), c = canal(d.canal_id);
+    if (!itens.length) return 'Inclua pelo menos um item';
+    if (itens.some(i => !(i.quantidade > 0))) return 'Item com quantidade zerada';
+    if (d.tipo !== 'marketplace' && itens.some(i => !i.produto_id)) return 'Escolha o produto de cada item';
+    if (encs.some(x => !x.categoria_financeira_id)) return 'Cada tarifa precisa de categoria';
+    if (c?.empresa_id && c.empresa_id !== d.empresa_id) return 'Este canal é de outra empresa';
+    if (d.tipo !== 'marketplace' && !d.cliente_id) return 'Escolha o cliente (cadastre em Clientes se for novo)';
+    if (d.tipo === 'marketplace' && !d.numero_externo) return 'Informe o nº da venda na plataforma (é o que liga o extrato)';
+    return null;
+  },
+  async salvar(dados, r, m, novo) {
+    const { data, error } = await db.rpc('salvar_pedido_venda', { p_pedido: { ...dados, id: novo ? null : r.id }, p_itens: lerItens(), p_encargos: lerEncargos() });
+    if (error) throw error;
+    return data;
+  },
+  acoesLote: [
+    { nome: 'Gerar títulos a receber', executar: async (sel, pronto, ctx) => {
+        if (!ctx.pode('receber', 'editar')) return aviso('Sem permissão no contas a receber', true);
+        const ok = sel.filter(r => !recebStatus(r, ex) && !['orcamento', 'cancelado'].includes(r.situacao));
+        if (!ok.length) return aviso('Nenhum pedido selecionado está pronto (sem título, fora de orçamento/cancelado)', true);
+        if (!confirm(`Gerar títulos a receber de ${ok.length} pedido(s)?`)) return;
+        let n = 0, erros = [];
+        for (const r of ok) { const { error } = await db.rpc('gerar_titulos_pedido', { p_pedido_id: r.id }); if (error) erros.push(`${r.numero_externo || r.id}: ${error.message}`); else n++; }
+        aviso(`${n} pedido(s) com títulos gerados` + (erros.length ? ` · ${erros.length} com erro: ${erros.slice(0, 3).join(' | ')}` : ''), !!erros.length); pronto();
+      } },
+    { nome: 'Marcar enviado', executar: async (sel, pronto) => {
+        const ok = sel.filter(r => ['aberto', 'faturado'].includes(r.situacao));
+        if (!ok.length) return aviso('Selecione pedidos abertos ou faturados', true);
+        const { error } = await db.from('pedidos_venda').update({ situacao: 'enviado' }).in('id', ok.map(r => r.id));
+        if (error) return aviso('Não salvou: ' + error.message, true); aviso('Atualizado'); pronto();
+      } }
+  ],
+  tituloRegistro: r => [canal(r.canal_id)?.nome, r.numero_externo ? 'venda ' + r.numero_externo : 'pedido ' + r.id].filter(Boolean).join(' · '),
+  chaveHistorico: r => r.numero_externo || r.id,
+  msgDuplicado: 'Esta venda já está lançada neste canal'
+};
+montarCadastro(cfg);
+</script>
+</body>
+</html>

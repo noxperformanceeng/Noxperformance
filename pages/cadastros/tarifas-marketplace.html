@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tarifas e lançamentos de marketplace · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="canais_venda" data-titulo="Tarifas de marketplace">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+/* Tipos de tarifa/lançamento por plataforma → categoria financeira.
+   Usado ao separar os encargos de cada venda e ao classificar as linhas do extrato (palavras da descrição). */
+const PLAT = [{ v: 'mercado_livre', n: 'Mercado Livre' }, { v: 'shopee', n: 'Shopee' }, { v: 'amazon', n: 'Amazon' }, { v: 'magalu', n: 'Magalu' },
+  { v: 'site', n: 'Site próprio' }, { v: 'geral', n: 'Todas (geral)' }];
+let CATS = [];
+const cat = id => CATS.find(c => c.id === id);
+
+montarCadastro({
+  textoNovo: '+ Novo tipo',
+  tabela: 'encargos_tipos', modulo: 'canais_venda', titulo: 'Tarifas e lançamentos de marketplace', singular: 'tipo', plural: 'tipos',
+  subtitulo: 'Cada tarifa, frete, comissão ou estorno vai para a sua categoria no relatório. As palavras do extrato reconhecem a linha na conciliação.',
+  dicaBusca: 'tarifa, palavra do extrato, categoria…', ordem: 'plataforma', revisao: true,
+  abas: { campo: 'plataforma', padrao: '', opcoes: [{ v: '', n: 'Todas' }, ...PLAT] },
+  campos: [
+    { id: 'plataforma', label: 'Plataforma', tipo: 'select', opcoes: PLAT, obrig: true, lista: true },
+    { id: 'nome', label: 'Nome', obrig: true, col: 2, lista: true },
+    { id: 'codigo', label: 'Código interno', obrig: true, lista: true, ajuda: 'Sem espaço (ex.: tarifa_venda). "diferenca_debito" e "diferenca_credito" são usados na conciliação.' },
+    { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', obrig: true, col: 2, filtro: true,
+      opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })) },
+    { id: 'termos_txt', label: 'Palavras no extrato', col: 2, semExportar: true, placeholder: 'tarifa de venda, tarifa por venda',
+      ajuda: 'Separe por vírgula. Se a descrição da linha do extrato tiver uma delas, a linha vai para esta categoria.' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo', filtro: true }
+  ],
+  async carregarExtra(linhas) {
+    CATS = await buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').order('codigo'));
+    linhas.forEach(r => r.termos_txt = (r.termos_extrato || []).join(', '));
+    return {};
+  },
+  colunasExtras: [
+    { label: 'Categoria', texto: r => cat(r.categoria_financeira_id) ? `${cat(r.categoria_financeira_id).codigo} ${cat(r.categoria_financeira_id).nome}` : '' },
+    { label: 'Palavras no extrato', texto: r => r.termos_txt || '' }
+  ],
+  antesSalvar: d => {
+    d.categoria_financeira_id = Number(d.categoria_financeira_id) || null;
+    d.codigo = (d.codigo || '').toLowerCase().replace(/\s+/g, '_');
+    d.termos_extrato = (d.termos_txt || '').split(',').map(t => t.trim()).filter(Boolean);
+    delete d.termos_txt;
+  },
+  pendencias: [{ id: 'sem_cat', nome: 'Sem categoria', cor: 'erro', bloqueia: true, teste: r => !r.categoria_financeira_id }],
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  msgDuplicado: 'Já existe este código nesta plataforma'
+});
+</script>
+</body>
+</html>

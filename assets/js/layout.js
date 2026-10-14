@@ -14,11 +14,13 @@ const MENU = [
     { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' },
     { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html' },
     { id: 'condicoes_pagamento', nome: 'Formas de pagamento', arquivo: 'pages/financeiro/formas-pagamento.html' },
-    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html' }
+    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html' },
+    { id: 'canais_venda', nome: 'Canais de venda', arquivo: 'pages/cadastros/canais-venda.html' },
+    { id: 'canais_venda', nome: 'Tarifas de marketplace', arquivo: 'pages/cadastros/tarifas-marketplace.html' }
   ]},
   { grupo: 'Comercial', itens: [
-    { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: null },
-    { id: 'marketplaces',  nome: 'Marketplaces',      arquivo: null },
+    { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html' },
+    { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html' },
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
   ]},
   { grupo: 'Suprimentos', itens: [
@@ -41,7 +43,8 @@ const MENU = [
   ]},
   { grupo: 'Financeiro', itens: [
     { id: 'pagar',         nome: 'Contas a pagar',    arquivo: 'pages/financeiro/contas-pagar.html' },
-    { id: 'receber',       nome: 'Contas a receber',  arquivo: null },
+    { id: 'receber',       nome: 'Contas a receber',  arquivo: 'pages/financeiro/contas-receber.html' },
+    { id: 'conciliacao',   nome: 'Extratos e conciliação', arquivo: 'pages/financeiro/conciliacao.html' },
     { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: null },
     { id: 'notas',         nome: 'Notas fiscais',     arquivo: null }
   ]},

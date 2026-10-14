@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anúncios × produtos · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="marketplaces" data-titulo="Anúncios × produtos">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+/* Anúncios × produtos: todo item vendido no marketplace aponta para o produto do sistema.
+   Kit/par: "quantidade" = unidades do produto por venda do anúncio. Ao vincular, as vendas já importadas
+   desse anúncio recebem o produto automaticamente. Base para estoque, ficha técnica e margem por produto. */
+let CANAIS = [], PRODS = [], VENDAS = {};
+const canal = id => CANAIS.find(c => c.id === id);
+const prod = id => PRODS.find(p => p.id === id);
+const linkAnuncio = r => { const c = canal(r.canal_id); return c?.link_anuncio && r.anuncio_id ? c.link_anuncio.replace('{anuncio}', encodeURIComponent(r.anuncio_id)) : null; };
+
+montarCadastro({
+  textoNovo: '+ Novo anúncio',
+  tabela: 'anuncios', modulo: 'marketplaces', titulo: 'Anúncios × produtos', singular: 'anúncio', plural: 'anúncios',
+  subtitulo: 'Liga cada anúncio (e variação) ao produto do sistema. Vendas sem vínculo aparecem como pendência no pedido.',
+  dicaBusca: 'anúncio, SKU, título, produto…', ordem: 'titulo', revisao: true,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: '', n: 'Todos' }] },
+  campos: [
+    { id: 'canal_id', label: 'Canal', tipo: 'select', obrig: true, lista: true, filtro: true, opcoes: () => CANAIS.map(c => ({ v: c.id, n: c.nome })) },
+    { id: 'anuncio_id', label: 'Código do anúncio', obrig: true, lista: true, placeholder: 'MLB1234567890' },
+    { id: 'variacao_id', label: 'Variação', ajuda: 'Em branco quando o anúncio não tem variação.' },
+    { id: 'sku', label: 'SKU no anúncio', lista: true },
+    { id: 'titulo', label: 'Título do anúncio', col: 4, lista: true },
+    { id: 'produto_id', label: 'Produto do sistema', tipo: 'select', col: 3, filtro: true, filtroVazio: true,
+      opcoes: () => PRODS.map(p => ({ v: p.id, n: `${p.codigo || '—'} · ${p.descricao}` })) },
+    { id: 'quantidade', label: 'Unid. do produto por venda', tipo: 'numero', padrao: 1, ajuda: 'Par = 2, kit com 4 = 4.' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 }
+  ],
+  async carregarExtra() {
+    const [c, p, it] = await Promise.all([
+      buscarTodos(() => db.from('canais_venda').select('id, nome, plataforma, link_anuncio').order('nome')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao').in('tipo', ['acabado', 'kit', 'semiacabado']).order('descricao')),
+      buscarTodos(() => db.from('pedidos_venda_itens').select('anuncio_ref, quantidade'))
+    ]);
+    CANAIS = c; PRODS = p; VENDAS = {};
+    it.forEach(x => { if (x.anuncio_ref) VENDAS[x.anuncio_ref] = (VENDAS[x.anuncio_ref] || 0) + Number(x.quantidade); });
+    return {};
+  },
+  colunasExtras: [
+    { label: 'Produto', texto: r => prod(r.produto_id) ? `${prod(r.produto_id).codigo || ''} ${prod(r.produto_id).descricao}` : '',
+      html: r => prod(r.produto_id) ? `${esc(prod(r.produto_id).codigo || '')} <small class="sub2" style="display:inline">${esc(prod(r.produto_id).descricao)}</small>${Number(r.quantidade) !== 1 ? ` <b>×${Number(r.quantidade).toLocaleString('pt-BR')}</b>` : ''}` : '' },
+    { label: 'Vendido (un.)', texto: r => VENDAS[r.id] ? VENDAS[r.id].toLocaleString('pt-BR') : '' },
+    { label: 'Abrir', texto: r => linkAnuncio(r) || '', html: r => linkAnuncio(r) ? `<a class="ext" href="${esc(linkAnuncio(r))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">anúncio</a>` : '' }
+  ],
+  textoBuscaExtra: r => `${prod(r.produto_id)?.codigo || ''} ${prod(r.produto_id)?.descricao || ''}`,
+  antesSalvar: d => { d.canal_id = Number(d.canal_id); d.produto_id = Number(d.produto_id) || null; d.variacao_id = d.variacao_id || ''; d.quantidade = d.quantidade || 1; },
+  validar: d => !(d.quantidade > 0) ? 'Quantidade por venda precisa ser maior que zero' : null,
+  pendencias: [
+    { id: 'sem_prod', nome: 'Sem produto vinculado', cor: 'erro', bloqueia: true, teste: r => r.situacao === 'ativo' && !r.produto_id },
+    { id: 'prod_inativo', nome: 'Produto inativo', cor: 'alerta', teste: r => prod(r.produto_id)?.situacao === 'inativo' },
+    { id: 'sku_dif', nome: 'SKU diferente do código', cor: 'neutro', teste: r => r.sku && prod(r.produto_id)?.codigo && r.sku.toUpperCase() !== prod(r.produto_id).codigo.toUpperCase() }
+  ],
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  tituloRegistro: r => `${r.anuncio_id}${r.variacao_id ? ' · ' + r.variacao_id : ''}`,
+  chaveHistorico: r => r.anuncio_id,
+  msgDuplicado: 'Este anúncio (com esta variação) já está cadastrado neste canal'
+});
+</script>
+</body>
+</html>

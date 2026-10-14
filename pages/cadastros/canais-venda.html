@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canais de venda · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="canais_venda" data-titulo="Canais de venda" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+/* Canais de venda: cada conta de marketplace (ML 30, ML 37, Shopee…) é de uma empresa e tem a conta onde o dinheiro cai.
+   Os links montam o caminho direto para a venda dentro da plataforma (rastreio). */
+const PLAT = [{ v: 'mercado_livre', n: 'Mercado Livre' }, { v: 'shopee', n: 'Shopee' }, { v: 'amazon', n: 'Amazon' }, { v: 'magalu', n: 'Magalu' },
+  { v: 'site', n: 'Site próprio' }, { v: 'distribuidor', n: 'Distribuidores' }, { v: 'direta', n: 'Venda direta' }, { v: 'outro', n: 'Outro' }];
+let CONTAS = [], CATS = [], ML = {};
+const ML_CLIENT_ID = '4244172402407817';   // ID do aplicativo NOX no Mercado Livre (não é segredo; a chave fica só no servidor)
+const reaisBR = v => Number(v || 0).toLocaleString('pt-BR');
+const MKT = ['mercado_livre', 'shopee', 'amazon', 'magalu', 'site'];
+
+/* ---------- Mercado Livre: autorização e busca de vendas ---------- */
+function ligarML(m, r) {
+  const msg = t => { const el = m.querySelector('#mlMsg'); if (el) el.innerHTML = t; };
+  m.querySelector('#mlAutorizar')?.addEventListener('click', async () => {
+    const { data, error } = await db.rpc('ml_iniciar_autorizacao', { p_canal_id: r.id, p_client_id: ML_CLIENT_ID });
+    if (error) return aviso('Não gerou o link: ' + error.message, true);
+    msg(`Abra este link numa <b>janela anônima</b>, entre com o usuário <b>principal</b> da conta ${esc(r.nome)} e clique em Permitir (vale 1 hora):<br>
+      <input readonly value="${esc(data)}" style="width:100%;margin-top:4px;font-size:12px" onclick="this.select()"> <button type="button" class="btn fino" id="mlCopiar" style="margin-top:4px">Copiar link</button>`);
+    m.querySelector('#mlCopiar').onclick = () => { navigator.clipboard?.writeText(data); aviso('Link copiado'); };
+  });
+  m.querySelector('#mlReproc')?.addEventListener('click', async () => {
+    const { data, error } = await db.rpc('reprocessar_pedidos_ml', { p_canal_id: r.id });
+    if (error) return aviso('Não reprocessou: ' + error.message, true);
+    aviso(`${data} venda(s) reprocessada(s)`);
+  });
+  m.querySelector('#mlBuscar')?.addEventListener('click', async e => {
+    const de = m.querySelector('#mlDe').value, ate = m.querySelector('#mlAte').value;
+    if (!de || !ate || ate < de) return aviso('Período inválido', true);
+    e.target.disabled = true;
+    // divide em semanas (a função do servidor tem limite de tempo); período parcial é chamado de novo
+    let ini = new Date(de + 'T12:00:00'); const fim = new Date(ate + 'T12:00:00'); const tot = { gravadas: 0, puladas: 0, erros: [] };
+    while (ini <= fim) {
+      const f = new Date(Math.min(fim, new Date(ini.getTime() + 6 * 864e5)));
+      const a = ini.toLocaleDateString('sv-SE'), b = f.toLocaleDateString('sv-SE');
+      for (let volta = 0; volta < 10; volta++) {
+        msg(`Buscando ${dataCurta(a)} a ${dataCurta(b)}… (${tot.gravadas} gravadas até agora)`);
+        const { data, error } = await db.functions.invoke('ml-sync', { body: { canal_id: r.id, de: a, ate: b } });
+        if (error || data?.erro) { msg(`<span style="color:var(--erro)">Parou em ${dataCurta(a)}: ${esc(data?.erro || error.message)}</span>`); e.target.disabled = false; return; }
+        tot.gravadas += data.gravadas; tot.puladas += data.puladas; tot.erros.push(...data.erros);
+        if (!data.parcial) break;
+      }
+      ini = new Date(f.getTime() + 864e5);
+    }
+    msg(`Pronto: ${tot.gravadas} venda(s) gravada(s), ${tot.puladas} sem alteração.` + (tot.erros.length ? ` <span style="color:var(--erro)">${tot.erros.length} com erro: ${esc(tot.erros.slice(0, 3).join(' | '))}</span>` : ''));
+    e.target.disabled = false;
+  });
+}
+
+montarCadastro({
+  textoNovo: '+ Novo canal',
+  tabela: 'canais_venda', modulo: 'canais_venda', titulo: 'Canais de venda', singular: 'canal', plural: 'canais',
+  subtitulo: 'Cada conta de marketplace é de uma empresa (CNPJ) e tem a conta de repasse. Distribuidores e venda direta servem às duas empresas.',
+  dicaBusca: 'canal, plataforma, conta…', ordem: 'nome', revisao: true,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: '', n: 'Todos' }] },
+  campos: [
+    { id: 'nome', label: 'Nome do canal', obrig: true, col: 2, lista: true, placeholder: 'ex.: Mercado Livre 30' },
+    { id: 'plataforma', label: 'Plataforma', tipo: 'select', opcoes: PLAT, obrig: true, lista: true, filtro: true },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'select', lista: true, filtro: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })),
+      ajuda: 'Conta de marketplace: a empresa dona da conta. Em branco = serve às duas (distribuidores, venda direta).' },
+    { id: 'conta_bancaria_id', label: 'Conta de repasse (onde o dinheiro cai)', tipo: 'select', col: 2, lista: true, opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
+    { id: 'categoria_receita_id', label: 'Categoria da receita', tipo: 'select', col: 2, opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })) },
+    { id: 'prazo_repasse_dias', label: 'Prazo de repasse (dias)', tipo: 'numero', padrao: 0, ajuda: 'Previsão de liberação quando o pedido não traz a data.' },
+    { id: 'integracao', label: 'Como os pedidos entram', tipo: 'select', lista: true, padrao: 'planilha',
+      opcoes: [{ v: 'manual', n: 'Digitados aqui' }, { v: 'planilha', n: 'Importação de planilha' }, { v: 'tiny', n: 'Via Tiny' }, { v: 'api', n: 'Direto pela API' }] },
+    { id: 'id_externo', label: 'ID da conta na plataforma', ajuda: 'Seller ID / ID da loja.', secao: 'Rastreio na plataforma' },
+    { id: 'link_pedido', label: 'Link da venda', col: 3, placeholder: 'https://…/{pedido}', ajuda: 'Use {pedido}, {pack} ou {envio}: o sistema troca pelo número da venda.' },
+    { id: 'link_anuncio', label: 'Link do anúncio', col: 2, placeholder: 'https://…/{anuncio}' },
+    { id: 'link_envio', label: 'Link do envio / rastreio', col: 2, placeholder: 'https://…/{envio} ou {rastreio}' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo', secao: 'Situação' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 3 }
+  ],
+  async carregarExtra() {
+    const [cb, c] = await Promise.all([
+      buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('tipo', 'receita').eq('aceita_lancamento', true).eq('situacao', 'ativo').order('codigo'))
+    ]);
+    CONTAS = cb; CATS = c;
+    const st = await db.rpc('ml_status'); ML = Object.fromEntries((st.data || []).map(x => [x.canal_id, x]));
+    return {};
+  },
+  aoAbrir(m, r) {
+    ligarML(m, r);
+    // Conta de repasse: só as contas da empresa escolhida
+    const fEmp = m.querySelector('#f_empresa_id'), fConta = m.querySelector('#f_conta_bancaria_id');
+    const filtrar = () => {
+      const emp = Number(fEmp.value), atual = Number(fConta.value);
+      const lista = CONTAS.filter(c => (!emp || c.empresa_id === emp) && c.tipo !== 'historico' && (c.situacao === 'ativo' || c.id === atual));
+      fConta.innerHTML = '<option value="">—</option>' + lista.map(c => `<option value="${c.id}"${c.id === atual ? ' selected' : ''}>${esc(c.descricao)}</option>`).join('');
+    };
+    fEmp.addEventListener('change', filtrar); filtrar();
+  },
+  antesSalvar: d => { ['empresa_id', 'conta_bancaria_id', 'categoria_receita_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); }); d.prazo_repasse_dias = d.prazo_repasse_dias || 0; },
+  validar: d => {
+    if (MKT.includes(d.plataforma) && !d.empresa_id) return 'Conta de marketplace precisa da empresa dona da conta';
+    if (d.conta_bancaria_id && d.empresa_id && CONTAS.find(c => c.id === d.conta_bancaria_id)?.empresa_id !== d.empresa_id) return 'A conta de repasse é de outra empresa';
+    return null;
+  },
+  colunasExtras: [
+    { label: 'Integração', texto: r => r.plataforma !== 'mercado_livre' ? '' : ML[r.id] ? `ML ${ML[r.id].nickname || ''} · ${ML[r.id].pedidos} vendas` : 'não autorizada',
+      html: r => r.plataforma !== 'mercado_livre' ? '' : ML[r.id] ? `<span class="tg ${ML[r.id].situacao === 'ativo' ? 'ok' : 'erro'}">${esc(ML[r.id].nickname || 'conectada')}</span> <small class="sub2" style="display:inline">${ML[r.id].pedidos} vendas${ML[r.id].ultima_sync ? ' · ' + dataHoraBR(ML[r.id].ultima_sync) : ''}</small>` : '<span class="tg neutro">não autorizada</span>' }
+  ],
+  secaoExtra: r => r.plataforma !== 'mercado_livre' ? '' : `<div class="secao">Mercado Livre (somente leitura)</div>
+    <div class="info">${ML[r.id] ? `<div>Conta: <b>${esc(ML[r.id].nickname || String(ML[r.id].ml_user_id))}</b> · autorizada em ${dataHoraBR(ML[r.id].autorizado_em)}${ML[r.id].situacao !== 'ativo' ? ` · <span class="tg erro">${esc(ML[r.id].situacao)}</span>` : ''}</div>
+      <div>Vendas guardadas: <b>${ML[r.id].pedidos}</b>${ML[r.id].ultima_sync ? ` · última busca ${dataHoraBR(ML[r.id].ultima_sync)}` : ''}${ML[r.id].eventos_pendentes ? ` · ${ML[r.id].eventos_pendentes} aviso(s) do ML pendente(s)` : ''}</div>
+      ${ML[r.id].ultimo_erro ? `<div style="color:var(--erro)">Último erro: ${esc(ML[r.id].ultimo_erro)}</div>` : ''}` : '<div>Conta ainda não autorizada.</div>'}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+      <button type="button" class="btn fino" id="mlAutorizar">${ML[r.id] ? 'Autorizar de novo' : 'Gerar link de autorização'}</button>
+      ${ML[r.id] ? `<div><label style="font-size:11px">De</label><input type="date" id="mlDe" value="${new Date(Date.now() - 90 * 864e5).toLocaleDateString('sv-SE')}"></div>
+        <div><label style="font-size:11px">Até</label><input type="date" id="mlAte" value="${new Date().toLocaleDateString('sv-SE')}"></div>
+        <button type="button" class="btn primario fino" id="mlBuscar">Buscar vendas do período</button>
+        <button type="button" class="btn discreto fino" id="mlReproc" title="Refaz pedidos e tarifas a partir das vendas já guardadas, sem consultar o ML">Reprocessar guardadas</button>` : ''}
+    </div><div id="mlMsg" class="sub" style="margin-top:6px"></div>`,
+  pendencias: [
+    { id: 'sem_conta', nome: 'Sem conta de repasse', cor: 'alerta', bloqueia: true, teste: r => r.situacao === 'ativo' && MKT.includes(r.plataforma) && !r.conta_bancaria_id },
+    { id: 'sem_link', nome: 'Sem link da venda', cor: 'neutro', teste: r => r.situacao === 'ativo' && MKT.includes(r.plataforma) && !r.link_pedido },
+    { id: 'sem_cat', nome: 'Sem categoria da receita', cor: 'alerta', bloqueia: true, teste: r => r.situacao === 'ativo' && !r.categoria_receita_id }
+  ],
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  msgDuplicado: 'Já existe canal com este nome'
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contas a receber · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .pg-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; margin-top: 8px; padding: 10px; border: 1px solid var(--linha); border-radius: 8px; }
+  .pg-form label { font-size: 11px; margin-bottom: 2px; }
+  .pg-form .l2 { grid-column: span 2; }
+  tr.estornado td { text-decoration: line-through; color: var(--texto-suave); }
+</style>
+</head>
+<body data-modulo="receber" data-titulo="Contas a receber" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script>
+/* =====================================================================
+   Contas a receber — uma lista só, por empresa ou consolidado
+   - Marketplace: o título é o valor que deve cair na conta (líquido). A composição mostra receita bruta (+)
+     e cada tarifa/encargo (−) na sua categoria: o relatório separa receita, tarifa, frete…
+   - Distribuidor: parcelas pela condição de pagamento.
+   - A baixa normalmente vem da conciliação do extrato (tela Extratos e conciliação); aqui também dá para
+     baixar manualmente. Diferença entre previsto e recebido vai como ajuste numa categoria.
+   ===================================================================== */
+const SIT = [{ v: 'aberto', n: 'Aberto' }, { v: 'parcial', n: 'Recebido parcial' }, { v: 'recebido', n: 'Recebido' }, { v: 'cancelado', n: 'Cancelado' }];
+const ORIGENS = [{ v: 'manual', n: 'Manual' }, { v: 'pedido_venda', n: 'Pedido (distribuidor)' }, { v: 'marketplace', n: 'Venda marketplace' }, { v: 'importacao', n: 'Importado' }];
+const ABERTOS = ['aberto', 'parcial'];
+const hoje = () => new Date().toLocaleDateString('sv-SE');
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const dias = r => Math.round((Date.parse(r.data_vencimento + 'T12:00:00') - Date.parse(hoje() + 'T12:00:00')) / 864e5);
+const FAIXAS = [
+  { v: 'vencido', n: 'Vencido', t: d => d < 0 }, { v: 'hoje', n: 'Hoje', t: d => d === 0 }, { v: 'amanha', n: 'Amanhã', t: d => d === 1 },
+  { v: '3', n: 'Em 2 a 3 dias', t: d => d >= 2 && d <= 3 }, { v: '7', n: 'Em 4 a 7 dias', t: d => d >= 4 && d <= 7 },
+  { v: '10', n: 'Em 8 a 10 dias', t: d => d >= 8 && d <= 10 }, { v: '30', n: 'Em 11 a 30 dias', t: d => d >= 11 && d <= 30 },
+  { v: 'mais', n: 'Mais de 30 dias', t: d => d > 30 }];
+const faixa = r => ABERTOS.includes(r.situacao) ? FAIXAS.find(f => f.t(dias(r))).v : r.situacao;
+const textoPrazo = r => { if (r.situacao === 'recebido') return 'recebido'; if (r.situacao === 'cancelado') return 'cancelado';
+  const d = dias(r); return d < 0 ? `vencido há ${-d} dia${d === -1 ? '' : 's'}` : d === 0 ? 'hoje' : d === 1 ? 'amanhã' : `em ${d} dias`; };
+const vencido = r => ABERTOS.includes(r.situacao) && dias(r) < 0;
+let ACOES = new Set(), CLI = [], CANAIS = [], CATS = [], CONTAS = [], FORMAS = [], PEDIDOS = {}, modalAtual = null, extraAtual = {};
+const cat = id => CATS.find(c => c.id === id);
+const conta = id => CONTAS.find(c => c.id === id);
+const canal = id => CANAIS.find(c => c.id === id);
+const linkVenda = p => { const c = canal(p?.canal_id); return c?.link_pedido && p.numero_externo ? c.link_pedido.replace('{pedido}', encodeURIComponent(p.numero_externo)).replace('{pack}', encodeURIComponent(p.pack_id || p.numero_externo)).replace('{envio}', encodeURIComponent(p.envio_id || '')) : null; };
+
+/* ---------- Composição (receita + / encargos −) ---------- */
+const optCats = sel => '<option value="">— categoria —</option>' + CATS.filter(c => c.ativo || c.id === sel)
+  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
+const linhaComp = (x = {}) => `<tr data-tipo="${esc(x.tipo_codigo || '')}"><td><select data-k="categoria_financeira_id">${optCats(x.categoria_financeira_id)}</select></td>
+  <td><input data-k="observacao" value="${esc(x.observacao || '')}" placeholder="ex.: tarifa de venda"></td>
+  <td style="width:140px"><input data-k="valor" inputmode="decimal" value="${x.valor != null ? Number(x.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}"></td>
+  <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
+function lerComp() {
+  return [...(modalAtual?.querySelectorAll('#rateio tbody tr') || [])].map(tr => ({ categoria_financeira_id: Number(tr.querySelector('[data-k=categoria_financeira_id]').value) || null,
+    valor: lerNumero(tr.querySelector('[data-k=valor]').value), observacao: tr.querySelector('[data-k=observacao]').value.trim() || null, tipo_codigo: tr.dataset.tipo || null }))
+    .filter(x => x.categoria_financeira_id || x.valor);
+}
+function conferirComp() {
+  const el = modalAtual?.querySelector('#rateioSoma'); if (!el) return;
+  const l = lerComp(), soma = l.reduce((s, x) => s + (x.valor || 0), 0), valor = lerNumero(modalAtual.querySelector('#f_valor').value) || 0;
+  const rec = l.filter(x => x.valor > 0).reduce((s, x) => s + x.valor, 0), enc = l.filter(x => x.valor < 0).reduce((s, x) => s + x.valor, 0);
+  el.textContent = l.length ? `Receita ${reais(rec)} · encargos ${reais(enc)} · líquido ${reais(soma)} de ${reais(valor)}${Math.abs(soma - valor) > 0.005 ? ` · falta ${reais(valor - soma)}` : ' · fechado'}`
+    : 'O título vai inteiro para a categoria escolhida acima.';
+  el.classList.toggle('erro', l.length > 0 && Math.abs(soma - valor) > 0.005);
+}
+
+/* ---------- Rastreio: pedido → NF → título → recebimento → conciliação ---------- */
+function htmlRastreio(r) {
+  const p = PEDIDOS[r.pedido_venda_id], rcs = (extraAtual.receb[r.id] || []).filter(x => !x.estornado), lv = linkVenda(p);
+  const etapa = (ok, t) => `<span class="${ok ? 'ok' : ''}">${esc(t)}</span>`;
+  return `<div class="secao">Rastreio</div><div class="rastreio">
+    ${p ? `${etapa(true, (canal(p.canal_id)?.nome || 'Pedido') + ' · ' + (p.numero_externo || 'pedido ' + p.id))}<i>›</i>${etapa(p.nf_numero, p.nf_numero ? 'NF ' + p.nf_numero : 'NF')}<i>›</i>`
+      : `${etapa(true, ORIGENS.find(o => o.v === r.origem)?.n || 'Manual')}<i>›</i>`}
+    ${etapa(true, 'Título')}<i>›</i>${etapa(rcs.length, rcs.length ? 'Recebido ' + dataCurta(rcs.at(-1).data_recebimento) : 'Recebimento')}<i>›</i>${etapa(rcs.length && rcs.every(x => x.conciliado), 'Conciliado')}</div>
+    <p style="margin:8px 0 0;font-size:13px">${p ? `<a href="../comercial/pedidos-venda.html" style="color:var(--destaque)">Pedido no sistema: ${esc(p.numero_externo || '#' + p.id)}</a>` : ''}
+      ${lv ? ` &nbsp; <a class="ext" href="${esc(lv)}" target="_blank" rel="noopener">Abrir a venda na plataforma</a>` : ''}
+      ${(extraAtual.extrato[r.id] || []).length ? ` &nbsp; <span class="sub">Extrato: ${extraAtual.extrato[r.id].map(l => esc(l.id_operacao || '#' + l.id)).join(', ')}</span>` : ''}</p>`;
+}
+
+/* ---------- Recebimentos (baixas) ---------- */
+function htmlReceb(r) {
+  const rcs = extraAtual.receb[r.id] || [];
+  const contasEmp = CONTAS.filter(c => c.empresa_id === r.empresa_id && c.situacao === 'ativo' && c.tipo !== 'historico');
+  return `<div class="secao">Recebimentos · recebido ${reais(r.valor_recebido)} · saldo ${reais(r.saldo)}</div>
+    ${rcs.length ? `<table class="lista-mini"><thead><tr><th>Data</th><th>Abatido</th><th>Ajuste</th><th>Entrou na conta</th><th>Conta</th><th>Identificador</th><th>Conciliado</th><th></th></tr></thead><tbody>
+      ${rcs.map(x => `<tr class="${x.estornado ? 'estornado' : ''}"><td>${dataCurta(x.data_recebimento)}</td><td class="num">${reais(x.valor)}</td>
+        <td class="num" title="${esc(cat(x.ajuste_categoria_id)?.nome || '')}">${Number(x.ajuste) ? reais(x.ajuste) : ''}</td><td class="num">${reais(Number(x.valor) + Number(x.ajuste))}</td>
+        <td>${esc(conta(x.conta_bancaria_id)?.descricao || '')}</td><td>${esc(x.identificador || '')}</td>
+        <td>${x.estornado ? 'estornado' : `<label class="chk"><input type="checkbox" data-conc="${x.id}" ${x.conciliado ? 'checked' : ''} ${ACOES.has('receber.conciliar') ? '' : 'disabled'}> ${x.conciliado ? dataCurta(x.conciliado_em) : ''}</label>`}</td>
+        <td>${x.estornado || x.conciliado || !ACOES.has('receber.estornar') ? '' : `<button type="button" class="btn discreto fino" data-estornar="${x.id}">Estornar</button>`}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub" style="margin:0 0 6px">Nenhum recebimento. Vendas de marketplace são baixadas pela conciliação do extrato.</p>'}
+    ${ABERTOS.includes(r.situacao) ? `<div class="pg-form">
+      <div><label>Data</label><input type="date" id="rcData" value="${hoje()}"></div>
+      <div><label>Valor abatido (R$)</label><input id="rcValor" inputmode="decimal" value="${String(r.saldo).replace('.', ',')}"></div>
+      <div><label>Ajuste (R$, − tarifa / + juros)</label><input id="rcAjuste" inputmode="decimal" placeholder="0,00"></div>
+      <div><label>Categoria do ajuste</label><select id="rcAjCat">${optCats(null)}</select></div>
+      <div class="l2"><label>Conta</label><select id="rcConta">${contasEmp.map(c => `<option value="${c.id}"${c.id === r.conta_bancaria_id ? ' selected' : ''}>${esc(c.descricao)}</option>`).join('')}</select></div>
+      <div><label>Forma</label><select id="rcForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}"${f.id === r.forma_pagamento_id ? ' selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
+      <div><label>Identificador</label><input id="rcIdent"></div>
+      <div style="grid-column: span 4; display:flex; justify-content:flex-end"><button type="button" class="btn primario" id="rcRegistrar">Registrar recebimento</button></div>
+    </div>` : ''}`;
+}
+async function registrarReceb(r) {
+  const q = s => modalAtual.querySelector(s);
+  const x = { titulo_id: r.id, data_recebimento: q('#rcData').value, valor: lerNumero(q('#rcValor').value), ajuste: lerNumero(q('#rcAjuste').value) || 0,
+    ajuste_categoria_id: Number(q('#rcAjCat').value) || null, conta_bancaria_id: Number(q('#rcConta').value) || null,
+    forma_pagamento_id: Number(q('#rcForma').value) || null, identificador: q('#rcIdent').value.trim() || null };
+  if (!x.data_recebimento) return aviso('Informe a data', true);
+  if (!(x.valor > 0)) return aviso('Informe o valor', true);
+  if (x.valor > Number(r.saldo) + 0.005) return aviso(`Valor maior que o saldo (${reais(r.saldo)})`, true);
+  if (x.ajuste && !x.ajuste_categoria_id) return aviso('Escolha a categoria do ajuste', true);
+  if (!x.conta_bancaria_id) return aviso('Escolha a conta onde o dinheiro entrou', true);
+  const { error } = await db.from('recebimentos').insert(x);
+  if (error) return aviso('Não salvou: ' + error.message, true);
+  aviso(x.valor >= Number(r.saldo) - 0.005 ? 'Título recebido' : 'Recebimento parcial registrado'); modalAtual.remove(); cfg.recarregar();
+}
+
+function janela(titulo, corpo, botao, aoConfirmar) {
+  const m = abrirModal(`<div class="mini-modal"><h2>${esc(titulo)}</h2>${corpo}<div class="acoes"><button class="btn" id="jCancelar">Cancelar</button><button class="btn primario" id="jOk">${esc(botao)}</button></div></div>`);
+  m.querySelector('#jCancelar').onclick = () => m.remove();
+  m.querySelector('#jOk').onclick = async () => { const fechar = await aoConfirmar(m); if (fechar !== false) m.remove(); };
+  return m;
+}
+
+const cfg = {
+  tabela: 'titulos_receber', modulo: 'receber', titulo: 'Contas a receber', singular: 'título', plural: 'títulos', textoNovo: '+ Novo título',
+  subtitulo: 'Vendas de marketplace (valor líquido, com a composição de tarifas) e de distribuidores. A baixa vem da conciliação do extrato ou manual.',
+  dicaBusca: 'cliente, nº da venda, documento, canal…', ordem: 'data_vencimento', revisao: false, porEmpresa: true,
+  filtrosExtras: [
+    { id: 'grupo', label: 'Situação', opcoes: [{ v: 'abertos', n: 'Em aberto (a receber)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'parcial', n: 'Recebido parcial' },
+        { v: 'recebido', n: 'Recebidos' }, { v: 'cancelado', n: 'Cancelados' }],
+      teste: (r, v) => v === 'abertos' ? ABERTOS.includes(r.situacao) : v === 'vencidos' ? vencido(r) : r.situacao === v },
+    { id: 'prazo', label: 'Prazo (vencimento / liberação)', opcoes: FAIXAS.map(f => ({ v: f.v, n: f.n })), teste: (r, v) => faixa(r) === v },
+    { id: 'conc', label: 'Conciliação', opcoes: [{ v: 'nao', n: 'Recebido e não conciliado' }, { v: 'sim', n: 'Conciliado' }],
+      teste: (r, v, e) => { const p = (e.receb[r.id] || []).filter(x => !x.estornado); return p.length > 0 && (v === 'sim' ? p.every(x => x.conciliado) : p.some(x => !x.conciliado)); } }
+  ],
+  totais: ['valor', 'saldo'],
+  valorTotal: (r, c) => r.situacao === 'cancelado' ? 0 : r[c],
+  ordenarPor: { data_vencimento: r => (ABERTOS.includes(r.situacao) ? '0' + r.data_vencimento : '1' + (9e15 - Date.parse(r.data_recebimento || r.data_vencimento))) },
+  periodos: [{ campo: 'data_vencimento', label: 'Vencimento / liberação' }, { campo: 'data_recebimento', label: 'Recebimento' }, { campo: 'data_emissao', label: 'Emissão' },
+    { campo: 'data_competencia', label: 'Competência' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
+  campos: [
+    { id: 'data_vencimento', label: 'Vencimento / liberação', tipo: 'data', obrig: true, lista: true },
+    { id: 'data_emissao', label: 'Emissão', tipo: 'data', obrig: true, lista: true, ajuda: 'A competência segue esta data.' },
+    { id: 'data_recebimento', label: 'Recebimento', tipo: 'data', somenteLeitura: true, lista: true },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
+    { id: 'canal_id', label: 'Canal de venda', tipo: 'select', filtro: true, lista: true, opcoes: () => CANAIS.map(c => ({ v: c.id, n: c.nome })) },
+    { id: 'cliente_id', label: 'Cliente', tipo: 'select', col: 2, filtro: true, opcoes: () => CLI },
+    { id: 'numero_externo', label: 'Nº da venda / pacote', lista: true },
+    { id: 'documento', label: 'Documento', placeholder: 'NF, boleto, nº da venda' },
+    { id: 'descricao', label: 'Descrição', col: 2 },
+    { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
+      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Venda de marketplace usa a composição abaixo (receita e tarifas).' },
+    { id: 'valor', label: 'Valor a receber (R$)', tipo: 'moeda', obrig: true, lista: true },
+    { id: 'saldo', label: 'Saldo (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'conta_bancaria_id', label: 'Conta prevista', tipo: 'select', filtro: true, opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })), secao: 'Como vai ser recebido' },
+    { id: 'forma_pagamento_id', label: 'Forma', tipo: 'select', opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
+    { id: 'parcela', label: 'Parcela', tipo: 'numero' },
+    { id: 'parcelas', label: 'de', tipo: 'numero' },
+    { id: 'data_competencia', label: 'Competência', tipo: 'data', somenteLeitura: true },
+    { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, somenteLeitura: true, secao: 'Situação' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'aberto' },
+    { id: 'valor_recebido', label: 'Recebido (R$)', tipo: 'moeda', somenteLeitura: true },
+    { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 }
+  ],
+  async carregarExtra(linhas, ctx) {
+    window.__ctxNox = ctx;
+    const [cl, cn, c, cb, fp, rc, ra, pv, ext] = await Promise.all([
+      buscarTodos(() => db.from('clientes').select('id, nome, situacao').order('nome')),
+      buscarTodos(() => db.from('canais_venda').select('id, nome, plataforma, link_pedido').order('nome')),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao').eq('aceita_lancamento', true).order('codigo')),
+      buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
+      buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').order('nome')),
+      buscarTodos(() => db.from('recebimentos').select('*').order('data_recebimento')),
+      buscarTodos(() => db.from('titulos_receber_rateio').select('*').order('id')),
+      buscarTodos(() => db.from('pedidos_venda').select('id, canal_id, numero_externo, pack_id, envio_id, nf_numero, situacao, cliente_nome')),
+      buscarTodos(() => db.from('extrato_lancamentos').select('id, titulo_receber_id, id_operacao').not('titulo_receber_id', 'is', null))
+    ]);
+    const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
+    CLI = cl.filter(x => x.situacao !== 'inativo' || linhas.some(r => r.cliente_id === x.id)).map(x => ({ v: x.id, n: x.nome }));
+    CANAIS = cn; CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONTAS = cb; FORMAS = fp.filter(x => x.situacao === 'ativo');
+    PEDIDOS = Object.fromEntries(pv.map(p => [p.id, p]));
+    const receb = {}, rateio = {}, extrato = {};
+    rc.forEach(x => (receb[x.titulo_id] ||= []).push(x));
+    ra.forEach(x => (rateio[x.titulo_id] ||= []).push(x));
+    ext.forEach(x => (extrato[x.titulo_receber_id] ||= []).push(x));
+    extraAtual = { receb, rateio, extrato };
+    return extraAtual;
+  },
+  colunasExtras: [
+    { label: 'Cliente / comprador', texto: r => CLI.find(c => c.v === r.cliente_id)?.n || PEDIDOS[r.pedido_venda_id]?.cliente_nome || '' },
+    { label: 'Categoria', texto: (r, e) => (e.rateio[r.id] || []).length ? (e.rateio[r.id] || []).map(x => `${cat(x.categoria_financeira_id)?.nome || '?'} ${reais(x.valor)}`).join(' | ') : (cat(r.categoria_financeira_id)?.nome || ''),
+      html: (r, e) => { const l = e.rateio[r.id] || []; if (!l.length) return esc(cat(r.categoria_financeira_id)?.nome || '');
+        const rec = l.filter(x => x.valor > 0).reduce((s, x) => s + Number(x.valor), 0), enc = l.filter(x => x.valor < 0).reduce((s, x) => s + Number(x.valor), 0);
+        return `<span title="${esc(l.map(x => `${cat(x.categoria_financeira_id)?.nome}: ${reais(x.valor)}`).join('\n'))}">bruto ${reais(rec)} <small class="valor-neg" style="display:inline">${reais(enc)}</small></span>`; } },
+    { label: 'Prazo', texto: r => textoPrazo(r), html: r => `<span class="prazo p-${faixa(r)}">${textoPrazo(r)}</span>` },
+    { label: 'Venda', texto: r => linkVenda(PEDIDOS[r.pedido_venda_id]) || '', html: r => { const l = linkVenda(PEDIDOS[r.pedido_venda_id]); return l ? `<a class="ext" href="${esc(l)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">abrir</a>` : ''; } }
+  ],
+  textoBuscaExtra: r => { const p = PEDIDOS[r.pedido_venda_id]; return [r.descricao, canal(r.canal_id)?.nome, p?.numero_externo, p?.pack_id, p?.envio_id, p?.nf_numero, cat(r.categoria_financeira_id)?.codigo].filter(Boolean).join(' '); },
+  subtituloLinha: r => [r.parcela && r.parcelas > 1 ? `parcela ${r.parcela}/${r.parcelas}` : '', r.documento].filter(Boolean).join(' · '),
+  resumo: v => { window.__visiveisNox = v; const venc = v.filter(vencido);
+    return (venc.length ? `<span class="vermelho">Vencido <b>${reais(venc.reduce((s, r) => s + Number(r.saldo), 0))}</b> (${venc.length})</span>` : '')
+      + '<button type="button" class="btn discreto fino nao-imprimir" id="btnAging">Relatório de prazos (aging)</button>'; },
+  pendencias: [
+    { id: 'vencido', nome: 'Vencido / liberação atrasada', cor: 'erro', teste: vencido },
+    { id: 'sem_cat', nome: 'Sem categoria', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !r.categoria_financeira_id && !(e.rateio[r.id] || []).length },
+    { id: 'sem_conta', nome: 'Sem conta prevista', cor: 'neutro', teste: r => ABERTOS.includes(r.situacao) && !r.conta_bancaria_id },
+    { id: 'nao_conc', nome: 'Recebido e não conciliado', cor: 'neutro', teste: (r, e) => (e.receb[r.id] || []).some(x => !x.estornado && !x.conciliado) }
+  ],
+  apagado: r => r.situacao === 'cancelado' || r.situacao === 'recebido',
+  aoAbrir(m, r, ctx) {
+    window.__ctxNox = ctx; modalAtual = m;
+    const pode = ctx.pode('receber', 'editar');
+    const fEmp = m.querySelector('#f_empresa_id'), fConta = m.querySelector('#f_conta_bancaria_id');
+    if (fEmp && fConta) {
+      const filtrar = () => { const emp = Number(fEmp.value), atual = Number(fConta.value);
+        fConta.innerHTML = '<option value="">—</option>' + CONTAS.filter(c => c.empresa_id === emp && c.tipo !== 'historico' && (c.situacao === 'ativo' || c.id === atual))
+          .map(c => `<option value="${c.id}"${c.id === atual ? ' selected' : ''}>${esc(c.descricao)}</option>`).join(''); };
+      fEmp.addEventListener('change', filtrar); filtrar();
+    }
+    const el = document.createElement('div'); el.className = 'sub-ed'; el.id = 'rateio';
+    const tem = !!(r.id && (extraAtual.rateio[r.id] || []).length);
+    el.innerHTML = `<div class="secao">Composição do valor (receita + / tarifas −)</div>
+      <button type="button" class="btn discreto fino" id="abrirComp" ${tem ? 'hidden' : ''}>Detalhar receita e tarifas…</button>
+      <div id="compCorpo" ${tem ? '' : 'hidden'}><table><thead><tr><th>Categoria</th><th>Detalhe</th><th>Valor (R$)</th><th></th></tr></thead><tbody>${((r.id && extraAtual.rateio[r.id]) || []).map(linhaComp).join('')}</tbody></table>
+      ${pode ? '<button type="button" class="btn fino" id="addComp" style="margin-top:6px">+ Linha</button>' : ''}<div class="soma" id="rateioSoma"></div></div>`;
+    const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Como vai ser recebido');
+    antes.parentNode.insertBefore(el, antes);
+    const tb = el.querySelector('tbody');
+    el.querySelector('#abrirComp').onclick = e => { e.target.hidden = true; el.querySelector('#compCorpo').hidden = false;
+      if (!tb.children.length) { tb.insertAdjacentHTML('beforeend', linhaComp({ categoria_financeira_id: Number(m.querySelector('#f_categoria_financeira_id').value) || null, valor: lerNumero(m.querySelector('#f_valor').value) || null })); tb.insertAdjacentHTML('beforeend', linhaComp()); }
+      conferirComp(); };
+    if (pode) {
+      el.querySelector('#addComp').onclick = () => { tb.insertAdjacentHTML('beforeend', linhaComp()); conferirComp(); };
+      el.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); conferirComp(); } });
+      el.addEventListener('input', conferirComp); el.addEventListener('change', conferirComp);
+      m.querySelector('#f_valor')?.addEventListener('input', conferirComp);
+    } else el.querySelectorAll('input, select').forEach(i => i.disabled = true);
+    conferirComp();
+    if (!r.id || !pode) return;
+    m.querySelector('#rcRegistrar')?.addEventListener('click', () => registrarReceb(r));
+    m.querySelectorAll('[data-estornar]').forEach(b => b.onclick = async () => {
+      if (!confirm('Estornar este recebimento? O saldo do título volta.')) return;
+      const { error } = await db.from('recebimentos').update({ estornado: true }).eq('id', +b.dataset.estornar);
+      if (error) return aviso('Não salvou: ' + error.message, true);
+      aviso('Recebimento estornado'); m.remove(); cfg.recarregar();
+    });
+    m.querySelectorAll('[data-conc]').forEach(c => c.onchange = async () => {
+      const { error } = await db.from('recebimentos').update({ conciliado: c.checked }).eq('id', +c.dataset.conc);
+      if (error) { c.checked = !c.checked; return aviso('Não salvou: ' + error.message, true); }
+      aviso(c.checked ? 'Conciliado' : 'Conciliação desfeita');
+    });
+  },
+  secaoExtra: r => htmlRastreio(r) + htmlReceb(r),
+  antesSalvar: d => { ['empresa_id', 'cliente_id', 'canal_id', 'categoria_financeira_id', 'conta_bancaria_id', 'forma_pagamento_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); }); },
+  validar: (d, r) => {
+    const l = lerComp();
+    if (l.some(x => !x.categoria_financeira_id || !x.valor)) return 'Composição: cada linha precisa de categoria e valor';
+    if (l.length && Math.abs(l.reduce((s, x) => s + x.valor, 0) - d.valor) > 0.005) return 'A composição precisa somar exatamente o valor do título';
+    if (!l.length && !d.categoria_financeira_id) return 'Informe a categoria financeira (ou a composição)';
+    if (!d.cliente_id && !d.canal_id) return 'Informe o cliente ou o canal de venda';
+    if (d.data_emissao && d.data_vencimento < d.data_emissao) return 'O vencimento não pode ser antes da emissão';
+    if (d.conta_bancaria_id && conta(d.conta_bancaria_id)?.empresa_id !== d.empresa_id) return 'A conta prevista é de outra empresa';
+    if (r?.id && Number(r.valor_recebido) > d.valor) return `O valor não pode ficar abaixo do que já foi recebido (${reais(r.valor_recebido)})`;
+    return null;
+  },
+  async salvar(dados, r, m, novo) {
+    const l = lerComp();
+    const { data, error } = await db.rpc('salvar_titulo_receber', { p_titulo: { ...dados, id: novo ? null : r.id }, p_rateio: l.length || (r.id && (extraAtual.rateio[r.id] || []).length) ? l : null });
+    if (error) throw error;
+    return data;
+  },
+  acoesLote: [
+    { nome: 'Receber (baixa total)', executar: (sel, pronto) => {
+        const ab = sel.filter(r => ABERTOS.includes(r.situacao));
+        if (!ab.length) return aviso('Selecione títulos em aberto', true);
+        const emp = [...new Set(ab.map(r => r.empresa_id))];
+        if (emp.length > 1) return aviso('Selecione títulos de uma empresa só (as contas são por empresa)', true);
+        const total = ab.reduce((s, r) => s + Number(r.saldo), 0);
+        janela(`Receber ${ab.length} título(s) · ${reais(total)}`, `<div class="grade">
+            <div><label>Data</label><input type="date" id="jData" value="${hoje()}"></div>
+            <div><label>Conta</label><select id="jConta">${CONTAS.filter(c => c.empresa_id === emp[0] && c.situacao === 'ativo' && c.tipo !== 'historico').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div></div>
+            <p class="sub" style="margin:0">Cada título é baixado pelo saldo, sem ajuste. Marketplace: prefira a conciliação pelo extrato.</p>`, 'Registrar', async m => {
+          const data = m.querySelector('#jData').value, contaId = Number(m.querySelector('#jConta').value);
+          if (!data || !contaId) { aviso('Informe data e conta', true); return false; }
+          const { error } = await db.from('recebimentos').insert(ab.map(r => ({ titulo_id: r.id, data_recebimento: data, valor: Number(r.saldo), conta_bancaria_id: contaId })));
+          if (error) { aviso('Não salvou: ' + error.message, true); return false; }
+          aviso(`${ab.length} recebimento(s) registrado(s)`); pronto();
+        });
+      } },
+    { nome: 'Cancelar título', executar: (sel, pronto) => {
+        if (!ACOES.has('receber.cancelar')) return aviso('Cancelar título precisa de permissão do gestor', true);
+        const ok = sel.filter(r => ABERTOS.includes(r.situacao) && !Number(r.valor_recebido));
+        if (!ok.length) return aviso('Só títulos em aberto e sem recebimento podem ser cancelados', true);
+        janela(`Cancelar ${ok.length} título(s)`, '<div class="grade"><div style="grid-column: span 2"><label>Motivo</label><input id="jMotivo"></div></div>', 'Cancelar títulos', async m => {
+          const motivo = m.querySelector('#jMotivo').value.trim(); if (!motivo) { aviso('Informe o motivo', true); return false; }
+          const { error } = await db.from('titulos_receber').update({ situacao: 'cancelado', motivo_cancelamento: motivo }).in('id', ok.map(r => r.id));
+          if (error) { aviso('Não salvou: ' + error.message, true); return false; }
+          aviso('Cancelado'); pronto();
+        });
+      } }
+  ],
+  tituloRegistro: r => [CLI.find(c => c.v === r.cliente_id)?.n || canal(r.canal_id)?.nome, r.numero_externo || r.documento].filter(Boolean).join(' · ') || 'Título',
+  chaveHistorico: r => r.numero_externo || r.documento || r.id,
+  msgDuplicado: 'Título duplicado'
+};
+
+function relatorioAging(visiveis, ctx) {
+  const ab = visiveis.filter(r => ABERTOS.includes(r.situacao));
+  const emps = ctx.empresas.filter(e => ab.some(r => r.empresa_id === e.id));
+  const linhas = FAIXAS.map(f => { const rs = ab.filter(r => faixa(r) === f.v);
+    return [f.n, rs.length, ...emps.map(e => rs.filter(r => r.empresa_id === e.id).reduce((s, r) => s + Number(r.saldo), 0).toFixed(2).replace('.', ',')),
+      rs.reduce((s, r) => s + Number(r.saldo), 0).toFixed(2).replace('.', ',')]; });
+  exportarExcel('contas_receber_aging', ['Prazo (vencimento/liberação)', 'Títulos', ...emps.map(e => e.nome), 'Total (R$)'], linhas);
+}
+
+montarCadastro(cfg).then(() => {
+  document.addEventListener('click', e => { if (e.target.id === 'btnAging') relatorioAging(window.__visiveisNox || [], window.__ctxNox); });
+  const id = new URLSearchParams(location.search).get('titulo');
+  if (id) document.querySelector(`#cLista tr[data-id="${Number(id)}"]`)?.click();
+});
+</script>
+</body>
+</html>
