@@ -14,6 +14,8 @@ direto. Os arquivos da pasta `sql/` ficam como histórico. Não é mais preciso 
 3. Authentication → Users → **Add user → Create new user** → seu e-mail e senha → marcar **Auto Confirm User**.
    O primeiro usuário vira Administrador automaticamente.
 4. Authentication → URL Configuration → **Site URL** = `https://noxperformanceeng.github.io/Noxperformance/`
+   e em **Redirect URLs** → Add URL → `https://noxperformanceeng.github.io/Noxperformance/**`
+   (sem isso o link de "Esqueci minha senha" volta para `localhost:3000`).
 
 ## 2. Chave do banco
 Já está configurada em `assets/js/supabase.js`. Nunca coloque ali a chave "secret" / "service_role".
