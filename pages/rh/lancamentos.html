@@ -110,7 +110,7 @@ function desenhar() {
   const todasFechadas = empresas.every(fechada), algumaFechada = empresas.some(fechada);
   const bF = document.getElementById('bFechar');
   bF.hidden = !ACOES.has('lancamentos.fechar') && !CTX.admin;
-  bF.textContent = todasFechadas ? '🔒 Reabrir competência' : 'Fechar competência';
+  bF.textContent = todasFechadas ? '🔒 Reabrir folha' : 'Fechar folha e enviar ao financeiro';
   const busca = document.getElementById('busca').value;
   const vis = lancVisiveis();
   const ativos = ativosNoMes(COMP, CTX.empresa);
@@ -169,6 +169,7 @@ function abrirFuncionario(fid) {
       <div><button class="btn primario fino" id="lAdd">Adicionar</button></div></div>` : ''}
     <div class="tabela-rolagem" style="max-height:52vh"><table class="lista-mini"><thead><tr><th>Código</th><th>Evento</th><th class="num">Ref.</th><th class="num">Vencimentos</th><th class="num">Descontos</th><th>Lançado por</th><th></th></tr></thead><tbody id="lLista"></tbody></table></div>
     <div class="tot-hol" id="lTot"></div>
+    <div id="lFin" style="margin-top:10px"></div>
     <div class="acoes" style="margin-top:14px"><a class="btn" href="holerites.html?c=${COMP}&f=${f.id}">Holerite de conferência</a><button class="btn" id="lFechar">Fechar</button></div>`);
   m.querySelector('.modal').classList.add('form', 'largo');
   m.querySelector('#lFechar').onclick = () => m.remove();
@@ -183,7 +184,7 @@ function abrirFuncionario(fid) {
       const manual = l.origem === 'lancamentos';
       return sep + `<tr><td>${esc(ev.codigo)}</td><td>${esc(ev.descricao)}${l.observacao ? `<small class="sub2">${esc(l.observacao)}</small>` : ''}</td><td class="num">${refBR(ev, l.referencia)}</td>
         <td class="num">${ev.tipo === 'provento' ? num2(l.valor) : ''}</td><td class="num">${ev.tipo === 'desconto' ? num2(l.valor) : ev.tipo === 'informativo' ? '(' + num2(l.valor) + ')' : ''}</td>
-        <td>${manual ? '<small>Lançamentos</small>' : `<span class="tg neutro">🔒 ${esc(TELAS_RH[l.origem] || l.origem)}</span>`}</td>
+        <td>${manual ? '<small>Lançamentos</small>' : `<a class="tg neutro" href="${TELAS_URL[l.origem] || '#'}${l.origem_id && CADASTRO_RH.includes(l.origem) ? '?abrir=' + l.origem_id : ''}" title="Abrir o registro de origem">🔒 ${esc(TELAS_RH[l.origem] || l.origem)} ↗</a>`}</td>
         <td style="white-space:nowrap">${manual && pode ? `<button class="acao-linha" data-ed="${l.id}" title="Alterar">✎</button><button class="acao-linha" data-rm="${l.id}" title="Excluir">✕</button>` : ''}</td></tr>`; }).join('')
       : '<tr><td colspan="7" class="vazio">Nenhum lançamento neste mês.</td></tr>';
     const t = totais(ls);
@@ -204,6 +205,7 @@ function abrirFuncionario(fid) {
     });
   };
   desenharLista();
+  financeiroDoFuncionario(m, fid);
   if (!pode) return;
 
   // Valor sugerido pela referência: horas × salário/hora × fator; dias × salário/30; valor do cadastro
@@ -239,6 +241,23 @@ function abrirFuncionario(fid) {
     ['#lEv', '#lRef', '#lVal', '#lObs'].forEach(s => m.querySelector(s).value = '');
     desenharLista(); desenhar();
   };
+}
+
+/* ---------- Rastreio: telas de origem e títulos no financeiro ---------- */
+const TELAS_URL = { adiantamento: 'adiantamento.html', ferias: 'ferias.html', vale_transporte: 'vale-transporte.html', decimo_terceiro: 'decimo-terceiro.html',
+  faltas: 'faltas.html', ponto: 'ponto.html' };
+const CADASTRO_RH = ['adiantamento', 'ferias', 'vale_transporte', 'decimo_terceiro', 'faltas'];
+const SIT_TIT = { aberto: 'Aberto', programado: 'Programado', parcial: 'Pago parcial', pago: 'Pago', cancelado: 'Cancelado' };
+async function financeiroDoFuncionario(m, fid) {
+  const { data, error } = await db.rpc('rh_titulos', { p_competencia: COMP + '-01', p_funcionario: fid });
+  const el = m.querySelector('#lFin'); if (!el || error) return;
+  el.innerHTML = `<div class="secao">No financeiro (Contas a pagar)</div>` + (data?.length
+    ? `<table class="lista-mini"><thead><tr><th>Título</th><th>Origem</th><th class="num">Valor</th><th>Vencimento</th><th>Situação</th></tr></thead><tbody>${data.map(t => `<tr>
+        <td>#${t.titulo_id} · ${esc(t.descricao || '')}</td>
+        <td>${t.origem === 'folha' ? 'Fechamento da folha' : CADASTRO_RH.includes(t.origem) ? `<a href="${TELAS_URL[t.origem]}?abrir=${t.origem_id}">${esc(TELAS_RH[t.origem])} ↗</a>` : esc(t.origem)}</td>
+        <td class="num">${num2(t.valor)}</td><td>${dataBR(t.data_vencimento + 'T12:00:00')}</td>
+        <td>${SIT_TIT[t.situacao] || t.situacao}${t.data_pagamento ? ' em ' + dataBR(t.data_pagamento + 'T12:00:00') : ''}${t.situacao === 'pago' ? (t.conciliado ? ' · conciliado' : ' · falta conciliar') : ''}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="sub" style="font-size:12.5px;margin:4px 0">Nada enviado ainda. Adiantamento, VT e 13º vão ao confirmar na tela deles; o salário vai ao fechar a folha.</p>');
 }
 
 /* ---------- Gerar fixos do mês ---------- */
@@ -281,12 +300,19 @@ async function fecharReabrir() {
   const empresas = CTX.empresa ? [CTX.empresa] : CTX.empresas.map(e => e.id);
   const fechar = !empresas.every(fechada);
   const nomes = empresas.map(id => CTX.empresas.find(e => e.id === id)?.nome).join(', ');
-  if (!confirm(fechar ? `Fechar a competência ${mesBR(COMP)} (${nomes})?\nOs lançamentos do mês ficam travados em todas as telas do RH.` : `Reabrir a competência ${mesBR(COMP)} (${nomes})?`)) return;
+  if (!confirm(fechar ? `Fechar a folha de ${mesBR(COMP)} (${nomes})?\n\n• Os lançamentos do mês ficam travados em todas as telas do RH.\n• O líquido do 5º dia útil de cada colaborador vai para o Contas a pagar (1 título por pessoa).\n• Férias e 13º seguem nos títulos próprios.\n\nConfira os holerites antes de fechar.`
+      : `Reabrir a folha de ${mesBR(COMP)} (${nomes})?\n\nOs títulos de salário ainda não pagos saem do Contas a pagar. Se algum já foi pago, o financeiro precisa estornar antes.`)) return;
+  const msgs = [];
   for (const id of empresas) {
-    const { error } = await db.rpc('rh_fechar_competencia', { p_empresa: id, p_competencia: COMP + '-01', p_fechar: fechar });
+    const { data, error } = await db.rpc('rh_fechar_competencia', { p_empresa: id, p_competencia: COMP + '-01', p_fechar: fechar });
     if (error) return aviso('Não salvou: ' + error.message, true);
+    const nome = CTX.empresas.find(e => e.id === id)?.nome || id;
+    if (fechar && data?.sem_titulos) msgs.push(`${nome}: fechada (folha anterior ao sistema: já paga pelo histórico do Tiny, sem títulos novos)`);
+    else if (fechar) msgs.push(`${nome}: ${data?.titulos || 0} título(s) no Contas a pagar · ${reais(data?.total)} · vencimento ${dataBR((data?.vencimento || '') + 'T12:00:00')}`
+      + (data?.negativos?.length ? `\nLíquido negativo (sem título, revisar): ${data.negativos.join(', ')}` : ''));
+    else msgs.push(`${nome}: reaberta · ${data?.titulos || 0} título(s) de salário retirado(s) do financeiro`);
   }
-  aviso(fechar ? 'Competência fechada' : 'Competência reaberta'); carregar();
+  alert(msgs.join('\n\n')); carregar();
 }
 </script>
 </body>

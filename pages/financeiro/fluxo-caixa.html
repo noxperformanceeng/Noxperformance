@@ -55,8 +55,9 @@
     <div><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fAtraso" checked> Atrasados no 1º dia</label></div>
     <div><label>&nbsp;</label><button class="btn" id="btnAbrirTudo" type="button">Abrir/recolher grupos</button></div>
   </div>
+  <div class="pendencias" id="avisoSaldo" style="margin:0 0 8px"></div>
   <div class="fc-wrap"><table class="fc" id="tab"><tbody><tr><td class="vazio">Carregando…</td></tr></tbody></table></div>
-  <p class="legenda">Valores em itálico incluem previsto. Saldo inicial = saldo de abertura das contas + tudo o que foi realizado antes da data inicial. Linhas do extrato ainda sem título (rotina antiga) aparecem como "Extrato classificado".</p>
+  <p class="legenda">Valores em itálico incluem previsto. Saldo inicial = saldo de abertura de cada conta (na data informada em Contas bancárias) + o que foi realizado depois dessa data e antes do período. Linhas do extrato ainda sem título (rotina antiga) aparecem como "Extrato classificado".</p>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -111,6 +112,10 @@ async function carregar() {
   const { data, error } = await db.rpc('fluxo_caixa', { p_de: de, p_ate: ate, p_empresa: ctx.empresa || null, p_conta: conta ? Number(conta) : null });
   if (error) { document.querySelector('#tab tbody').innerHTML = `<tr><td class="vazio">${esc(error.message)}</td></tr>`; return; }
   dados = data; desenhar();
+  // contas sem saldo de abertura: o saldo do fluxo soma todo o histórico e fica distorcido
+  const sem = (data.contas || []).filter(c => !c.data_saldo && !/a conferir|histórico|NÃO USAR/i.test(c.nome));
+  document.getElementById('avisoSaldo').innerHTML = sem.length
+    ? `<span class="tg alerta">Saldo de abertura não informado: ${esc(sem.map(c => c.nome).join(', '))}</span><span>Informe o saldo do extrato numa data em Cadastros › Contas bancárias; o fluxo passa a partir dele.</span>` : '';
 }
 
 // colunas do período

@@ -85,6 +85,15 @@ function conferirRateio() {
 }
 
 /* ---------- Rastreio da compra até o pagamento ---------- */
+// Títulos do RH: tela de origem › lançamento na folha › título
+const TELAS_RH_FIN = { adiantamento: ['Adiantamento salarial', 'adiantamento.html'], vale_transporte: ['Vale-transporte', 'vale-transporte.html'],
+  decimo_terceiro: ['13º salário', 'decimo-terceiro.html'], folha: ['Fechamento da folha', 'relatorios.html'] };
+function rastreioRH(ref) {
+  const [nome, arq] = TELAS_RH_FIN[ref.origem] || [ref.origem, 'lancamentos.html'];
+  const url = RAIZ + 'pages/rh/' + arq + (ref.origem !== 'folha' && ref.origem_id ? '?abrir=' + ref.origem_id : '');
+  const comp = ref.competencia ? String(ref.competencia).slice(5, 7) + '/' + String(ref.competencia).slice(0, 4) : '';
+  return `<a class="ok" href="${url}">RH · ${esc(nome)} ↗</a><i>›</i><span class="ok">Lançamentos ${esc(comp)}</span>`;
+}
 function htmlRastreio(r) {
   const ref = r.origem_ref || {}, pgs = (extraAtual.pagamentos[r.id] || []).filter(p => !p.estornado);
   const etapa = (ok, txt) => `<span class="${ok ? 'ok' : ''}">${esc(txt)}</span>`;
@@ -95,6 +104,8 @@ function htmlRastreio(r) {
       etapa(r.pedido_compra_id || ref.pedido, ref.pedido ? `Pedido ${ref.pedido}` : 'Pedido de compra'),
       etapa(ref.aprovado_por, 'Aprovação'), etapa(ref.recebimento, 'Recebimento'),
       etapa(r.nf_entrada_id || ref.nf, ref.nf ? `NF ${ref.nf}` : 'NF de entrada')].join('<i>›</i>') + '<i>›</i>'
+    : r.origem === 'rh' ? rastreioRH(ref) + '<i>›</i>'
+    : r.origem === 'importacao' && ref.tiny_id ? `<span class="ok" title="${esc([ref.fornecedor_tiny, ref.categoria_tiny].filter(Boolean).join(' · '))}">Tiny #${esc(ref.tiny_id)}</span><i>›</i>`
     : `<span class="ok">${esc(ORIGENS.find(o => o.v === r.origem)?.n || 'Manual')}</span><i>›</i>`}
     ${etapa(true, 'Título')}<i>›</i>${etapa(pgs.length, pgs.length ? `Pago ${dataCurta(pgs.at(-1).data_pagamento)}` : 'Pagamento')}<i>›</i>${etapa(pgs.length && pgs.every(p => p.conciliado), 'Conciliado')}</div>
     ${compra ? '<p class="sub" style="margin:6px 0 0;font-size:12px">As etapas da compra se ligam aqui quando pedido de compra e entrada de NF estiverem no sistema.</p>' : ''}`;

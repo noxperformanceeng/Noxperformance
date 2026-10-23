@@ -45,6 +45,7 @@ const MENU = [
     { id: 'receber',       nome: 'Contas a receber',  arquivo: 'pages/financeiro/contas-receber.html' },
     { id: 'conciliacao',   nome: 'Extratos e conciliação', arquivo: 'pages/financeiro/conciliacao.html' },
     { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: 'pages/financeiro/fluxo-caixa.html' },
+    { id: 'quarentena',    nome: 'Quarentena das importações', arquivo: 'pages/financeiro/quarentena.html' },
     { id: 'notas',         nome: 'Notas fiscais',     arquivo: null }
   ]},
   { grupo: 'RH', itens: [
