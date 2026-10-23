@@ -69,8 +69,11 @@ async function rodar(jobId: number, chave: string) {
         const linhas = itens.map((i: Record<string, unknown>) => ({ empresa_id: job.empresa_id, recurso: job.recurso, tiny_id: String(i.id), resumo: i, lido_em: new Date().toISOString() }));
         // resumo mudou → detalhe precisa ser lido de novo e a carga reaplica a mudança no título
         const { data: atuais } = await db.from('tiny_brutos').select('tiny_id, resumo').eq('empresa_id', job.empresa_id).eq('recurso', job.recurso).in('tiny_id', linhas.map((l: { tiny_id: string }) => l.tiny_id));
-        const mapa = new Map((atuais ?? []).map((a: { tiny_id: string; resumo: unknown }) => [a.tiny_id, JSON.stringify(a.resumo)]));
-        const mudou = linhas.filter((l: { tiny_id: string; resumo: unknown }) => mapa.get(l.tiny_id) !== JSON.stringify(l.resumo));
+        // compara só os campos que importam, em ordem fixa (o banco reordena as chaves do JSON)
+        const chave = (r: Record<string, unknown> | null) => r ? ['vencimento', 'valor', 'saldo', 'situacao', 'historico', 'nome_cliente', 'numero_doc', 'data_emissao', 'nome', 'numero', 'data_pedido', 'data_prevista', 'cpf_cnpj']
+          .map(k => String(r[k] ?? '')).join('|') : '';
+        const mapa = new Map((atuais ?? []).map((a: { tiny_id: string; resumo: Record<string, unknown> }) => [a.tiny_id, chave(a.resumo)]));
+        const mudou = linhas.filter((l: { tiny_id: string; resumo: Record<string, unknown> }) => mapa.get(l.tiny_id) !== chave(l.resumo));
         if (mudou.length) {
           const { error } = await db.from('tiny_brutos').upsert(mudou.map((l: Record<string, unknown>) => ({ ...l, detalhe: null, detalhado_em: null, processado_em: null })), { onConflict: 'empresa_id,recurso,tiny_id' });
           if (error) throw new Error('gravar: ' + error.message);
