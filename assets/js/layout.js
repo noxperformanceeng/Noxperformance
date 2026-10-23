@@ -24,7 +24,7 @@ const MENU = [
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
   ]},
   { grupo: 'Suprimentos', itens: [
-    { id: 'compras',       nome: 'Compras',           arquivo: null },
+    { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html' },
     { id: 'almoxarifado',  nome: 'Almoxarifado',      arquivo: null },
     { id: 'estoque',       nome: 'Estoque',           arquivo: null },
     { id: 'inventario',    nome: 'Inventário',        arquivo: null }

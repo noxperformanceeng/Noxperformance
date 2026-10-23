@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610231624">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610231631">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -26,11 +26,11 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610231624"></script>
-<script src="../../assets/js/ui.js?v=202610231624"></script>
-<script src="../../assets/js/auth.js?v=202610231624"></script>
-<script src="../../assets/js/layout.js?v=202610231624"></script>
-<script src="../../assets/js/cadastro.js?v=202610231624"></script>
+<script src="../../assets/js/supabase.js?v=202610231631"></script>
+<script src="../../assets/js/ui.js?v=202610231631"></script>
+<script src="../../assets/js/auth.js?v=202610231631"></script>
+<script src="../../assets/js/layout.js?v=202610231631"></script>
+<script src="../../assets/js/cadastro.js?v=202610231631"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -99,16 +99,14 @@ function htmlRastreio(r) {
   const etapa = (ok, txt) => `<span class="${ok ? 'ok' : ''}">${esc(txt)}</span>`;
   const compra = ['nf_entrada', 'pedido_compra'].includes(r.origem) || r.pedido_compra_id || ref.pedido;
   return `<div class="secao">Rastreio</div><div class="rastreio">${compra ? [
-      etapa(ref.necessidade, ref.necessidade ? `Necessidade ${ref.necessidade}` : 'Necessidade'),
-      etapa(ref.orcamento, ref.orcamento ? `Orçamento ${ref.orcamento}` : 'Orçamento'),
-      etapa(r.pedido_compra_id || ref.pedido, ref.pedido ? `Pedido ${ref.pedido}` : 'Pedido de compra'),
-      etapa(ref.aprovado_por, 'Aprovação'), etapa(ref.recebimento, 'Recebimento'),
-      etapa(r.nf_entrada_id || ref.nf, ref.nf ? `NF ${ref.nf}` : 'NF de entrada')].join('<i>›</i>') + '<i>›</i>'
+      r.pedido_compra_id ? `<a class="ok" href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}">Pedido ${esc(ref.pedido_compra || '#' + r.pedido_compra_id)} ↗</a>` : etapa(ref.pedido, ref.pedido ? `Pedido ${ref.pedido}` : 'Pedido de compra'),
+      etapa(r.pedido_compra_id, 'Aprovado'),
+      etapa(ref.nf || r.nf_entrada_id, ref.nf ? `NF ${ref.nf}` : 'NF (aguardando)')].join('<i>›</i>') + '<i>›</i>'
     : r.origem === 'rh' ? rastreioRH(ref) + '<i>›</i>'
     : r.origem === 'importacao' && ref.tiny_id ? `<span class="ok" title="${esc([ref.fornecedor_tiny, ref.categoria_tiny].filter(Boolean).join(' · '))}">Tiny #${esc(ref.tiny_id)}</span><i>›</i>`
     : `<span class="ok">${esc(ORIGENS.find(o => o.v === r.origem)?.n || 'Manual')}</span><i>›</i>`}
     ${etapa(true, 'Título')}<i>›</i>${etapa(pgs.length, pgs.length ? `Pago ${dataCurta(pgs.at(-1).data_pagamento)}` : 'Pagamento')}<i>›</i>${etapa(pgs.length && pgs.every(p => p.conciliado), 'Conciliado')}</div>
-    ${compra ? '<p class="sub" style="margin:6px 0 0;font-size:12px">As etapas da compra se ligam aqui quando pedido de compra e entrada de NF estiverem no sistema.</p>' : ''}`;
+    ${r.origem === 'pedido_compra' && r.projecao ? '<p class="sub" style="margin:6px 0 0;font-size:12px"><span class="tg pc">Projeção</span> Pedido aprovado aguardando a NF. Este título é ajustado pelo pedido (recebimento da NF, reabrir ou cancelar) O pagamento fica bloqueado até a NF ser registrada.</p>' : ''}`;
 }
 
 /* ---------- Pagamentos (baixas) do título ---------- */
@@ -188,7 +186,7 @@ const cfg = {
       listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n;
         return n ? `<span class="texto-curto" title="${esc(n)}">${esc(n)}</span>`
           : (r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : ''); } },
-    { id: 'documento', label: 'Documento', col: 2, lista: true, placeholder: 'NF, boleto, guia, contrato', listaHtml: r => r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '' },
+    { id: 'documento', label: 'Documento', col: 2, lista: true, placeholder: 'NF, boleto, guia, contrato', listaHtml: r => (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '') + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '') },
     { id: 'descricao', label: 'Descrição / histórico', col: 2, lista: true, ajuda: 'Nos títulos do Tiny: o histórico de lá.',
       listaHtml: r => r.descricao ? `<span class="texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</span>` : '' },
     { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true },

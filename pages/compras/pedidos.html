@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pedidos de compra · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610231631">
+<style>
+  .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+  .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .pc-alertas button b { font-size: 14px; }
+  .pc-alertas .erro { border-color: #f3c3bf; color: var(--erro); background: #fdeceb; }
+  .pc-alertas .alerta { border-color: #f6d7a7; color: #b45309; background: #fff4e5; }
+  .pc-alertas .info { border-color: #d9ccfb; color: #6d28d9; background: #f3effe; }
+  .sub-ed table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .sub-ed th { text-align: left; font-size: 11px; color: var(--texto-suave); font-weight: 500; padding: 0 3px 3px; white-space: nowrap; }
+  .sub-ed td { padding: 2px 3px; border: 0; vertical-align: top; }
+  .sub-ed input, .sub-ed select { padding: 5px 6px; font-size: 12.5px; }
+  .sub-ed .rm { background: none; border: 0; color: var(--erro); cursor: pointer; font-size: 16px; }
+  .sub-ed td.num { text-align: right; padding-top: 7px; white-space: nowrap; }
+  .sub-ed .ro { color: var(--texto-suave); font-size: 11px; margin-top: 2px; }
+  .tot-ped { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 6px; }
+  .tot-ped b { font-variant-numeric: tabular-nums; }
+  .fluxo-pc { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; margin: 4px 0 8px; }
+  .fluxo-pc span { padding: 3px 8px; border-radius: 10px; background: var(--fundo); color: var(--texto-suave); }
+  .fluxo-pc span.ok { background: #e8f5ec; color: var(--ok); }
+  .fluxo-pc span.agora { background: #fff4e5; color: #b45309; font-weight: 600; }
+  .fluxo-pc span.erro { background: #fdeceb; color: var(--erro); font-weight: 600; }
+  .fluxo-pc i { color: var(--texto-suave); font-style: normal; }
+  .acoes-pc { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 4px; }
+  .linha-tempo { list-style: none; margin: 0; padding: 0; font-size: 12.5px; max-height: 220px; overflow: auto; }
+  .linha-tempo li { padding: 4px 0 4px 14px; border-left: 2px solid var(--linha); margin-left: 4px; position: relative; }
+  .linha-tempo li::before { content: ''; position: absolute; left: -5px; top: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--linha); }
+  .linha-tempo li.recusado::before, .linha-tempo li.cancelado::before { background: var(--erro); }
+  .linha-tempo li.aprovado::before, .linha-tempo li.aprovado_nivel::before, .linha-tempo li.recebido::before { background: var(--ok); }
+  .linha-tempo small { color: var(--texto-suave); }
+  .tg.pc { background: #f3effe; color: #6d28d9; }
+  .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
+  .aviso-box.erro { background: #fdeceb; color: var(--erro); }
+  .alc td { padding: 3px 4px; vertical-align: top; }
+  .alc .aprov { display: flex; flex-wrap: wrap; gap: 2px 10px; max-width: 360px; font-size: 12px; }
+</style>
+</head>
+<body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610231631"></script>
+<script src="../../assets/js/ui.js?v=202610231631"></script>
+<script src="../../assets/js/auth.js?v=202610231631"></script>
+<script src="../../assets/js/layout.js?v=202610231631"></script>
+<script src="../../assets/js/cadastro.js?v=202610231631"></script>
+<script>
+/* =====================================================================
+   Pedidos de compra
+   Rascunho → Em aprovação (escala por valor) → Aprovado → Enviado ao fornecedor → Recebido (NF)
+   · Recusado volta para o comprador ajustar (não cancela).
+   · Aprovado: parcelas entram no contas a pagar como projeção "aguardando NF" (fluxo de caixa).
+   · Recebimento da NF: vira título real com rateio por categoria; projeção fica só com o saldo.
+   · Tudo registrado na linha do tempo do pedido.
+   ===================================================================== */
+const SIT = [
+  { v: 'rascunho', n: 'Rascunho', cor: 'neutro' }, { v: 'em_aprovacao', n: 'Em aprovação', cor: 'alerta' },
+  { v: 'recusado', n: 'Recusado (ajustar)', cor: 'erro' }, { v: 'aprovado', n: 'Aprovado · enviar', cor: 'ok' },
+  { v: 'enviado', n: 'Enviado · aguardando entrega', cor: 'pc' }, { v: 'recebido_parcial', n: 'Recebido parcial', cor: 'alerta' },
+  { v: 'recebido', n: 'Recebido', cor: 'ok' }, { v: 'cancelado', n: 'Cancelado', cor: 'neutro' }];
+const EDITAVEL = ['rascunho', 'recusado'], FINAL = ['recebido', 'cancelado'];
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const hojeISO = () => new Date().toLocaleDateString('sv-SE');
+const somaDias = (iso, d) => { const x = new Date(iso + 'T12:00:00'); x.setDate(x.getDate() + d); return x.toLocaleDateString('sv-SE'); };
+let FORN = [], PRODS = [], CATS = [], CONDS = [], FORMAS = [], CONTAS = [], ALC = [], USU = [], EMPRESAS = [], PF = [], ACOES = new Set(), CTX = null, modalAtual = null, ex = {}, sujo = false;
+const forn = id => FORN.find(f => f.id === id);
+const prod = id => PRODS.find(p => p.id === id);
+const cat = id => CATS.find(c => c.id === id);
+const usu = id => USU.find(u => u.id === id)?.nome || '';
+const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
+
+/* ---------- Escala de aprovação ---------- */
+const nivelAtual = r => (r.niveis_exigidos || []).filter(n => !(r.niveis_aprovados || []).includes(n)).sort((a, b) => a - b)[0];
+const alcadasDoNivel = (r, n) => ALC.filter(a => a.ativo && a.nivel === n && (!a.empresa_id || a.empresa_id === r.empresa_id));
+function possoAprovar(r) {
+  if (r.situacao !== 'em_aprovacao') return false;
+  const n = nivelAtual(r); if (n == null) return false;
+  if (CTX.admin) return true;
+  if (n === 0) return ACOES.has('compras.aprovar');
+  return alcadasDoNivel(r, n).some(a => (a.aprovadores || []).includes(CTX.usuario.id));
+}
+const nomeNivel = (r, n) => n === 0 ? 'Aprovação' : (alcadasDoNivel(r, n).map(a => a.nome).join(' / ') || 'Nível ' + n);
+const quemAprova = (r, n) => n === 0 ? 'quem tem a ação "Aprovar pedidos de compra" ou administrador'
+  : [...new Set(alcadasDoNivel(r, n).flatMap(a => a.aprovadores || []).map(usu).filter(Boolean))].join(', ') || 'administrador';
+
+/* ---------- Itens ---------- */
+const optProds = sel => '<option value="">— item sem cadastro —</option>' + PRODS.filter(p => p.situacao === 'ativo' || p.id === sel)
+  .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo || '—') + ' · ' + p.descricao)}</option>`).join('');
+const optCats = sel => '<option value="">— categoria —</option>' + CATS.filter(c => c.ativo || c.id === sel).map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
+function ultimoPreco(produtoId, fornId) {
+  const l = (ex.todosItens || []).filter(i => i.produto_id === produtoId && i.valor_unitario > 0)
+    .map(i => ({ ...i, p: ex.porId[i.pedido_id] })).filter(i => i.p && i.p.situacao !== 'cancelado')
+    .sort((a, b) => (b.p.fornecedor_id === fornId) - (a.p.fornecedor_id === fornId) || b.p.data_pedido.localeCompare(a.p.data_pedido));
+  return l[0] ? { v: Number(l[0].valor_unitario), d: l[0].p.data_pedido, n: l[0].p.numero, f: l[0].p.fornecedor_id } : null;
+}
+const linhaItem = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
+  <td style="min-width:220px"><select data-k="produto_id">${optProds(x.produto_id)}</select>
+    <input data-k="descricao" placeholder="Descrição do item (sem cadastro)" value="${esc(x.produto_id ? '' : x.descricao || '')}" style="margin-top:3px;${x.produto_id ? 'display:none' : ''}">
+    <div class="ro" data-k="info">${!x.produto_id && x.id ? '<span class="tg alerta">sem cadastro · confirmar</span>' : ''}</div></td>
+  <td style="width:58px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
+  <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
+  <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
+  <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
+  <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples>${optCats(x.categoria_financeira_id)}</select></td>
+  <td class="num" data-k="total"></td>
+  ${rec ? `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}</td>` : ''}
+  <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
+function lerItens() {
+  return [...(modalAtual?.querySelectorAll('#itens tbody tr') || [])].map(tr => {
+    const g = k => tr.querySelector(`[data-k=${k}]`);
+    const pid = Number(g('produto_id').value) || null;
+    return { produto_id: pid, descricao: pid ? prod(pid)?.descricao : g('descricao').value.trim(), unidade: g('unidade').value.trim() || null,
+      quantidade: lerNumero(g('quantidade').value) || 0, valor_unitario: lerNumero(g('valor_unitario').value) || 0, desconto: lerNumero(g('desconto').value) || 0,
+      categoria_financeira_id: Number(g('categoria_financeira_id').value) || null,
+      codigo_fornecedor: pid ? PF.find(x => x.produto_id === pid && x.fornecedor_id === Number(modalAtual.querySelector('#f_fornecedor_id')?.value))?.codigo_fornecedor || null : null };
+  }).filter(x => x.produto_id || x.descricao || x.valor_unitario);
+}
+function recalcular() {
+  if (!modalAtual) return;
+  let t = 0;
+  modalAtual.querySelectorAll('#itens tbody tr').forEach(tr => {
+    const q = lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, u = lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0, d = lerNumero(tr.querySelector('[data-k=desconto]').value) || 0;
+    const v = Math.round((q * u - d) * 100) / 100; t += v; tr.querySelector('[data-k=total]').textContent = reais(v);
+  });
+  const v = id => lerNumero(modalAtual.querySelector('#f_' + id)?.value) || 0;
+  const total = t + v('frete') + v('outras_despesas') - v('desconto');
+  const fTot = modalAtual.querySelector('#f_valor_total'); if (fTot) fTot.value = total.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  modalAtual.querySelector('#totPed').innerHTML = `<span>Itens <b>${reais(t)}</b></span><span>Frete + outras <b>${reais(v('frete') + v('outras_despesas'))}</b></span><span>Desconto <b>${reais(v('desconto'))}</b></span><span>Total do pedido <b>${reais(total)}</b></span>`;
+}
+function aoEscolherProduto(tr) {
+  const pid = Number(tr.querySelector('[data-k=produto_id]').value) || null, p = prod(pid), fid = Number(modalAtual.querySelector('#f_fornecedor_id')?.value);
+  tr.querySelector('[data-k=descricao]').style.display = pid ? 'none' : '';
+  const info = tr.querySelector('[data-k=info]');
+  if (!p) { info.innerHTML = '<span class="tg alerta">sem cadastro · confirmar</span>'; return; }
+  const un = tr.querySelector('[data-k=unidade]'); if (!un.value) un.value = p.unidade_compra || p.unidade || '';
+  const c = tr.querySelector('[data-k=categoria_financeira_id]'); if (!c.value && p.categoria_financeira_id) c.value = p.categoria_financeira_id;
+  const up = ultimoPreco(pid, fid), vu = tr.querySelector('[data-k=valor_unitario]');
+  if (up && !lerNumero(vu.value)) vu.value = num(up.v);
+  const cf = PF.find(x => x.produto_id === pid && x.fornecedor_id === fid)?.codigo_fornecedor;
+  info.innerHTML = [cf ? 'cód. fornecedor ' + esc(cf) : '', up ? `último preço ${reais(up.v)} (${esc(up.n)} · ${dataCurta(up.d)}${up.f !== fid ? ' · outro fornecedor' : ''})` : ''].filter(Boolean).join(' · ');
+  recalcular();
+}
+
+/* ---------- Painel do pedido: etapas, ações, financeiro, linha do tempo ---------- */
+function secaoPedido(r) {
+  if (!r.id) return '';
+  const s = r.situacao, n = nivelAtual(r), aprov = (r.niveis_aprovados || []);
+  const etapas = [`<span class="${s === 'rascunho' ? 'agora' : 'ok'}">Rascunho</span>`];
+  if (s === 'recusado') etapas.push('<span class="erro">Recusado: ajustar e reenviar</span>');
+  (r.niveis_exigidos || []).forEach(nv => etapas.push(`<span class="${aprov.includes(nv) ? 'ok' : nv === n && s === 'em_aprovacao' ? 'agora' : ''}">${esc(nomeNivel(r, nv))}${aprov.includes(nv) ? ' ✓' : ''}</span>`));
+  if (!(r.niveis_exigidos || []).length && s !== 'recusado') etapas.push('<span>Aprovação</span>');
+  const pos = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'];
+  etapas.push(`<span class="${pos.includes(s) ? (s === 'aprovado' ? 'agora' : 'ok') : ''}">Enviar ao fornecedor${r.enviado_em ? ' ✓' : ''}</span>`);
+  etapas.push(`<span class="${s === 'recebido' ? 'ok' : ['enviado', 'recebido_parcial'].includes(s) ? 'agora' : ''}">Recebimento NF${s === 'recebido_parcial' ? ' (parcial)' : s === 'recebido' ? ' ✓' : ''}</span>`);
+  if (s === 'cancelado') etapas.push('<span class="erro">Cancelado</span>');
+  const tits = ex.titulos[r.id] || [], recs = ex.recebimentos[r.id] || [], evs = (ex.eventos[r.id] || []).slice().reverse();
+  const podeAlt = CTX.pode('compras', 'alterar'), podeCriar = CTX.pode('compras', 'criar');
+  const btn = (id, txt, cls = '') => `<button type="button" class="btn ${cls}" data-pc="${id}">${txt}</button>`;
+  const acoes = [];
+  if (EDITAVEL.includes(s) && podeCriar) acoes.push(btn('enviar_aprovacao', 'Enviar para aprovação', 'primario'));
+  if (s === 'em_aprovacao' && possoAprovar(r)) { acoes.push(btn('aprovar', 'Aprovar' + (n ? ' · ' + esc(nomeNivel(r, n)) : ''), 'primario')); acoes.push(btn('recusar', 'Recusar…')); }
+  if (pos.includes(s) && s !== 'recebido') {
+    acoes.push(btn('pdf', 'Baixar PDF'));
+    if (podeCriar) acoes.push(btn('enviar_fornecedor', r.enviado_em ? 'Reenviar ao fornecedor…' : 'Enviar ao fornecedor…', s === 'aprovado' ? 'primario' : ''));
+    if (podeAlt || CTX.pode('pagar', 'criar')) acoes.push(btn('receber', 'Registrar recebimento da NF…', ['enviado', 'recebido_parcial'].includes(s) ? 'primario' : ''));
+  }
+  if (s === 'recebido') acoes.push(btn('pdf', 'Baixar PDF'));
+  if (s === 'recebido_parcial' && podeAlt) acoes.push(btn('encerrar', 'Encerrar saldo…'));
+  if (['em_aprovacao', 'aprovado', 'enviado'].includes(s) && podeAlt && !Number(r.valor_recebido)) acoes.push(btn('reabrir', 'Reabrir (voltar a rascunho)…', 'discreto'));
+  if (['aprovado', 'enviado'].includes(s) && (CTX.admin || ACOES.has('compras.aprovar'))) acoes.push(btn('recusar', 'Recusar…', 'discreto'));
+  if (!FINAL.includes(s) && CTX.pode('compras', 'total')) acoes.push(btn('cancelar', 'Cancelar pedido…', 'discreto'));
+  acoes.push(btn('comentario', '+ Comentário', 'discreto'));
+  const avisos = [];
+  if (s === 'recusado' && r.motivo_recusa) avisos.push(`<div class="aviso-box erro"><b>Recusado:</b> ${esc(r.motivo_recusa)} — ajuste o pedido, salve e envie de novo para aprovação.</div>`);
+  if (s === 'em_aprovacao') avisos.push(`<div class="aviso-box">Aguardando <b>${esc(nomeNivel(r, n))}</b> · aprova: ${esc(quemAprova(r, n))}</div>`);
+  if ((ex.itens[r.id] || []).some(i => !i.produto_id)) avisos.push('<div class="aviso-box">Há item <b>sem cadastro</b>: confirme se precisa cadastrar o produto (matéria-prima/insumo) antes de aprovar.</div>');
+  return `<div class="secao">Andamento</div>
+    <div class="fluxo-pc">${etapas.join('<i>›</i>')}</div>${avisos.join('')}
+    <div class="acoes-pc">${acoes.join('')}</div>
+    <div class="secao">Contas a pagar</div>
+    ${tits.length ? `<table class="lista-mini"><thead><tr><th>Documento</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Situação</th></tr></thead><tbody>
+      ${tits.map(t => `<tr><td>${CTX.pode('pagar') ? `<a href="${RAIZ}pages/financeiro/contas-pagar.html?abrir=${t.id}" style="color:var(--destaque)">${esc(t.documento || '#' + t.id)}</a>` : esc(t.documento || '#' + t.id)}
+        ${t.projecao ? ' <span class="tg pc">projeção · aguardando NF</span>' : ''}</td><td>${dataCurta(t.data_vencimento)}</td><td class="num">${reais(t.valor)}</td><td class="num">${reais(t.valor_pago)}</td><td>${esc(t.situacao)}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub" style="margin:0">Entra no contas a pagar quando o pedido for aprovado (como projeção) e vira título real no recebimento da NF.</p>'}
+    ${recs.length ? `<div class="secao">Notas recebidas</div><table class="lista-mini"><thead><tr><th>NF</th><th>Emissão</th><th>Recebida em</th><th>Valor</th><th>Por</th></tr></thead><tbody>
+      ${recs.map(x => `<tr><td>${esc(x.nf_numero)}${x.nf_serie ? '-' + esc(x.nf_serie) : ''}</td><td>${dataCurta(x.nf_data_emissao)}</td><td>${dataCurta(x.data_recebimento)}</td><td class="num">${reais(x.valor_nf)}</td><td>${esc(usu(x.criado_por))}</td></tr>`).join('')}</tbody></table>` : ''}
+    <div class="secao">Linha do tempo</div>
+    <ul class="linha-tempo">${evs.map(e => `<li class="${esc(e.acao)}">${esc(e.detalhe || e.acao)}<br><small>${dataHoraBR(e.em)} · ${esc(usu(e.por) || 'sistema')}</small></li>`).join('') || '<li>—</li>'}</ul>`;
+}
+
+/* ---------- Ações ---------- */
+async function acao(r, a, motivo = null, dados = null) {
+  const { data, error } = await db.rpc('pedido_compra_acao', { p_id: r.id, p_acao: a, p_motivo: motivo, p_dados: dados });
+  if (error) { aviso('Não deu: ' + error.message, true); return null; }
+  return data ?? true;
+}
+function pedirTexto(titulo, rotulo, obrig = true, botao = 'Confirmar') {
+  return new Promise(res => {
+    const m = abrirModal(`<h2>${esc(titulo)}</h2><div class="campo"><label>${esc(rotulo)}</label><textarea id="pt" rows="3"></textarea></div>
+      <div class="acoes"><button class="btn" id="ptN">Voltar</button><button class="btn primario" id="ptS">${esc(botao)}</button></div>`);
+    m.querySelector('#pt').focus();
+    m.querySelector('#ptN').onclick = () => { m.remove(); res(null); };
+    m.querySelector('#ptS').onclick = () => { const v = m.querySelector('#pt').value.trim(); if (obrig && !v) return aviso('Preencha o campo', true); m.remove(); res(v); };
+  });
+}
+async function executarAcao(r, a, m) {
+  if (sujo && ['enviar_aprovacao', 'aprovar', 'enviar_fornecedor', 'pdf', 'receber'].includes(a)) return aviso('Salve as alterações antes', true);
+  const fim = txt => { aviso(txt); m.remove(); cfg.recarregar(); };
+  if (a === 'enviar_aprovacao') { if (await acao(r, a)) fim('Enviado para aprovação'); }
+  else if (a === 'aprovar') { const c = await pedirTexto('Aprovar ' + r.numero, 'Comentário (opcional)', false, 'Aprovar'); if (c === null) return; const s = await acao(r, a, c); if (s) fim(s === 'aprovado' ? 'Pedido aprovado · previsão lançada no contas a pagar' : 'Aprovado neste nível · segue para o próximo'); }
+  else if (a === 'recusar') { const c = await pedirTexto('Recusar ' + r.numero, 'Motivo (volta para o comprador ajustar; não cancela)', true, 'Recusar'); if (c && await acao(r, a, c)) fim('Pedido recusado'); }
+  else if (a === 'reabrir') { const c = await pedirTexto('Voltar ' + r.numero + ' para rascunho', 'Motivo (a aprovação será refeita)', true, 'Reabrir'); if (c && await acao(r, a, c)) fim('Pedido voltou para rascunho'); }
+  else if (a === 'cancelar') { const c = await pedirTexto('Cancelar ' + r.numero, 'Motivo do cancelamento', true, 'Cancelar pedido'); if (c && await acao(r, a, c)) fim('Pedido cancelado'); }
+  else if (a === 'comentario') { const c = await pedirTexto('Comentário em ' + r.numero, 'Comentário', true, 'Salvar'); if (c && await acao(r, a, c)) fim('Comentário registrado'); }
+  else if (a === 'encerrar') { const c = await pedirTexto('Encerrar saldo de ' + r.numero, 'Motivo (o restante não será entregue)', true, 'Encerrar'); if (!c) return;
+    const { error } = await db.rpc('pedido_compra_encerrar', { p_id: r.id, p_motivo: c }); if (error) return aviso('Não deu: ' + error.message, true); fim('Saldo encerrado · projeção removida'); }
+  else if (a === 'pdf') { const d = await gerarPdf(r, true); if (d) aviso('PDF gerado'); }
+  else if (a === 'enviar_fornecedor') abrirEnvio(r, m);
+  else if (a === 'receber') abrirRecebimento(r, m);
+}
+
+/* ---------- PDF ---------- */
+function carregarScript(src) { return new Promise((ok, err) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = err; document.head.appendChild(s); }); }
+async function gerarPdf(r, baixar) {
+  try {
+    await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+  } catch { aviso('Não carregou o gerador de PDF (internet?)', true); return null; }
+  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const emp = EMPRESAS.find(e => e.id === r.empresa_id) || {}, f = forn(r.fornecedor_id) || {}, itens = ex.itens[r.id] || [];
+  const cond = CONDS.find(c => c.id === r.condicao_pagamento_id)?.nome, forma = FORMAS.find(x => x.id === r.forma_pagamento_id)?.nome;
+  const aprov = (ex.eventos[r.id] || []).filter(e => e.acao === 'aprovado_nivel').map(e => `${usu(e.por)} (${dataHoraBR(e.em)})`);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('PEDIDO DE COMPRA ' + r.numero, 14, 16);
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+  doc.text([`${emp.nome || 'NOX'}${emp.cnpj ? ' · CNPJ ' + emp.cnpj : ''}`, `Data do pedido: ${dataCurta(r.data_pedido)}    Entrega prevista: ${dataCurta(r.data_entrega_prevista) || 'a combinar'}`], 14, 22);
+  doc.setFont('helvetica', 'bold'); doc.text('Fornecedor', 14, 33); doc.setFont('helvetica', 'normal');
+  doc.text([`${f.nome || ''}${f.cnpj ? ' · CNPJ ' + f.cnpj : ''}`, [r.contato_fornecedor || f.contato, r.email_fornecedor || f.email, r.whatsapp_fornecedor || f.telefone].filter(Boolean).join(' · '),
+    [f.endereco, f.numero, f.bairro, f.cidade && (f.cidade + (f.uf ? '/' + f.uf : ''))].filter(Boolean).join(', ')].filter(Boolean), 14, 38);
+  doc.autoTable({ startY: 52, head: [['#', 'Código', 'Descrição', 'Un', 'Qtd', 'Unitário', 'Desconto', 'Total']],
+    body: itens.map((i, k) => [k + 1, i.codigo_fornecedor || prod(i.produto_id)?.codigo || '', i.descricao, i.unidade || '', num(i.quantidade), reais(i.valor_unitario), i.desconto ? reais(i.desconto) : '', reais(i.valor_total)]),
+    styles: { fontSize: 8, cellPadding: 1.5 }, headStyles: { fillColor: [40, 40, 40] },
+    columnStyles: { 0: { cellWidth: 7 }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } } });
+  let y = doc.lastAutoTable.finalY + 6;
+  const tot = [['Itens', reais(r.valor_produtos)]]; if (Number(r.frete)) tot.push(['Frete', reais(r.frete)]); if (Number(r.outras_despesas)) tot.push(['Outras despesas', reais(r.outras_despesas)]);
+  if (Number(r.desconto)) tot.push(['Desconto', '- ' + reais(r.desconto)]); tot.push(['TOTAL', reais(r.valor_total)]);
+  doc.autoTable({ startY: y, body: tot, theme: 'plain', margin: { left: 130 }, styles: { fontSize: 9, cellPadding: 1 }, columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } } });
+  y = doc.lastAutoTable.finalY + 6;
+  doc.setFontSize(9); doc.text(`Condição de pagamento: ${cond || 'a combinar'}${forma ? '    Forma: ' + forma : ''}`, 14, y); y += 6;
+  if (r.observacoes) { doc.setFont('helvetica', 'bold'); doc.text('Observações', 14, y); doc.setFont('helvetica', 'normal'); const t = doc.splitTextToSize(r.observacoes, 180); doc.text(t, 14, y + 5); y += 7 + t.length * 4; }
+  doc.text('Favor informar o número deste pedido na nota fiscal.', 14, y); y += 8;
+  doc.setFontSize(8); doc.setTextColor(110);
+  doc.text([`Comprador: ${usu(r.comprador_id) || ''}`, aprov.length ? 'Aprovado por: ' + aprov.join('; ') : ''].filter(Boolean), 14, y);
+  const blob = doc.output('blob'), nome = `${r.numero}.pdf`;
+  if (baixar) doc.save(nome);
+  // guarda uma cópia (rastreio) e devolve o caminho
+  const path = `${r.empresa_id}/${r.numero}/${r.numero}-${Date.now()}.pdf`;
+  const up = await db.storage.from('compras').upload(path, blob, { contentType: 'application/pdf', upsert: false });
+  if (up.error) { aviso('PDF gerado, mas não salvou cópia: ' + up.error.message, true); return { blob, path: null }; }
+  await acao(r, 'pdf', null, { pdf: path });
+  return { blob, path };
+}
+
+/* ---------- Envio ao fornecedor (com confirmação do comprador) ---------- */
+function abrirEnvio(r, pai) {
+  const f = forn(r.fornecedor_id) || {}, email = r.email_fornecedor || f.email || '', zap = (r.whatsapp_fornecedor || f.telefone || '').replace(/\D/g, '');
+  const contato = r.contato_fornecedor || f.contato || '';
+  const m = abrirModal(`<h2>Enviar ${esc(r.numero)} ao fornecedor</h2>
+    <p class="sub" style="margin:0 0 8px">${esc(f.nome || '')} · total ${reais(r.valor_total)}. O sistema gera o PDF, cria um link seguro (válido por 30 dias) e abre o seu e-mail ou WhatsApp com a mensagem pronta. O envio fica registrado no histórico.</p>
+    <div class="grade-campos">
+      <div class="campo"><label>Enviar por</label><select id="eVia" data-simples><option value="whatsapp">WhatsApp</option><option value="email"${!zap && email ? ' selected' : ''}>E-mail</option></select></div>
+      <div class="campo l2"><label>Para</label><input id="ePara" value="${esc(!zap && email ? email : zap)}"></div>
+      <div class="campo l4"><label>Mensagem</label><textarea id="eMsg" rows="6">Olá${contato ? ' ' + esc(contato) : ''}, tudo bem?
+Segue o pedido de compra ${esc(r.numero)} da ${esc((EMPRESAS.find(e => e.id === r.empresa_id) || {}).nome || 'NOX')} no valor de ${reais(r.valor_total)}${r.data_entrega_prevista ? ', entrega prevista para ' + dataCurta(r.data_entrega_prevista) : ''}.
+PDF do pedido: {link}
+Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. Obrigado!</textarea></div>
+    </div>
+    <label class="chk" style="margin:6px 0"><input type="checkbox" id="eOk"> Conferi o pedido (itens, preços, condição) e autorizo o envio ao fornecedor.</label>
+    <div class="acoes"><button class="btn" id="eN">Voltar</button><button class="btn primario" id="eS">Gerar PDF e abrir para enviar</button></div>`);
+  const via = m.querySelector('#eVia'), para = m.querySelector('#ePara');
+  via.onchange = () => { para.value = via.value === 'email' ? email : zap; };
+  m.querySelector('#eN').onclick = () => m.remove();
+  m.querySelector('#eS').onclick = async () => {
+    if (!m.querySelector('#eOk').checked) return aviso('Marque a confirmação de envio', true);
+    const destino = para.value.trim(); if (!destino) return aviso('Informe para quem enviar', true);
+    if (via.value === 'whatsapp' && destino.replace(/\D/g, '').length < 10) return aviso('WhatsApp com DDD (só números)', true);
+    m.querySelector('#eS').disabled = true;
+    const g = await gerarPdf(r, false); if (!g?.path) { m.querySelector('#eS').disabled = false; return; }
+    const { data: s, error } = await db.storage.from('compras').createSignedUrl(g.path, 60 * 60 * 24 * 30);
+    if (error) { m.querySelector('#eS').disabled = false; return aviso('Não gerou o link: ' + error.message, true); }
+    const msg = m.querySelector('#eMsg').value.replace('{link}', s.signedUrl);
+    const url = via.value === 'whatsapp'
+      ? `https://wa.me/${destino.replace(/\D/g, '').replace(/^(?!55)/, '55')}?text=${encodeURIComponent(msg)}`
+      : `mailto:${encodeURIComponent(destino)}?subject=${encodeURIComponent('Pedido de compra ' + r.numero)}&body=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+    if (await acao(r, 'enviado_fornecedor', null, { via: via.value === 'whatsapp' ? 'WhatsApp' : 'e-mail', para: destino, pdf: g.path })) {
+      aviso('Envio registrado · confira a mensagem no ' + (via.value === 'whatsapp' ? 'WhatsApp' : 'e-mail') + ' e envie'); m.remove(); pai.remove(); cfg.recarregar();
+    }
+  };
+}
+
+/* ---------- Recebimento da NF ---------- */
+function abrirRecebimento(r, pai) {
+  const itens = (ex.itens[r.id] || []).map(i => ({ ...i, pend: Math.max(0, Number(i.quantidade) - Number(i.quantidade_recebida)) }));
+  const fatorExtra = Number(r.valor_produtos) ? (Number(r.frete) + Number(r.outras_despesas) - Number(r.desconto)) / Number(r.valor_produtos) : 0;
+  const cond = CONDS.find(c => c.id === r.condicao_pagamento_id);
+  const m = abrirModal(`<h2>Recebimento da NF · ${esc(r.numero)}</h2>
+    <div class="grade-campos">
+      <div class="campo"><label>NF nº <span class="obrig">*</span></label><input id="rNf"></div>
+      <div class="campo"><label>Série</label><input id="rSerie"></div>
+      <div class="campo"><label>Emissão da NF <span class="obrig">*</span></label><input id="rEm" type="date" value="${hojeISO()}"></div>
+      <div class="campo"><label>Recebida em</label><input id="rRec" type="date" value="${hojeISO()}"></div>
+      <div class="campo l4"><label>Chave de acesso</label><input id="rChave" placeholder="44 dígitos (opcional)"></div>
+    </div>
+    <div class="sub-ed"><div class="secao">Itens recebidos nesta NF</div><table><thead><tr><th>Item</th><th>Pedido</th><th>Já recebido</th><th>Nesta NF</th><th class="num">Valor</th></tr></thead><tbody>
+      ${itens.map(i => `<tr data-item="${i.id}" data-unit="${Number(i.valor_total) / Number(i.quantidade)}"><td>${esc(i.descricao)}</td><td>${num(i.quantidade)} ${esc(i.unidade || '')}</td><td>${num(i.quantidade_recebida)}</td>
+        <td style="width:90px"><input data-q inputmode="decimal" value="${num(i.pend)}"></td><td class="num" data-v></td></tr>`).join('')}</tbody></table></div>
+    <div class="grade-campos" style="margin-top:6px">
+      <div class="campo"><label>Valor da NF (R$) <span class="obrig">*</span></label><input id="rValor" inputmode="decimal"></div>
+      <div class="campo l3"><label>&nbsp;</label><div class="sub" id="rSug" style="padding-top:6px"></div></div>
+    </div>
+    <div class="sub-ed" id="rParc"><div class="secao">Parcelas (vão para o contas a pagar)</div><table><thead><tr><th>#</th><th>Vencimento</th><th>Valor (R$)</th><th>Código de barras (opcional)</th><th></th></tr></thead><tbody></tbody></table>
+      <button type="button" class="btn fino" id="rAdd" style="margin-top:4px">+ Parcela</button> <button type="button" class="btn fino discreto" id="rRefaz">Refazer pela condição${cond ? ' (' + esc(cond.nome) + ')' : ''}</button>
+      <div class="sub" id="rSoma" style="margin-top:4px"></div></div>
+    <div class="acoes"><button class="btn" id="rN">Voltar</button><button class="btn primario" id="rS">Registrar recebimento</button></div>`);
+  const q = s => m.querySelector(s);
+  const linhaParc = (k, venc, v) => `<tr><td style="width:24px;padding-top:7px">${k}</td><td style="width:140px"><input type="date" data-venc value="${venc}"></td><td style="width:120px"><input data-val inputmode="decimal" value="${num(v)}"></td><td><input data-cb></td><td style="width:22px"><button type="button" class="rm">×</button></td></tr>`;
+  let valorEditado = false;
+  const somaItens = () => { let t = 0; m.querySelectorAll('[data-item]').forEach(tr => { const v = Math.round((lerNumero(tr.querySelector('[data-q]').value) || 0) * Number(tr.dataset.unit) * 100) / 100; tr.querySelector('[data-v]').textContent = reais(v); t += v; }); return t; };
+  const refazParcelas = () => {
+    const total = lerNumero(q('#rValor').value) || 0, dias = cond?.dias?.length ? cond.dias : [Number(forn(r.fornecedor_id)?.prazo_pagamento_dias || 0)];
+    let ac = 0; q('#rParc tbody').innerHTML = dias.map((d, k) => { const v = k === dias.length - 1 ? Math.round((total - ac) * 100) / 100 : Math.round(total / dias.length * 100) / 100; ac += v; return linhaParc(k + 1, somaDias(q('#rEm').value || hojeISO(), d), v); }).join('');
+    conferir();
+  };
+  const conferir = () => { const t = lerNumero(q('#rValor').value) || 0, s = [...m.querySelectorAll('[data-val]')].reduce((a, i) => a + (lerNumero(i.value) || 0), 0);
+    q('#rSoma').innerHTML = `Soma das parcelas <b>${reais(s)}</b>${Math.abs(s - t) > 0.009 ? ` <span class="tg erro">diferente da NF (${reais(t)})</span>` : ' <span class="tg ok">confere</span>'}`; };
+  const atualizar = () => { const it = somaItens(), sug = Math.round(it * (1 + fatorExtra) * 100) / 100;
+    q('#rSug').textContent = `Itens desta NF ${reais(it)}${fatorExtra ? ` · com frete/despesas/desconto proporcionais ${reais(sug)}` : ''} · saldo do pedido ${reais(Number(r.valor_total) - Number(r.valor_recebido))}`;
+    if (!valorEditado) { q('#rValor').value = num(sug); refazParcelas(); } };
+  m.querySelectorAll('[data-q]').forEach(i => i.addEventListener('input', atualizar));
+  q('#rValor').addEventListener('input', () => { valorEditado = true; refazParcelas(); });
+  q('#rEm').addEventListener('change', refazParcelas);
+  q('#rRefaz').onclick = refazParcelas;
+  q('#rAdd').onclick = () => { const n = m.querySelectorAll('#rParc tbody tr').length + 1; q('#rParc tbody').insertAdjacentHTML('beforeend', linhaParc(n, q('#rEm').value || hojeISO(), 0)); };
+  q('#rParc').addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); conferir(); } });
+  q('#rParc').addEventListener('input', conferir);
+  atualizar();
+  q('#rN').onclick = () => m.remove();
+  q('#rS').onclick = async () => {
+    const nf = { numero: q('#rNf').value.trim(), serie: q('#rSerie').value.trim(), data_emissao: q('#rEm').value, data_recebimento: q('#rRec').value, chave: q('#rChave').value.replace(/\D/g, ''), valor: lerNumero(q('#rValor').value) };
+    const its = [...m.querySelectorAll('[data-item]')].map(tr => ({ item_id: Number(tr.dataset.item), quantidade: lerNumero(tr.querySelector('[data-q]').value) || 0 })).filter(x => x.quantidade > 0);
+    const parc = [...m.querySelectorAll('#rParc tbody tr')].map(tr => ({ vencimento: tr.querySelector('[data-venc]').value, valor: lerNumero(tr.querySelector('[data-val]').value) || 0, codigo_barras: tr.querySelector('[data-cb]').value.replace(/\s/g, '') || null })).filter(p => p.valor);
+    if (!nf.numero) return aviso('Informe o número da NF', true);
+    if (!its.length) return aviso('Informe a quantidade recebida de pelo menos um item', true);
+    if (parc.some(p => !p.vencimento)) return aviso('Parcela sem vencimento', true);
+    q('#rS').disabled = true;
+    const { error } = await db.rpc('pedido_compra_receber', { p_id: r.id, p_nf: nf, p_itens: its, p_parcelas: parc });
+    if (error) { q('#rS').disabled = false; return aviso('Não registrou: ' + error.message, true); }
+    aviso(`NF ${nf.numero} registrada · ${parc.length} título(s) no contas a pagar`); m.remove(); pai.remove(); cfg.recarregar();
+  };
+}
+
+/* ---------- Escala de aprovação (administrador) ---------- */
+function abrirEscala() {
+  const linha = (a = {}) => `<tr data-id="${a.id || ''}">
+    <td style="width:56px"><input data-k="nivel" inputmode="numeric" value="${a.nivel ?? ''}"></td>
+    <td style="width:170px"><input data-k="nome" value="${esc(a.nome || '')}" placeholder="Ex.: Gerente, Diretoria"></td>
+    <td style="width:120px"><input data-k="valor_minimo" inputmode="decimal" value="${num(a.valor_minimo ?? 0)}"></td>
+    <td style="width:130px"><select data-k="empresa_id" data-simples><option value="">Todas</option>${EMPRESAS.map(e => `<option value="${e.id}"${e.id === a.empresa_id ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></td>
+    <td><div class="aprov">${USU.map(u => `<label class="chk"><input type="checkbox" data-u="${u.id}"${(a.aprovadores || []).includes(u.id) ? ' checked' : ''}> ${esc(u.nome)}</label>`).join('')}</div></td>
+    <td style="width:60px"><label class="chk"><input type="checkbox" data-k="ativo"${a.ativo === false ? '' : ' checked'}> ativo</label></td>
+    <td style="width:22px"><button type="button" class="rm" style="background:none;border:0;color:var(--erro);cursor:pointer;font-size:16px">×</button></td></tr>`;
+  const m = abrirModal(`<h2>Escala de aprovação de compras</h2>
+    <p class="sub" style="margin:0 0 8px">O pedido passa, em ordem, por todos os níveis cujo <b>valor mínimo</b> seja menor ou igual ao total. Ex.: nível 1 Gerente a partir de R$ 0; nível 2 Diretoria a partir de R$ 5.000.
+    Sem nenhum nível cadastrado, aprova quem tiver a ação "Aprovar pedidos de compra" (ou administrador). Pedidos já em aprovação mantêm a escala de quando foram enviados.</p>
+    <table class="alc" style="width:100%;font-size:12.5px"><thead><tr><th>Nível</th><th>Nome</th><th>A partir de (R$)</th><th>Empresa</th><th>Quem aprova</th><th></th><th></th></tr></thead>
+      <tbody>${ALC.map(linha).join('')}</tbody></table>
+    <button type="button" class="btn fino" id="aAdd" style="margin-top:6px">+ Nível</button>
+    <div class="acoes"><button class="btn" id="aN">Fechar</button><button class="btn primario" id="aS">Salvar escala</button></div>`);
+  m.querySelector('.modal').style.maxWidth = '1000px';
+  const rem = [];
+  m.querySelector('#aAdd').onclick = () => m.querySelector('tbody').insertAdjacentHTML('beforeend', linha({ nivel: (Math.max(0, ...ALC.map(a => a.nivel)) || 0) + 1 }));
+  m.querySelector('tbody').addEventListener('click', e => { if (e.target.classList.contains('rm')) { const tr = e.target.closest('tr'); if (tr.dataset.id) rem.push(Number(tr.dataset.id)); tr.remove(); } });
+  m.querySelector('#aN').onclick = () => m.remove();
+  m.querySelector('#aS').onclick = async () => {
+    const rows = [...m.querySelectorAll('tbody tr')].map(tr => { const g = k => tr.querySelector(`[data-k=${k}]`);
+      return { id: Number(tr.dataset.id) || undefined, nivel: parseInt(g('nivel').value), nome: g('nome').value.trim(), valor_minimo: lerNumero(g('valor_minimo').value) || 0,
+        empresa_id: Number(g('empresa_id').value) || null, ativo: g('ativo').checked, aprovadores: [...tr.querySelectorAll('[data-u]:checked')].map(c => c.dataset.u), atualizado_em: new Date().toISOString() }; });
+    if (rows.some(r => !(r.nivel > 0) || !r.nome)) return aviso('Cada nível precisa de número (1, 2, 3…) e nome', true);
+    if (rows.some(r => r.ativo && !r.aprovadores.length)) return aviso('Marque quem aprova em cada nível ativo', true);
+    for (const id of rem) { const { error } = await db.from('compras_alcadas').delete().eq('id', id); if (error) return aviso('Não salvou: ' + error.message, true); }
+    for (const r of rows) {
+      const { id, ...d } = r;
+      const { error } = id ? await db.from('compras_alcadas').update(d).eq('id', id) : await db.from('compras_alcadas').insert(d);
+      if (error) return aviso('Não salvou: ' + error.message, true);
+    }
+    aviso('Escala salva'); m.remove(); cfg.recarregar();
+  };
+}
+
+/* ---------- Alertas (topo da tela) ---------- */
+function desenharAlertas(linhas) {
+  let box = document.getElementById('pcAlertas');
+  if (!box) { const alvo = document.querySelector('#cAbas')?.closest('div')?.parentElement || document.querySelector('#conteudo'); box = document.createElement('div'); box.id = 'pcAlertas'; box.className = 'pc-alertas'; alvo.parentElement.insertBefore(box, alvo); }
+  const hoje = hojeISO(), emp = CTX.empresa;
+  const ls = linhas.filter(r => !emp || r.empresa_id === emp);
+  const a = [
+    { aba: 'minha', n: ls.filter(possoAprovar).length, t: 'aguardando a sua aprovação', cls: 'erro' },
+    { aba: 'recusados', n: ls.filter(r => r.situacao === 'recusado').length, t: 'recusado(s) para ajustar', cls: 'erro' },
+    { aba: 'aprovacao', n: ls.filter(r => r.situacao === 'em_aprovacao').length, t: 'em aprovação', cls: 'alerta' },
+    { aba: 'enviar', n: ls.filter(r => r.situacao === 'aprovado').length, t: 'aprovado(s) sem envio ao fornecedor', cls: 'alerta' },
+    { aba: 'atrasados', n: ls.filter(r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hoje).length, t: 'com entrega atrasada', cls: 'erro' },
+    { aba: 'receber', n: ls.filter(r => ['enviado', 'recebido_parcial'].includes(r.situacao)).length, t: 'aguardando entrega/NF', cls: 'info' }
+  ].filter(x => x.n);
+  box.innerHTML = a.map(x => `<button type="button" class="${x.cls}" data-aba="${x.aba}"><b>${x.n}</b> ${esc(x.t)}</button>`).join('');
+  box.querySelectorAll('[data-aba]').forEach(b => b.onclick = () => document.querySelector(`#cAbas [data-v="${b.dataset.aba}"]`)?.click());
+  if (CTX.admin && !document.getElementById('btnEscala')) {
+    const novo = document.getElementById('cNovo'), b = document.createElement('button');
+    b.className = 'btn'; b.id = 'btnEscala'; b.textContent = 'Escala de aprovação'; b.onclick = abrirEscala;
+    (novo?.parentElement || box).insertBefore(b, novo || null);
+  }
+}
+
+const cfg = {
+  textoNovo: '+ Novo pedido',
+  tabela: 'pedidos_compra', modulo: 'compras', titulo: 'Pedidos de compra', singular: 'pedido', plural: 'pedidos',
+  subtitulo: 'Pedido → aprovação (escala por valor) → envio ao fornecedor → recebimento da NF. Aprovado já entra no contas a pagar e no fluxo como previsão.',
+  dicaBusca: 'nº do pedido, fornecedor, item, NF…', ordem: 'data_pedido', revisao: false, porEmpresa: true,
+  abas: { campo: 'situacao', padrao: 'andamento', opcoes: [
+    { v: 'andamento', n: 'Em andamento', teste: r => !FINAL.includes(r.situacao) },
+    { v: 'minha', n: 'Minha aprovação', teste: r => possoAprovar(r) },
+    { v: 'aprovacao', n: 'Em aprovação', teste: r => r.situacao === 'em_aprovacao' },
+    { v: 'recusados', n: 'Recusados', teste: r => r.situacao === 'recusado' },
+    { v: 'enviar', n: 'Para enviar', teste: r => r.situacao === 'aprovado' },
+    { v: 'receber', n: 'Aguardando entrega', teste: r => ['enviado', 'recebido_parcial'].includes(r.situacao) },
+    { v: 'atrasados', n: 'Atrasados', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
+    { v: 'historico', n: 'Histórico (recebidos e cancelados)', teste: r => FINAL.includes(r.situacao) },
+    { v: '', n: 'Todos' }] },
+  totais: ['valor_total'],
+  valorTotal: (r, c) => r.situacao === 'cancelado' ? 0 : r[c],
+  ordenarPor: { data_pedido: r => String(9e15 - Date.parse(r.data_pedido)) + String(1e12 - r.id).padStart(13, '0') },
+  periodos: [{ campo: 'data_pedido', label: 'Data do pedido' }, { campo: 'data_entrega_prevista', label: 'Entrega prevista' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
+  campos: [
+    { id: 'numero', label: 'Nº', somenteLeitura: true, lista: true },
+    { id: 'data_pedido', label: 'Data', tipo: 'data', obrig: true, lista: true, padrao: () => hojeISO() },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'rascunho',
+      listaHtml: r => `<span class="tg ${sit(r.situacao).cor}">${esc(sit(r.situacao).n)}</span>${r.situacao === 'em_aprovacao' && possoAprovar(r) ? ' <span class="tg erro">sua vez</span>' : ''}` },
+    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN.filter(f => f.situacao === 'ativo').map(f => ({ v: f.id, n: f.nome })),
+      listaHtml: r => `<span class="texto-curto" title="${esc(forn(r.fornecedor_id)?.nome || '')}">${esc(forn(r.fornecedor_id)?.nome || '')}</span>` },
+    { id: 'data_entrega_prevista', label: 'Entrega prevista', tipo: 'data', lista: true },
+    { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Gera as parcelas previstas e as da NF. Sem condição: prazo padrão do fornecedor.' },
+    { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
+    { id: 'conta_bancaria_id', label: 'Conta prevista (pagar)', tipo: 'select', opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
+    { id: 'frete', label: 'Frete (R$)', tipo: 'moeda', secao: 'Valores' },
+    { id: 'outras_despesas', label: 'Outras despesas (R$)', tipo: 'moeda' },
+    { id: 'desconto', label: 'Desconto no pedido (R$)', tipo: 'moeda' },
+    { id: 'contato_fornecedor', label: 'Contato no fornecedor', secao: 'Contato para envio' },
+    { id: 'email_fornecedor', label: 'E-mail', tipo: 'email' },
+    { id: 'whatsapp_fornecedor', label: 'WhatsApp', tipo: 'tel' },
+    { id: 'motivo_recusa', label: 'Motivo da recusa', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'recusado', secao: 'Observações' },
+    { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
+    { id: 'observacoes', label: 'Observações (vão no PDF para o fornecedor)', tipo: 'textarea', col: 2, secao: 'Observações' },
+    { id: 'observacoes_internas', label: 'Observações internas', tipo: 'textarea', col: 2 }
+  ],
+  async carregarExtra(linhas, ctx) {
+    CTX = ctx;
+    const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac] = await Promise.all([
+      buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo').order('descricao')),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao').eq('aceita_lancamento', true).order('codigo')),
+      buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
+      buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
+      buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').eq('situacao', 'ativo').order('descricao')),
+      buscarTodos(() => db.from('compras_alcadas').select('*').order('nivel')),
+      buscarTodos(() => db.from('pedidos_compra_itens').select('*').order('id')),
+      buscarTodos(() => db.from('pedidos_compra_eventos').select('*').order('id')),
+      buscarTodos(() => db.from('pedidos_compra_recebimentos').select('*').order('id')),
+      ctx.pode('pagar') ? buscarTodos(() => db.from('titulos_pagar').select('id, pedido_compra_id, documento, valor, valor_pago, situacao, data_vencimento, projecao').not('pedido_compra_id', 'is', null).order('data_vencimento')) : [],
+      buscarTodos(() => db.from('produto_fornecedores').select('produto_id, fornecedor_id, codigo_fornecedor')),
+      db.from('empresas').select('id, nome, cnpj'),
+      db.rpc('usuarios_nomes'),
+      db.rpc('minhas_acoes')
+    ]);
+    FORN = f; PRODS = p.filter(x => !['acabado', 'kit'].includes(x.tipo) || true); CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONDS = co; FORMAS = fo;
+    CONTAS = cb.filter(x => x.tipo !== 'historico'); ALC = al; PF = pf; EMPRESAS = em.data || []; USU = (us.data || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); ACOES = new Set(ac.data || []);
+    const itens = {}, eventos = {}, recebimentos = {}, titulos = {};
+    it.forEach(x => (itens[x.pedido_id] ||= []).push(x));
+    ev.forEach(x => (eventos[x.pedido_id] ||= []).push(x));
+    rc.forEach(x => (recebimentos[x.pedido_id] ||= []).push(x));
+    ti.forEach(x => (titulos[x.pedido_compra_id] ||= []).push(x));
+    ex = { itens, eventos, recebimentos, titulos, todosItens: it, porId: Object.fromEntries(linhas.map(r => [r.id, r])) };
+    return ex;
+  },
+  depoisCarregar: linhas => desenharAlertas(linhas),
+  colunasExtras: [
+    { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${prod(i.produto_id)?.codigo || i.descricao}`).join(', '),
+      html: (r, e) => { const l = e.itens[r.id] || [], t = l.map(i => `${num(i.quantidade)}× ${prod(i.produto_id)?.codigo || i.descricao}`).join(', ');
+        return `<span class="texto-curto" style="max-width:220px" title="${esc(t)}">${esc(t)}</span>${l.some(i => !i.produto_id) ? ' <span class="tg alerta">sem cadastro</span>' : ''}`; } },
+    { label: 'Comprador', texto: r => usu(r.comprador_id) },
+    { label: 'Aprovação', texto: r => r.situacao === 'em_aprovacao' ? `${(r.niveis_aprovados || []).length}/${(r.niveis_exigidos || []).length} · ${nomeNivel(r, nivelAtual(r))}` : '' }
+  ],
+  textoBuscaExtra: (r, e) => [forn(r.fornecedor_id)?.nome, ...(e.itens[r.id] || []).flatMap(i => [i.descricao, i.codigo_fornecedor, prod(i.produto_id)?.codigo]),
+    ...(e.recebimentos[r.id] || []).map(x => 'NF ' + x.nf_numero)].filter(Boolean).join(' '),
+  subtituloLinha: r => [r.enviado_em ? `enviado ${dataCurta(r.enviado_em)} por ${r.enviado_via || ''}` : '', Number(r.valor_recebido) ? 'recebido ' + reais(r.valor_recebido) : ''].filter(Boolean).join(' · '),
+  pendencias: [
+    { id: 'sem_cad', nome: 'Item sem cadastro (confirmar)', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => !i.produto_id) },
+    { id: 'sem_cat', nome: 'Item sem categoria financeira', cor: 'erro', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => !i.categoria_financeira_id) },
+    { id: 'sem_itens', nome: 'Sem itens', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !(e.itens[r.id] || []).length },
+    { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
+    { id: 'nao_enviado', nome: 'Aprovado sem envio', cor: 'alerta', teste: r => r.situacao === 'aprovado' },
+    { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista }
+  ],
+  apagado: r => r.situacao === 'cancelado',
+  aoAbrir(m, r, ctx) {
+    modalAtual = m; sujo = false;
+    const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
+    const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
+    const box = document.createElement('div');
+    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Produto</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
+        <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
+        ${editavel && podeEd ? '<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>' : ''}
+        <div class="tot-ped" id="totPed"></div></div>`;
+    const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Valores');
+    antes.parentNode.insertBefore(box, antes);
+    if (editavel && podeEd) {
+      m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaItem()); };
+      box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); recalcular(); } });
+      box.addEventListener('change', e => { if (e.target.dataset.k === 'produto_id') aoEscolherProduto(e.target.closest('tr')); recalcular(); });
+      box.addEventListener('input', recalcular);
+      ['frete', 'outras_despesas', 'desconto'].forEach(id => m.querySelector('#f_' + id)?.addEventListener('input', recalcular));
+      // fornecedor → contato, e-mail e WhatsApp do cadastro
+      m.querySelector('#f_fornecedor_id')?.addEventListener('change', e => { const f = forn(Number(e.target.value)); if (!f) return;
+        [['contato_fornecedor', f.contato], ['email_fornecedor', f.email], ['whatsapp_fornecedor', f.telefone]].forEach(([k, v]) => { const el = m.querySelector('#f_' + k); if (el && !el.value && v) el.value = v; }); });
+    } else {
+      box.querySelectorAll('input, select, button.rm').forEach(i => i.disabled = true);
+      // depois de aprovado só contato, entrega e observações internas mudam
+      if (r.id) m.querySelectorAll('.campo input, .campo select, .campo textarea').forEach(i => {
+        if (!['f_contato_fornecedor', 'f_email_fornecedor', 'f_whatsapp_fornecedor', 'f_observacoes_internas', 'f_data_entrega_prevista'].includes(i.id) || FINAL.includes(r.situacao)) i.disabled = true; });
+    }
+    m.querySelectorAll('.campo input, .campo select, .campo textarea, #itens input, #itens select').forEach(i => i.addEventListener('input', () => { sujo = true; }));
+    recalcular();
+    m.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => executarAcao(r, b.dataset.pc, m));
+  },
+  secaoExtra: r => secaoPedido(r),
+  antesSalvar: (d, r) => {
+    ['fornecedor_id', 'condicao_pagamento_id', 'forma_pagamento_id', 'conta_bancaria_id', 'empresa_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); });
+    ['frete', 'outras_despesas', 'desconto'].forEach(k => d[k] = d[k] || 0);
+    delete d.numero; delete d.situacao; delete d.valor_total; delete d.motivo_recusa; delete d.motivo_cancelamento;
+  },
+  validar: (d, r) => {
+    if (r.id && !EDITAVEL.includes(r.situacao)) return null;
+    const itens = lerItens();
+    if (!itens.length) return 'Inclua pelo menos um item';
+    if (itens.some(i => !(i.quantidade > 0))) return 'Item com quantidade zerada';
+    if (itens.some(i => !i.produto_id && !i.descricao)) return 'Item sem cadastro precisa de descrição';
+    if (itens.some(i => !i.categoria_financeira_id)) return 'Escolha a categoria financeira de cada item (vai para o contas a pagar)';
+    const c = CONTAS.find(x => x.id === d.conta_bancaria_id); if (c && c.empresa_id !== d.empresa_id) return 'A conta prevista é de outra empresa';
+    return null;
+  },
+  async salvar(dados, r, m, novo) {
+    const editavel = novo || EDITAVEL.includes(r.situacao);
+    const { data, error } = await db.rpc('pedido_compra_salvar', { p_pedido: { ...dados, id: novo ? null : r.id }, p_itens: editavel ? lerItens() : null });
+    if (error) throw error;
+    sujo = false;
+    return data;
+  },
+  tituloRegistro: r => `${r.numero} · ${forn(r.fornecedor_id)?.nome || ''}`,
+  chaveHistorico: r => r.numero
+};
+montarCadastro(cfg);
+</script>
+</body>
+</html>

@@ -215,7 +215,7 @@ td small.sub2 { display: block; color: var(--texto-suave); font-size: 12px; marg
 tr.apagado td { color: #9aa0a8; }
 .tg { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; margin: 1px 2px 1px 0; white-space: nowrap; }
 .tg.erro { background: #fdeceb; color: var(--erro); } .tg.alerta { background: #fff4e5; color: #b45309; }
-.tg.ok { background: #e8f5ec; color: var(--ok); } .tg.neutro { background: var(--fundo); color: var(--texto-suave); }
+.tg.ok { background: #e8f5ec; color: var(--ok); } .tg.pc { background: #f3effe; color: #6d28d9; } .tg.neutro { background: var(--fundo); color: var(--texto-suave); }
 .rev small { display: block; color: var(--texto-suave); font-size: 11px; margin-top: 3px; }
 th.ord { cursor: pointer; user-select: none; } th.ord:hover { color: var(--texto); }
 td input[type=checkbox], th input[type=checkbox] { width: 16px; height: 16px; }
