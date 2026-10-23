@@ -45,7 +45,7 @@ const MENU = [
     { id: 'pagar',         nome: 'Contas a pagar',    arquivo: 'pages/financeiro/contas-pagar.html' },
     { id: 'receber',       nome: 'Contas a receber',  arquivo: 'pages/financeiro/contas-receber.html' },
     { id: 'conciliacao',   nome: 'Extratos e conciliação', arquivo: 'pages/financeiro/conciliacao.html' },
-    { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: null },
+    { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: 'pages/financeiro/fluxo-caixa.html' },
     { id: 'notas',         nome: 'Notas fiscais',     arquivo: null }
   ]},
   { grupo: 'RH', itens: [
@@ -245,8 +245,8 @@ function montarBarraTelas(ctx, app) {
   function ativar(c) {
     if (c && !abas.some(a => a.caminho === c)) c = '';
     ativa = c;
-    [...telas.children].forEach(p => { p.hidden = p.dataset.caminho !== c; });
     if (c && !painel(c)) criarPainel(abas.find(a => a.caminho === c));
+    [...telas.children].forEach(p => { p.hidden = p.dataset.caminho !== c; });
     const base = c.split('?')[0];
     app.querySelectorAll('.menu .item[href]').forEach(i => i.classList.toggle('ativo', c ? caminhoTela(i.href) === base : caminhoTela(i.href) === 'inicio.html'));
     const usa = !!(c && info[c]?.empresa);

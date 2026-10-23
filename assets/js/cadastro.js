@@ -419,4 +419,7 @@ async function montarCadastro(cfg) {
 
   cfg.recarregar = carregar;
   await carregar();
+  // Endereço com ?abrir=ID (vindo do fluxo de caixa, de outra tela…): abre o registro direto, mesmo fora da lista visível
+  const abrirId = new URLSearchParams(location.search).get('abrir');
+  if (abrirId) { const r = linhas.find(x => String(x.id) === abrirId); if (r) abrir(r); else aviso('Registro não encontrado nesta tela', true); }
 }

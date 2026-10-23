@@ -20,7 +20,7 @@ const RECURSOS: Record<string, { pesquisa: string; lista: string; item: string; 
   contatos:       { pesquisa: 'contatos.pesquisa.php',       lista: 'contatos', item: 'contato', obter: 'contato.obter.php' },
 };
 
-let pausa = 700;   // ms entre chamadas; aumenta sozinho se o Tiny reclamar de excesso de acessos
+let pausa = 300;   // ms entre chamadas; aumenta sozinho se o Tiny reclamar de excesso de acessos
 
 async function tiny(token: string, metodo: string, params: Record<string, string>) {
   for (let t = 0; t < 4; t++) {
@@ -87,17 +87,20 @@ async function rodar(jobId: number, chave: string) {
       while (true) {
         const { data: pend } = await db.from('tiny_brutos').select('id, tiny_id').eq('empresa_id', job.empresa_id).eq('recurso', job.recurso).is('detalhe', null).order('id').limit(25);
         if (!pend?.length) break;
-        for (const b of pend) {
-          if (Date.now() - inicio > 105_000) { await salvar({ detalhados, falhas, params: p }); await continuar(jobId, chave); return; }
-          try {
-            const ret = await tiny(token, def.obter, { id: b.tiny_id });
-            const det = ret[def.item] ?? ret;
-            await db.from('tiny_brutos').update({ detalhe: det, detalhado_em: new Date().toISOString() }).eq('id', b.id);
-            detalhados++;
-          } catch (e) {
-            falhas++;
-            await db.from('tiny_brutos').update({ detalhe: { erro: String((e as Error).message ?? e).slice(0, 300) }, detalhado_em: new Date().toISOString() }).eq('id', b.id);
-          }
+        if (Date.now() - inicio > 100_000) { await salvar({ detalhados, falhas, params: p }); await continuar(jobId, chave); return; }
+        // 4 leituras ao mesmo tempo (o Tiny limita por minuto; se reclamar, a pausa aumenta sozinha)
+        for (let i = 0; i < pend.length; i += 4) {
+          await Promise.all(pend.slice(i, i + 4).map(async (b: { id: number; tiny_id: string }) => {
+            try {
+              const ret = await tiny(token, def.obter!, { id: b.tiny_id });
+              const det = ret[def.item] ?? ret;
+              await db.from('tiny_brutos').update({ detalhe: det, detalhado_em: new Date().toISOString() }).eq('id', b.id);
+              detalhados++;
+            } catch (e) {
+              falhas++;
+              await db.from('tiny_brutos').update({ detalhe: { erro: String((e as Error).message ?? e).slice(0, 300) }, detalhado_em: new Date().toISOString() }).eq('id', b.id);
+            }
+          }));
         }
         await salvar({ detalhados, falhas });
       }

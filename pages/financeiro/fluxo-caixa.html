@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluxo de caixa · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .fc-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
+  .fc-filtros > div { display: flex; flex-direction: column; }
+  .fc-filtros select, .fc-filtros input { min-width: 130px; }
+  .seg { display: inline-flex; border: 1px solid var(--linha); border-radius: 8px; overflow: hidden; background: var(--superficie); }
+  .seg button { border: 0; background: none; padding: 7px 12px; font: 500 13px var(--fonte); cursor: pointer; color: var(--texto-suave); }
+  .seg button.on { background: var(--destaque); color: #fff; }
+  .fc-wrap { overflow: auto; max-height: calc(100vh - 210px); background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio); }
+  table.fc { border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 100%; }
+  table.fc th, table.fc td { padding: 5px 10px; white-space: nowrap; border-bottom: 1px solid var(--linha); }
+  table.fc thead th { position: sticky; top: 0; background: #f7f8fa; z-index: 2; text-align: right; font-weight: 600; }
+  table.fc th:first-child, table.fc td:first-child { position: sticky; left: 0; background: var(--superficie); z-index: 1; text-align: left; min-width: 290px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  table.fc thead th:first-child { z-index: 3; background: #f7f8fa; }
+  table.fc td.v { text-align: right; font-variant-numeric: tabular-nums; cursor: pointer; }
+  table.fc td.v:hover { background: var(--destaque-suave); }
+  table.fc td.v.zero { color: #c3c7cd; cursor: default; }
+  table.fc td.v.zero:hover { background: none; }
+  table.fc td.neg { color: var(--erro); }
+  table.fc td.prev { font-style: italic; }
+  tr.sec td { background: #eef0f3 !important; font-weight: 700; text-transform: uppercase; font-size: 11.5px; letter-spacing: .4px; }
+  tr.grp td { font-weight: 600; }
+  tr.grp td:first-child { cursor: pointer; }
+  tr.grp td:first-child::before { content: '▾ '; color: var(--aco-escuro); }
+  tr.grp.fechado td:first-child::before { content: '▸ '; }
+  tr.cat td:first-child { padding-left: 26px; color: var(--texto-suave); }
+  tr.tot td { font-weight: 700; background: #fafafa; }
+  tr.saldo td { font-weight: 700; background: #f3f6fb; }
+  .legenda { font-size: 12px; color: var(--texto-suave); margin: 8px 0 0; }
+  .det td.num { text-align: right; }
+  .modal:has(table.det) { width: min(1100px, 96vw); max-width: none; }
+  .fc-filtros label.chk { display: flex; align-items: center; gap: 6px; height: 36px; white-space: nowrap; }
+</style>
+</head>
+<body data-modulo="fluxo" data-titulo="Fluxo de caixa" data-empresa="sim">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Fluxo de caixa</h1>
+    <p class="sub">Entradas, saídas e saldo por categoria. Realizado = baixas do contas a receber e a pagar (conferidas com o extrato). Previsto = títulos em aberto. Venda de marketplace entra pelo bruto e cada tarifa sai na sua categoria. Clique num valor para ver a origem.</p></div>
+    <div class="ferr" id="rel"></div></div>
+
+  <div class="fc-filtros nao-imprimir">
+    <div><label>Conta</label><select id="fConta"><option value="">Todas as contas</option></select></div>
+    <div><label>De</label><input type="date" id="fDe"></div>
+    <div><label>Até</label><input type="date" id="fAte"></div>
+    <div><label>Visão</label><span class="seg" id="segVisao"><button data-v="dia">Diária</button><button data-v="mes" class="on">Mensal</button></span></div>
+    <div><label>Mostrar</label><span class="seg" id="segModo"><button data-v="ambos" class="on">Realizado + previsto</button><button data-v="real">Realizado</button><button data-v="prev">Previsto</button></span></div>
+    <div><label>&nbsp;</label><label class="chk"><input type="checkbox" id="fAtraso" checked> Atrasados no 1º dia</label></div>
+    <div><label>&nbsp;</label><button class="btn" id="btnAbrirTudo" type="button">Abrir/recolher grupos</button></div>
+  </div>
+  <div class="fc-wrap"><table class="fc" id="tab"><tbody><tr><td class="vazio">Carregando…</td></tr></tbody></table></div>
+  <p class="legenda">Valores em itálico incluem previsto. Saldo inicial = saldo de abertura das contas + tudo o que foi realizado antes da data inicial. Linhas do extrato ainda sem título (rotina antiga) aparecem como "Extrato classificado".</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script>
+let ctx, CATS = [], dados = null, visao = 'mes', modo = 'ambos', fechados = new Set();
+const ORIG = { rec: 'Recebimento', rec_ajuste: 'Ajuste no recebimento', pag: 'Pagamento', pag_juros: 'Juros/multa pagos', extrato: 'Extrato classificado', prev_rec: 'Previsto a receber', prev_pag: 'Previsto a pagar' };
+const reais = v => (v < 0 ? '-' : '') + Math.abs(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const iso = d => d.toLocaleDateString('sv-SE');
+
+(async () => {
+  ctx = await iniciarTela(); if (!ctx) return;
+  const hoje = new Date();
+  document.getElementById('fDe').value = iso(new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1));
+  document.getElementById('fAte').value = iso(new Date(hoje.getFullYear(), hoje.getMonth() + 4, 0));
+  const [{ data: cats }, { data: contas }] = await Promise.all([
+    db.from('categorias_financeiras').select('id, codigo, nome, tipo, pai_id').order('codigo'),
+    db.from('contas_bancarias').select('id, descricao, empresa_id, situacao').order('empresa_id').order('descricao')]);
+  CATS = cats || [];
+  const sel = document.getElementById('fConta');
+  const desenharContas = () => { const v = sel.value;
+    sel.innerHTML = '<option value="">Todas as contas</option>' + (contas || []).filter(c => !ctx.empresa || c.empresa_id === ctx.empresa)
+      .map(c => `<option value="${c.id}">${esc(c.descricao)}${c.situacao === 'inativo' ? ' (inativa)' : ''}</option>`).join('');
+    if ([...sel.options].some(o => o.value === v)) sel.value = v; };
+  desenharContas();
+  window.addEventListener('empresa', () => { desenharContas(); carregar(); });
+  ['fConta', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', carregar));
+  document.getElementById('fAtraso').addEventListener('change', desenhar);
+  segmento('segVisao', v => { visao = v; desenhar(); });
+  segmento('segModo', v => { modo = v; desenhar(); });
+  document.getElementById('btnAbrirTudo').onclick = () => {
+    const grupos = [...document.querySelectorAll('tr.grp')].map(t => t.dataset.g);
+    fechados = fechados.size ? new Set() : new Set(grupos); desenhar(); };
+  botoesRelatorio('rel', () => ({ arquivo: 'fluxo_caixa', ...tabelaExport() }));
+  window.addEventListener('aba-ativa', () => carregar());
+  carregar();
+})();
+
+function segmento(id, aoMudar) {
+  const s = document.getElementById(id);
+  s.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
+    s.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); aoMudar(b.dataset.v); });
+}
+
+async function carregar() {
+  const de = document.getElementById('fDe').value, ate = document.getElementById('fAte').value;
+  if (!de || !ate || de > ate) return;
+  const conta = document.getElementById('fConta').value;
+  const { data, error } = await db.rpc('fluxo_caixa', { p_de: de, p_ate: ate, p_empresa: ctx.empresa || null, p_conta: conta ? Number(conta) : null });
+  if (error) { document.querySelector('#tab tbody').innerHTML = `<tr><td class="vazio">${esc(error.message)}</td></tr>`; return; }
+  dados = data; desenhar();
+}
+
+// colunas do período
+function colunas() {
+  const de = new Date(document.getElementById('fDe').value + 'T12:00'), ate = new Date(document.getElementById('fAte').value + 'T12:00');
+  const cols = [];
+  if (visao === 'dia') for (let d = new Date(de); d <= ate; d.setDate(d.getDate() + 1)) cols.push({ k: iso(d), n: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) });
+  else for (let d = new Date(de.getFullYear(), de.getMonth(), 1); d <= ate; d.setMonth(d.getMonth() + 1))
+    cols.push({ k: iso(d).slice(0, 7), n: d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '') });
+  return cols;
+}
+const chave = d => visao === 'dia' ? d : d.slice(0, 7);
+const cat = id => CATS.find(c => c.id === id);
+const topo = c => { let x = c; while (x?.pai_id) x = cat(x.pai_id); return x; };
+const secao = c => !c ? 'saida' : c.tipo === 'receita' ? 'entrada' : c.tipo === 'transferencia' ? 'mov' : 'saida';
+
+function linhasAtivas() {
+  if (!dados) return [];
+  const de = document.getElementById('fDe').value;
+  let ls = dados.linhas;
+  if (document.getElementById('fAtraso').checked) ls = ls.concat(dados.atrasado.map(x => ({ ...x, d: de, atrasado: true })));
+  return ls.filter(x => modo === 'ambos' || (modo === 'real') === !x.o.startsWith('prev'));
+}
+
+function desenhar() {
+  if (!dados) return;
+  const cols = colunas(), ls = linhasAtivas();
+  // soma por categoria × coluna
+  const soma = {}, temPrev = {};
+  ls.forEach(x => { const k = chave(x.d), c = x.c ?? 0;
+    soma[c] = soma[c] || {}; soma[c][k] = (soma[c][k] || 0) + Number(x.v);
+    if (x.o.startsWith('prev')) { temPrev[c] = temPrev[c] || {}; temPrev[c][k] = true; } });
+  const usadas = Object.keys(soma).map(Number);
+  const SEC = [['entrada', 'Entradas'], ['saida', 'Saídas'], ['mov', 'Movimentações (fora do resultado)']];
+  const totSec = {};
+  let html = `<thead><tr><th>Categoria</th>${cols.map(c => `<th>${esc(c.n)}</th>`).join('')}<th>Total</th></tr></thead><tbody>`;
+  const celula = (v, cats, k, prev) => {
+    const z = Math.abs(v) < 0.005;
+    return `<td class="v${z ? ' zero' : ''}${v < 0 ? ' neg' : ''}${prev ? ' prev' : ''}" data-cats="${cats.join(',')}" data-k="${k || ''}">${z ? '–' : reais(v)}</td>`;
+  };
+  SEC.forEach(([s, nome]) => {
+    const doSec = usadas.filter(id => secao(cat(id)) === s);
+    totSec[s] = {};
+    if (!doSec.length && s === 'mov') return;
+    html += `<tr class="sec"><td>${nome}</td>${cols.map(() => '<td></td>').join('')}<td></td></tr>`;
+    const grupos = {};
+    doSec.forEach(id => { const t = topo(cat(id)); const g = t ? t.id : 0; (grupos[g] = grupos[g] || []).push(id); });
+    Object.keys(grupos).map(Number).sort((a, b) => (cat(a)?.codigo || 'zz').localeCompare(cat(b)?.codigo || 'zz', 'pt', { numeric: true })).forEach(g => {
+      const ids = grupos[g], gc = cat(g);
+      const valG = k => ids.reduce((s2, id) => s2 + (soma[id][k] || 0), 0);
+      const totG = cols.reduce((s2, c) => s2 + valG(c.k), 0);
+      html += `<tr class="grp${fechados.has(String(g)) ? ' fechado' : ''}" data-g="${g}"><td title="${esc(gc ? gc.codigo + ' ' + gc.nome : 'Sem categoria')}">${esc(gc ? gc.codigo + ' · ' + gc.nome : 'Sem categoria')}</td>
+        ${cols.map(c => celula(valG(c.k), ids, c.k, ids.some(id => temPrev[id]?.[c.k]))).join('')}${celula(totG, ids, '', false)}</tr>`;
+      cols.forEach(c => totSec[s][c.k] = (totSec[s][c.k] || 0) + valG(c.k));
+      if (!fechados.has(String(g)) && !(ids.length === 1 && ids[0] === g))
+        ids.sort((a, b) => (cat(a)?.codigo || '').localeCompare(cat(b)?.codigo || '', 'pt', { numeric: true })).forEach(id => {
+          const c0 = cat(id), tot = cols.reduce((s2, c) => s2 + (soma[id][c.k] || 0), 0);
+          html += `<tr class="cat"><td title="${esc(c0 ? c0.codigo + ' ' + c0.nome : '')}">${esc(c0 ? c0.codigo + ' · ' + c0.nome : 'Sem categoria')}</td>
+            ${cols.map(c => celula(soma[id][c.k] || 0, [id], c.k, temPrev[id]?.[c.k])).join('')}${celula(tot, [id], '', false)}</tr>`;
+        });
+    });
+    const t = cols.reduce((a, c) => a + (totSec[s][c.k] || 0), 0);
+    html += `<tr class="tot"><td>Total ${nome.toLowerCase()}</td>${cols.map(c => `<td class="v${(totSec[s][c.k] || 0) < 0 ? ' neg' : ''}">${reais(totSec[s][c.k] || 0)}</td>`).join('')}<td class="v">${reais(t)}</td></tr>`;
+  });
+  // resultado e saldo
+  let saldo = Number(dados.saldo_inicial || 0);
+  const res = cols.map(c => (totSec.entrada[c.k] || 0) + (totSec.saida[c.k] || 0) + (totSec.mov?.[c.k] || 0));
+  const ini = [], fim = [];
+  res.forEach(r => { ini.push(saldo); saldo += r; fim.push(saldo); });
+  html += `<tr class="tot"><td>Resultado do período (entradas − saídas)</td>${res.map(v => `<td class="v${v < 0 ? ' neg' : ''}">${reais(v)}</td>`).join('')}<td class="v">${reais(res.reduce((a, b) => a + b, 0))}</td></tr>
+    <tr class="saldo"><td>Saldo inicial</td>${ini.map(v => `<td class="v${v < 0 ? ' neg' : ''}">${reais(v)}</td>`).join('')}<td></td></tr>
+    <tr class="saldo"><td>Saldo final (bancos)</td>${fim.map(v => `<td class="v${v < 0 ? ' neg' : ''}">${reais(v)}</td>`).join('')}<td class="v">${reais(saldo)}</td></tr></tbody>`;
+  const tab = document.getElementById('tab'); tab.innerHTML = html;
+  tab.querySelectorAll('tr.grp td:first-child').forEach(td => td.onclick = () => {
+    const g = td.parentElement.dataset.g; fechados.has(g) ? fechados.delete(g) : fechados.add(g); desenhar(); });
+  tab.querySelectorAll('td.v[data-cats]').forEach(td => td.onclick = () => { if (!td.classList.contains('zero')) detalhe(td.dataset.cats.split(',').map(Number), td.dataset.k); });
+}
+
+// Popup com a origem de cada valor (débitos e créditos), com link para o título e para a venda
+async function detalhe(cats, k) {
+  const ls = linhasAtivas().filter(x => cats.includes(x.c ?? 0) && (!k || chave(x.d) === k)).sort((a, b) => a.d.localeCompare(b.d));
+  const tits = [...new Set(ls.filter(x => x.o.includes('rec')).map(x => x.t))], titp = [...new Set(ls.filter(x => x.o.includes('pag')).map(x => x.t))];
+  const peds = [...new Set(ls.map(x => x.p).filter(Boolean))];
+  const lote = (ids, f) => ids.length ? Promise.all(Array.from({ length: Math.ceil(ids.length / 300) }, (_, i) => f(ids.slice(i * 300, i * 300 + 300)))).then(r => r.flatMap(x => x.data || [])) : [];
+  const [tr, tp, pv] = await Promise.all([
+    lote(tits, ids => db.from('titulos_receber').select('id, documento, descricao, numero_externo').in('id', ids)),
+    lote(titp, ids => db.from('titulos_pagar').select('id, documento, descricao, fornecedores(nome)').in('id', ids)),
+    lote(peds, ids => db.from('pedidos_venda').select('id, numero_externo, cliente_nome').in('id', ids))]);
+  const TR = Object.fromEntries(tr.map(x => [x.id, x])), TP = Object.fromEntries(tp.map(x => [x.id, x])), PV = Object.fromEntries(pv.map(x => [x.id, x]));
+  const tot = ls.reduce((s, x) => s + Number(x.v), 0);
+  const nomesCat = [...new Set(cats)].map(id => cat(id)).filter(Boolean).map(c => c.codigo + ' ' + c.nome);
+  const m = abrirModal(`<h2>Origem do valor</h2>
+    <p class="sub" style="margin:0 0 8px">${esc(nomesCat.length > 3 ? nomesCat.length + ' categorias' : nomesCat.join(', ') || 'Sem categoria')}${k ? ' · ' + esc(k.length === 7 ? k.split('-').reverse().join('/') : k.split('-').reverse().join('/')) : ' · período inteiro'} · <b>${reais(tot)}</b> em ${ls.length} lançamento(s)</p>
+    <div class="tabela-rolagem" style="max-height:60vh"><table class="det"><thead><tr><th>Data</th><th>Origem</th><th>Título</th><th>Venda / fornecedor</th><th>Categoria</th><th class="num">Valor (R$)</th></tr></thead><tbody>
+    ${ls.slice(0, 1500).map(x => {
+      const ehRec = x.o.includes('rec'), t = ehRec ? TR[x.t] : TP[x.t], p = PV[x.p], c0 = cat(x.c);
+      const linkT = x.t ? `<a href="${RAIZ}pages/financeiro/${ehRec ? 'contas-receber' : 'contas-pagar'}.html?abrir=${x.t}" style="color:var(--destaque)">${esc(t?.documento || t?.numero_externo || '#' + x.t)}</a>` : (x.o === 'extrato' ? `<a href="${RAIZ}pages/financeiro/conciliacao.html?abrir=${x.r}" style="color:var(--destaque)">linha #${x.r}</a>` : '');
+      const quem = p ? `<a href="${RAIZ}pages/comercial/pedidos-venda.html?abrir=${p.id}" style="color:var(--destaque)">${esc(p.numero_externo || '#' + p.id)}</a> ${esc(p.cliente_nome || '')}` : esc(t?.fornecedores?.nome || t?.descricao || '');
+      return `<tr><td>${x.d.split("-").reverse().join("/")}${x.atrasado ? ' <small style="color:var(--alerta)">(atrasado)</small>' : ''}</td><td>${ORIG[x.o] || x.o}</td><td>${linkT}</td><td>${quem}</td>
+        <td>${esc(c0 ? c0.codigo : '')}</td><td class="num${x.v < 0 ? ' valor-neg' : ''}">${reais(Number(x.v))}</td></tr>`; }).join('')}
+    </tbody></table></div>${ls.length > 1500 ? '<p class="sub">Mostrando 1.500 linhas. Use um período menor ou a visão diária.</p>' : ''}
+    <div class="acoes"><button class="btn" id="mFechar" type="button">Fechar</button></div>`);
+  m.querySelector('#mFechar').onclick = () => m.remove();
+}
+
+function tabelaExport() {
+  const rows = [...document.querySelectorAll('#tab tr')];
+  const colunasX = [...rows[0].children].map(c => c.textContent);
+  return { colunas: colunasX, linhas: rows.slice(1).map(r => [...r.children].map((c, i) => i ? (c.textContent === '–' ? '0' : c.textContent.replace(/\./g, '')) : c.textContent)) };
+}
+</script>
+</body>
+</html>
