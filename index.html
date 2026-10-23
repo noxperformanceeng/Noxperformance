@@ -37,6 +37,15 @@
   const msg = (t, erro) => { const m = document.getElementById('msg'); m.textContent = t; m.style.color = erro ? 'var(--erro)' : 'var(--texto-suave)'; };
   let recuperando = false;
 
+  // Link vencido ou já usado: o Supabase devolve o erro no endereço
+  const erroLink = new URLSearchParams(location.hash.slice(1));
+  if (erroLink.get('error')) {
+    msg(erroLink.get('error_code') === 'otp_expired'
+      ? 'O link expirou ou já foi usado. Digite seu e-mail e clique em "Esqueci minha senha" de novo.'
+      : 'Não foi possível abrir o link. Peça um novo em "Esqueci minha senha".', true);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+
   // Link de "esqueci a senha" abre esta página com o formulário de nova senha
   db.auth.onAuthStateChange(evento => {
     if (evento === 'PASSWORD_RECOVERY') {
@@ -66,7 +75,7 @@
   document.getElementById('linkEsqueci').addEventListener('click', async () => {
     const email = document.getElementById('email').value.trim();
     if (!email) return msg('Digite seu e-mail acima e clique de novo.', true);
-    const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] });
+    const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
     msg(error ? 'Não foi possível enviar o e-mail.' : 'Enviamos um link para criar nova senha no seu e-mail.', !!error);
   });
 
