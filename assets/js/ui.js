@@ -203,7 +203,7 @@ function desenharPendencias(lista, atual) {
     ativo = Math.max(0, opcoes.findIndex(x => x.o.selected));
     desenhar();
     posicionar();
-    inp.focus();
+    inp.focus({ preventScroll: true });
     inp.addEventListener('input', () => { ativo = 0; desenhar(); });
     inp.addEventListener('keydown', e => {
       if (e.key === 'ArrowDown') { ativo = Math.min(ativo + 1, itens.length - 1); desenhar(); e.preventDefault(); }
@@ -213,7 +213,7 @@ function desenharPendencias(lista, atual) {
       else if (e.key === 'Tab') fechar();
     });
     lista.addEventListener('mousedown', e => { const it = e.target.closest('.sel-item'); if (it) { e.preventDefault(); escolher(+it.dataset.k); } });
-    aberto = { caixa, sel };
+    aberto = { caixa, sel, desde: Date.now() };
   }
 
   document.addEventListener('mousedown', e => {
@@ -231,5 +231,9 @@ function desenharPendencias(lista, atual) {
     else if ((e.key === 'Enter' || e.key === ' ' || (e.altKey && e.key === 'ArrowDown'))) { e.preventDefault(); abrir(sel); }
   }, true);
   window.addEventListener('resize', () => fechar());
-  document.addEventListener('scroll', e => { if (aberto && !aberto.caixa.contains(e.target)) fechar(); }, true);
+  // Fecha só se a tela rolar de verdade (não pela própria abertura) e se o campo saiu do lugar
+  document.addEventListener('scroll', e => {
+    if (!aberto || aberto.caixa.contains(e.target) || Date.now() - aberto.desde < 400) return;
+    if (e.target === document || e.target.contains?.(aberto.sel)) fechar();
+  }, true);
 })();
