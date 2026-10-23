@@ -90,8 +90,8 @@ montarCadastro({
     { id: 'pix', label: 'Chave PIX', col: 2 },
     { id: 'contato_emergencia', label: 'Contato de emergência', col: 2, secao: 'Emergência' },
     { id: 'telefone_emergencia', label: 'Telefone de emergência', tipo: 'tel' },
-    { id: 'usuario_id', label: 'Usuário do sistema', tipo: 'select', secao: 'Acesso ao sistema', col: 2, opcoes: () => USUARIOS,
-      ajuda: 'Liga o funcionário ao login dele (para ver o próprio holerite e férias).' },
+    { id: 'usuario_id', label: 'Login do sistema (conta de acesso)', tipo: 'select', secao: 'Acesso ao sistema', col: 2, opcoes: () => USUARIOS,
+      ajuda: 'Escolha a conta de login DESTA pessoa (não é o perfil). Se a pessoa ainda não tem login, deixe em branco. O perfil e as telas aparecem logo abaixo depois de ligar o login.' },
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
   ],
   async carregarExtra(linhas, ctx) {

@@ -50,7 +50,9 @@
     <div class="barra">
       <select id="perfilEscolhido" style="max-width:280px"></select>
       <button class="btn primario" id="salvarPerfil">Salvar perfil</button>
+      <button class="btn" id="novoPerfil" type="button">+ Novo perfil</button>
     </div>
+    <p class="sub" style="margin:0 0 8px;font-size:12.5px">Escolha o perfil, marque o que cada tela permite e salve. Quem tem o perfil recebe essas telas; telas a mais ou a menos para uma pessoa só ficam na aba Usuários (botão de editar do usuário).</p>
     <div class="cartao tabela-rolagem">
       <table>
         <thead><tr><th>Setor</th><th>Tela</th><th style="width:180px">Acesso</th></tr></thead>
@@ -243,6 +245,32 @@ function desenharSeletorPerfil() {
   s.onchange = desenharMatriz;
   desenharMatriz();
   document.getElementById('salvarPerfil').onclick = salvarPerfil;
+  const bn = document.getElementById('novoPerfil'); bn.hidden = !ctx.admin; bn.onclick = novoPerfil;
+}
+
+// Perfil novo: nome, descrição e (opcional) copiar as telas de um perfil que já existe
+function novoPerfil() {
+  const m = abrirModal(`<h2>Novo perfil</h2>
+    <label>Nome</label><input id="npNome" placeholder="ex.: Financeiro júnior">
+    <label>Descrição</label><input id="npDesc" placeholder="o que esse perfil faz">
+    <label>Começar com as telas de</label><select id="npBase"><option value="">— nenhuma (marco depois) —</option>${perfis.filter(p => p.id !== 'admin').map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select>
+    <div class="acoes" style="margin-top:14px"><button class="btn" id="npX">Cancelar</button><button class="btn primario" id="npOk">Criar</button></div>`);
+  m.querySelector('.modal').classList.add('form');
+  m.querySelector('#npX').onclick = () => m.remove();
+  m.querySelector('#npOk').onclick = async () => {
+    const nome = m.querySelector('#npNome').value.trim(); if (!nome) return aviso('Informe o nome', true);
+    const id = semAcento(nome).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+    if (perfis.some(p => p.id === id)) return aviso('Já existe um perfil com esse nome', true);
+    const { error } = await db.from('perfis').insert({ id, nome, descricao: m.querySelector('#npDesc').value.trim() || null });
+    if (error) return aviso('Não criou: ' + error.message, true);
+    const base = m.querySelector('#npBase').value;
+    if (base) {
+      const copia = permissoes.filter(p => p.perfil_id === base).map(p => ({ perfil_id: id, modulo_id: p.modulo_id, nivel: p.nivel }));
+      if (copia.length) await db.from('permissoes').insert(copia);
+    }
+    m.remove(); aviso('Perfil criado. Ajuste as telas e clique em Salvar perfil.');
+    await carregar(); const s = document.getElementById('perfilEscolhido'); s.value = id; desenharMatriz();
+  };
 }
 
 function desenharMatriz() {
