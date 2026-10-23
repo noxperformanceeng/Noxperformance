@@ -35,6 +35,8 @@
 const SIT = [{ v: 'orcamento', n: 'Orçamento' }, { v: 'aberto', n: 'Aberto' }, { v: 'faturado', n: 'Faturado (NF)' }, { v: 'enviado', n: 'Enviado' },
   { v: 'entregue', n: 'Entregue' }, { v: 'devolvido', n: 'Devolvido' }, { v: 'cancelado', n: 'Cancelado' }];
 const TIPOS = [{ v: 'marketplace', n: 'Marketplace' }, { v: 'distribuidor', n: 'Distribuidor' }, { v: 'direta', n: 'Venda direta' }];
+const ETAPAS = [{ v: 'aguardando_pagamento', n: 'Aguardando pagamento' }, { v: 'pago', n: 'Pago' }, { v: 'pronto_envio', n: 'Pronto para envio' }, { v: 'enviado', n: 'Enviado' },
+  { v: 'entregue', n: 'Entregue' }, { v: 'nao_entregue', n: 'Não entregue' }, { v: 'devolvido', n: 'Devolvido' }, { v: 'cancelado', n: 'Cancelado' }];
 const LOG = [{ v: 'full', n: 'Full' }, { v: 'flex', n: 'Flex' }, { v: 'coleta', n: 'Coleta' }, { v: 'agencia', n: 'Agência' }, { v: 'correios', n: 'Correios' },
   { v: 'transportadora', n: 'Transportadora' }, { v: 'retira', n: 'Retira' }, { v: 'outro', n: 'Outro' }];
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -106,7 +108,7 @@ function secaoPedido(r) {
   const ativos = ts.filter(t => t.situacao !== 'cancelado');
   return `<div class="secao">Rastreio</div>
     <div class="rastreio">${etapa(true, (canal(r.canal_id)?.nome || 'Pedido') + (r.numero_externo ? ' · ' + r.numero_externo : ''))}<i>›</i>${etapa(r.nf_numero, r.nf_numero ? 'NF ' + r.nf_numero : 'NF (Tiny)')}<i>›</i>
-      ${etapa(r.data_envio || ['enviado', 'entregue'].includes(r.situacao), r.data_envio ? 'Enviado ' + dataCurta(r.data_envio) : 'Envio')}<i>›</i>${etapa(ativos.length, 'Título a receber')}<i>›</i>
+      ${etapa(r.data_envio || ['enviado', 'entregue'].includes(r.situacao) || ['enviado', 'entregue'].includes(r.etapa), r.data_envio ? 'Enviado ' + dataCurta(r.data_envio) : 'Envio')}<i>›</i>${etapa(r.data_entrega || r.etapa === 'entregue', r.data_entrega ? 'Entregue ' + dataCurta(r.data_entrega) : r.etapa === 'devolvido' ? 'Devolvido' : 'Entrega')}<i>›</i>${etapa(ativos.length, 'Título a receber')}<i>›</i>
       ${etapa(ativos.length && ativos.every(t => t.situacao === 'recebido'), 'Recebido')}<i>›</i>${etapa(ativos.length && ativos.every(t => ex.conciliados.has(t.id)), 'Conciliado')}</div>
     ${lv || le ? `<p style="margin:8px 0 0;font-size:13px">${lv ? `<a class="ext" href="${esc(lv)}" target="_blank" rel="noopener">Abrir a venda na plataforma</a>` : ''}${le ? ` &nbsp; <a class="ext" href="${esc(le)}" target="_blank" rel="noopener">Abrir o envio</a>` : ''}</p>` : ''}
     <div class="secao">Contas a receber</div>
@@ -147,6 +149,7 @@ const cfg = {
     { id: 'cliente_nome', label: 'Comprador (como veio)', col: 2, ajuda: 'Nome do comprador na plataforma quando ainda não há cadastro.' },
     { id: 'representante_id', label: 'Representante', tipo: 'select', filtro: true, opcoes: () => CLIENTES.filter(c => c.tipo_cliente === 'representante').map(c => ({ v: c.id, n: c.nome })) },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, lista: true, filtro: true, padrao: 'aberto', ajuda: 'Cancelar: botão "Cancelar pedido" (cancela também os títulos em aberto).' },
+    { id: 'etapa', label: 'Etapa (ML)', tipo: 'select', opcoes: ETAPAS, lista: true, filtro: true, somenteLeitura: true, ajuda: 'Vem do Mercado Livre: pago, pronto para envio, enviado, entregue ou devolvido.' },
     { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
     { id: 'encargos', label: 'Tarifas (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
     { id: 'valor_liquido', label: 'Líquido (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },

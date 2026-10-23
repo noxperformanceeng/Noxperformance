@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Integrações · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .integ { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .integ .cartao { padding: 14px 16px; }
+  .integ h3 { margin: 0 0 2px; font-size: 15px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .integ .sub { margin: 0 0 10px; font-size: 12.5px; }
+  .integ table { width: 100%; font-size: 12.5px; }
+  .integ td, .integ th { padding: 4px 6px; }
+  .integ td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .barra-prog { height: 6px; background: var(--linha); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .barra-prog i { display: block; height: 100%; background: var(--destaque); }
+  .acoes-integ { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+</style>
+</head>
+<body data-modulo="integracoes" data-titulo="Integrações">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Integrações</h1>
+    <p class="sub">Ligações do sistema com Mercado Livre, Tiny e Mercado Pago, por empresa. Tudo que vem de fora entra primeiro numa área de conferência e só depois vira título ou pedido, conferido com o extrato.</p></div>
+    <button class="btn" id="btnAtualizar" type="button">Atualizar</button></div>
+  <div class="integ" id="cartoes"><div class="cartao vazio">Carregando…</div></div>
+  <h2>Leituras recentes</h2>
+  <div class="cartao tabela-rolagem"><table>
+    <thead><tr><th>#</th><th>Origem</th><th>Empresa</th><th>Item</th><th>Situação</th><th>Andamento</th><th>Lidos</th><th>Detalhados</th><th>Falhas</th><th>Atualizado</th><th>Mensagem</th></tr></thead>
+    <tbody id="jobs"></tbody></table></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script>
+const RECURSOS = { contas_pagar: 'Contas a pagar', contas_receber: 'Contas a receber', pedidos: 'Pedidos', notas_entrada: 'NF de entrada', notas_saida: 'NF de saída', contatos: 'Contatos' };
+const SIT = { fila: 'Na fila', rodando: 'Lendo…', ok: 'Concluído', erro: 'Erro', parado: 'Parado' };
+let ctx, empresas = [], timer;
+
+(async () => {
+  ctx = await iniciarTela(); if (!ctx) return;
+  empresas = ctx.empresas;
+  document.getElementById('btnAtualizar').onclick = carregar;
+  carregar();
+})();
+
+const nomeEmp = id => empresas.find(e => e.id === id)?.nome || '—';
+const sufixo = id => (nomeEmp(id).match(/NOX (\d+)/) || [])[1];
+
+async function carregar() {
+  const { data, error } = await db.rpc('integracao_status');
+  if (error || !data) { document.getElementById('cartoes').innerHTML = `<div class="cartao vazio">${esc(error?.message || 'Sem acesso')}</div>`; return; }
+  const podeEditar = ctx.pode('integracoes', 'editar');
+  const rodando = data.jobs.some(j => ['fila', 'rodando'].includes(j.situacao));
+
+  // Mercado Livre
+  let html = data.ml.map(m => `<div class="cartao"><h3>Mercado Livre · ${esc(m.nickname || m.ml_user_id)}
+      <span class="selo ${m.situacao === 'ativo' ? 'ok' : 'erro'}">${m.situacao === 'ativo' ? 'Conectado' : esc(m.situacao)}</span></h3>
+    <p class="sub">Vendas, tarifas, envio e entrega chegam sozinhos pelos avisos do ML.</p>
+    <table><tr><td>Vendas guardadas</td><td class="n">${m.pedidos}</td></tr>
+      <tr><td>Avisos aguardando</td><td class="n">${m.eventos_pendentes}</td></tr>
+      <tr><td>Última busca manual</td><td class="n">${m.ultima_sync ? dataHoraBR(m.ultima_sync) : '—'}</td></tr>
+      ${m.ultimo_erro ? `<tr><td colspan="2" style="color:var(--erro)">${esc(m.ultimo_erro)}</td></tr>` : ''}</table>
+    <div class="acoes-integ"><a class="btn fino" href="${RAIZ}pages/cadastros/canais-venda.html">Abrir canais de venda</a></div></div>`).join('');
+
+  // Tiny por empresa
+  empresas.forEach(e => {
+    const s = sufixo(e.id); if (!s) return;
+    const linhas = data.tiny.filter(t => t.empresa === e.id);
+    html += `<div class="cartao"><h3>Tiny · ${esc(e.nome)} <span class="selo">Leitura</span></h3>
+      <p class="sub">Conta própria do Tiny desta empresa (token ${'TINY_TOKEN_' + s}). Emissão de NF: <b>desligada</b> (segue pelo ML).</p>
+      <table><thead><tr><th>Item</th><th class="n">Lidos</th><th class="n">Detalhados</th><th class="n">Já carregados</th><th>Última leitura</th></tr></thead><tbody>
+      ${Object.entries(RECURSOS).map(([k, n]) => { const t = linhas.find(x => x.recurso === k) || {};
+        return `<tr><td>${n}</td><td class="n">${t.lidos || 0}</td><td class="n">${t.detalhados || 0}</td><td class="n">${t.processados || 0}</td><td>${t.ultimo ? dataHoraBR(t.ultimo) : '—'}</td></tr>`; }).join('')}
+      </tbody></table>
+      ${podeEditar ? `<div class="acoes-integ">${Object.entries(RECURSOS).map(([k, n]) => `<button class="btn fino" type="button" data-ler="${s}|${k}">Ler ${n.toLowerCase()}</button>`).join('')}</div>` : ''}</div>`;
+  });
+  html += `<div class="cartao"><h3>Mercado Pago <span class="selo">Extrato</span></h3>
+    <p class="sub">Extrato das contas Mercado Pago 30 e 37 para a conciliação. Enquanto a leitura automática não estiver ligada, use Importar extrato na tela Extratos e conciliação.</p>
+    <div class="acoes-integ"><a class="btn fino" href="${RAIZ}pages/financeiro/conciliacao.html">Abrir conciliação</a></div></div>`;
+  document.getElementById('cartoes').innerHTML = html;
+  document.querySelectorAll('[data-ler]').forEach(b => b.onclick = () => ler(...b.dataset.ler.split('|')));
+
+  document.getElementById('jobs').innerHTML = data.jobs.length ? data.jobs.map(j => {
+    const pct = j.paginas ? Math.min(100, Math.round((j.situacao === 'ok' ? 1 : (j.detalhados || 0) / Math.max(j.lidos, 1)) * 100)) : 0;
+    return `<tr><td>${j.id}</td><td>${j.origem === 'tiny' ? 'Tiny' : 'Mercado Pago'}</td><td>${esc(nomeEmp(j.empresa_id))}</td><td>${RECURSOS[j.recurso] || esc(j.recurso)}</td>
+      <td><span class="selo ${j.situacao === 'ok' ? 'ok' : j.situacao === 'erro' ? 'erro' : ''}">${SIT[j.situacao] || j.situacao}</span></td>
+      <td style="min-width:120px">${j.paginas ? `pág. ${j.pagina}/${j.paginas}` : ''}<div class="barra-prog"><i style="width:${pct}%"></i></div></td>
+      <td class="n">${j.lidos}</td><td class="n">${j.detalhados}</td><td class="n">${j.falhas}</td><td>${dataHoraBR(j.atualizado_em)}</td><td>${esc(j.mensagem || '')}</td></tr>`;
+  }).join('') : '<tr><td colspan="11" class="vazio">Nenhuma leitura ainda.</td></tr>';
+
+  clearTimeout(timer); if (rodando) timer = setTimeout(carregar, 8000);
+}
+
+async function ler(s, recurso) {
+  const hoje = new Date(), ano = hoje.getFullYear();
+  const filtros = ['contas_pagar', 'contas_receber'].includes(recurso)
+    ? { data_ini_vencimento: '01/01/2025', data_fim_vencimento: `31/12/${ano + 1}` }
+    : ['pedidos', 'notas_entrada', 'notas_saida'].includes(recurso) ? { dataInicial: '01/01/2025', dataFinal: hoje.toLocaleDateString('pt-BR') } : {};
+  const { data, error } = await db.functions.invoke('tiny-sync', { body: { acao: 'iniciar', empresa: s, recurso, filtros } });
+  if (error || data?.erro) return aviso('Não iniciou: ' + (data?.erro || error.message), true);
+  aviso('Leitura iniciada. Pode continuar usando o sistema.');
+  setTimeout(carregar, 1500);
+}
+</script>
+</body>
+</html>

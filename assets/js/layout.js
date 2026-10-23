@@ -62,9 +62,12 @@ const MENU = [
     { id: 'advertencias',  nome: 'Documentos e advertências', arquivo: 'pages/rh/documentos.html' },
     { id: 'rh_eventos',    nome: 'Eventos da folha',  arquivo: 'pages/rh/eventos.html' }
   ]},
+  { grupo: 'Integrações', itens: [
+    { id: 'integracoes',   nome: 'Painel de integrações', arquivo: 'pages/config/integracoes.html' },
+    { id: 'canais_venda',  nome: 'Mercado Livre e Shopee', arquivo: 'pages/cadastros/canais-venda.html' }
+  ]},
   { grupo: 'Configurações', itens: [
     { id: 'usuarios',      nome: 'Usuários e acessos', arquivo: 'pages/config/usuarios.html' },
-    { id: 'integracoes',   nome: 'Integrações',        arquivo: null },
     { id: 'auditoria',     nome: 'Auditoria',          arquivo: 'pages/config/auditoria.html' }
   ]}
 ];

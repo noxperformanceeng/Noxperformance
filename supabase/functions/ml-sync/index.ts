@@ -8,6 +8,31 @@ const resp = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo
 Deno.serve(async req => {
   // pré-verificação do navegador: libera os cabeçalhos que o supabase-js enviar
   if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...cors, 'Access-Control-Allow-Headers': req.headers.get('access-control-request-headers') ?? cors['Access-Control-Allow-Headers'], 'Access-Control-Max-Age': '600' } });
+  // Chamada interna (banco/agendamento): completa o envio e a etapa das vendas já guardadas, em lotes
+  const db0 = adminDb();
+  const { data: cfg } = await db0.from('integracao_config').select('valor').eq('chave', 'chave_interna').maybeSingle();
+  if (cfg?.valor && req.headers.get('x-nox-chave') === cfg.valor) {
+    const corpo = await req.json().catch(() => ({}));
+    if (corpo.acao === 'etapas') {
+      const tarefa = (async () => {
+        const inicio = Date.now(); let feitos = 0;
+        const { data: contas } = await db0.from('ml_contas').select('*').eq('situacao', 'ativo');
+        const { data: pend } = await db0.from('ml_pedidos_brutos').select('ml_order_id, canal_id').is('envio', null).not('ordem->shipping->>id', 'is', null).order('ml_order_id', { ascending: false }).limit(400);
+        for (const b of pend ?? []) {
+          if (Date.now() - inicio > 110_000) break;
+          const conta = (contas ?? []).find((c: { canal_id: number }) => c.canal_id === b.canal_id);
+          if (!conta) continue;
+          try { await buscarEGravarVenda(db0, conta as Conta, b.ml_order_id); feitos++; } catch { /* fica para a próxima */ }
+        }
+        if ((pend ?? []).length > feitos && feitos > 0)
+          await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ml-sync`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nox-chave': cfg.valor }, body: JSON.stringify({ acao: 'etapas' }) });
+      })();
+      // @ts-ignore EdgeRuntime existe no Supabase
+      EdgeRuntime.waitUntil(tarefa);
+      return resp({ ok: true });
+    }
+    return resp({ erro: 'Ação desconhecida' });
+  }
   // quem está pedindo (login do sistema)
   const usuario = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } });
   const { data: pode } = await usuario.rpc('pode', { p_modulo: 'canais_venda', p_nivel: 'editar' });

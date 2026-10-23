@@ -19,6 +19,12 @@ Deno.serve(async req => {
         const { data } = await db.from('ml_pedidos_brutos').select('ml_order_id').contains('ordem', { payments: [{ id: Number(String(n.resource).split('/').pop()) }] }).maybeSingle();
         orderId = data ? String(data.ml_order_id) : null;
       }
+      else if (n.topic === 'shipments') {
+        // envio mudou (despachado, entregue, devolvido): acha a venda pelo id do envio
+        const envioId = String(n.resource).split('/').pop();
+        const { data } = await db.from('pedidos_venda').select('numero_externo').eq('canal_id', conta.canal_id).eq('envio_id', envioId).limit(1).maybeSingle();
+        orderId = data?.numero_externo ?? null;
+      }
       if (orderId) await buscarEGravarVenda(db, conta as Conta, orderId);
       await db.from('ml_eventos').update({ processado_em: new Date().toISOString(), erro: orderId ? null : 'sem venda ligada (fica para a sincronização)' }).eq('id', ev!.id);
     } catch (e) {

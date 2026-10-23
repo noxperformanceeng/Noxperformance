@@ -65,10 +65,10 @@ export async function buscarEGravarVenda(db: SupabaseClient, conta: Conta, order
   const token = await tokenValido(db, conta);
   const ordem = await mlGet(token, `/orders/${orderId}`, ML_API, { 'x-format-new': 'true' });
   if (!ordem) return null;
-  let envioCustos = null;
+  let envioCustos = null, envio = null;
   if (ordem.shipping?.id) {
     envioCustos = await mlGet(token, `/shipments/${ordem.shipping.id}/costs`).catch(() => null);
-    const envio = await mlGet(token, `/shipments/${ordem.shipping.id}`, ML_API, { 'x-format-new': 'true' }).catch(() => null);
+    envio = await mlGet(token, `/shipments/${ordem.shipping.id}`, ML_API, { 'x-format-new': 'true' }).catch(() => null);
     if (envio && envioCustos) envioCustos.logistic_type = envio.logistic?.type ?? envio.logistic_type ?? null;
     if (envio && envioCustos) envioCustos.tracking_number = envio.tracking_number ?? null;
   }
@@ -77,10 +77,11 @@ export async function buscarEGravarVenda(db: SupabaseClient, conta: Conta, order
     const det = await mlGet(token, `/v1/payments/${p.id}`, MP_API).catch(() => null);
     pagamentos.push(det ?? p);
   }
-  const { error } = await db.from('ml_pedidos_brutos').upsert({ ml_order_id: ordem.id, canal_id: conta.canal_id, ordem, envio_custos: envioCustos, pagamentos, buscado_em: new Date().toISOString(), processado_em: null });
+  const { error } = await db.from('ml_pedidos_brutos').upsert({ ml_order_id: ordem.id, canal_id: conta.canal_id, ordem, envio_custos: envioCustos, envio, pagamentos, buscado_em: new Date().toISOString(), processado_em: null });
   if (error) throw error;
   const { error: e2 } = await db.rpc('processar_pedido_ml', { p_ml_order_id: ordem.id });
   if (e2) { await db.from('ml_pedidos_brutos').update({ erro: e2.message }).eq('ml_order_id', ordem.id); throw e2; }
+  await db.rpc('ml_atualizar_etapa', { p_ml_order_id: ordem.id });   // etapa do envio (pago, enviado, entregue…)
   if (envioCustos?.tracking_number) await db.from('pedidos_venda').update({ codigo_rastreio: envioCustos.tracking_number }).eq('canal_id', conta.canal_id).eq('numero_externo', String(ordem.id));
   return ordem.id;
 }
