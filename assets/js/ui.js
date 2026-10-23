@@ -142,3 +142,94 @@ function desenharPendencias(lista, atual) {
   return '<span>Pendências</span>' + vis.map(p =>
     `<button class="pend${atual === p.id ? ' ativa' : ''}" data-p="${p.id}"><i class="c-${p.cor}"></i>${esc(p.nome)} <b>${p.n}</b></button>`).join('');
 }
+
+/* ---------- SELEÇÃO INTELIGENTE (todas as listas de escolha do sistema) ----------
+   Qualquer <select> com mais de 6 opções vira uma lista com busca: ao clicar (ou digitar com ele
+   focado) abre uma caixa de busca que filtra por qualquer parte do texto, sem acento, várias palavras.
+   O <select> original continua sendo o valor (as telas leem .value e escutam 'change' como antes).
+   Para não usar num campo específico: <select data-simples>. No celular fica a lista nativa. */
+(function () {
+  if (window.__selecaoInteligente) return; window.__selecaoInteligente = true;
+  const MIN = 7;
+  const toque = () => window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const usar = s => s && s.tagName === 'SELECT' && !s.multiple && !s.disabled && !s.hasAttribute('data-simples') && s.options.length >= MIN && !toque();
+  let aberto = null;
+
+  function fechar(focar) {
+    if (!aberto) return;
+    const { caixa, sel } = aberto; caixa.remove(); aberto = null;
+    if (focar) sel.focus();
+  }
+
+  function abrir(sel, texto = '') {
+    fechar();
+    const caixa = document.createElement('div');
+    caixa.className = 'sel-busca';
+    caixa.innerHTML = '<input type="search" autocomplete="off" placeholder="Digite para filtrar…"><div class="sel-lista" role="listbox"></div>';
+    document.body.appendChild(caixa);
+    const r = sel.getBoundingClientRect();
+    const larg = Math.max(r.width, 260);
+    caixa.style.minWidth = larg + 'px';
+    caixa.style.left = Math.min(r.left + window.scrollX, window.scrollX + document.documentElement.clientWidth - larg - 8) + 'px';
+    caixa.style.top = (r.bottom + window.scrollY + 2) + 'px';
+    const posicionar = () => {   // sem espaço embaixo: abre para cima
+      const h = caixa.offsetHeight;
+      if (r.bottom + h + 4 > window.innerHeight && r.top > window.innerHeight - r.bottom) caixa.style.top = (r.top + window.scrollY - h - 2) + 'px';
+    };
+    const inp = caixa.querySelector('input'), lista = caixa.querySelector('.sel-lista');
+    let itens = [], ativo = 0;
+    const opcoes = [...sel.options].map((o, i) => ({ i, o, grupo: o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : '' }));
+    const desenhar = () => {
+      const b = inp.value;
+      itens = opcoes.filter(x => !x.o.disabled && !x.o.hidden && (!b || combinaBusca(x.o.textContent + ' ' + x.grupo, b)));
+      if (ativo >= itens.length) ativo = Math.max(itens.length - 1, 0);
+      let g = null;
+      lista.innerHTML = itens.length ? itens.map((x, k) => {
+        const cab = x.grupo && x.grupo !== g ? `<div class="sel-grupo">${esc(g = x.grupo)}</div>` : '';
+        return cab + `<div class="sel-item${k === ativo ? ' ativo' : ''}${x.o.selected ? ' marcado' : ''}" data-k="${k}">${esc(x.o.textContent) || '&nbsp;'}</div>`;
+      }).join('') : '<div class="sel-vazio">Nada encontrado</div>';
+      lista.querySelector('.ativo')?.scrollIntoView({ block: 'nearest' });
+    };
+    const escolher = k => {
+      const x = itens[k]; if (!x) return;
+      if (sel.selectedIndex !== x.i) {
+        sel.selectedIndex = x.i;
+        sel.dispatchEvent(new Event('input', { bubbles: true }));
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      fechar(true);
+    };
+    inp.value = texto;
+    ativo = Math.max(0, opcoes.findIndex(x => x.o.selected));
+    desenhar();
+    posicionar();
+    inp.focus();
+    inp.addEventListener('input', () => { ativo = 0; desenhar(); });
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { ativo = Math.min(ativo + 1, itens.length - 1); desenhar(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { ativo = Math.max(ativo - 1, 0); desenhar(); e.preventDefault(); }
+      else if (e.key === 'Enter') { escolher(ativo); e.preventDefault(); }
+      else if (e.key === 'Escape') { fechar(true); e.preventDefault(); e.stopPropagation(); }
+      else if (e.key === 'Tab') fechar();
+    });
+    lista.addEventListener('mousedown', e => { const it = e.target.closest('.sel-item'); if (it) { e.preventDefault(); escolher(+it.dataset.k); } });
+    aberto = { caixa, sel };
+  }
+
+  document.addEventListener('mousedown', e => {
+    if (aberto && !aberto.caixa.contains(e.target)) fechar();
+    const sel = e.target.closest && e.target.closest('select');
+    if (e.button !== 0 || !usar(sel)) return;
+    e.preventDefault();
+    sel.focus();
+    abrir(sel);
+  }, true);
+  document.addEventListener('keydown', e => {
+    const sel = e.target;
+    if (!usar(sel) || aberto) return;
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); abrir(sel, e.key); }
+    else if ((e.key === 'Enter' || e.key === ' ' || (e.altKey && e.key === 'ArrowDown'))) { e.preventDefault(); abrir(sel); }
+  }, true);
+  window.addEventListener('resize', () => fechar());
+  document.addEventListener('scroll', e => { if (aberto && !aberto.caixa.contains(e.target)) fechar(); }, true);
+})();
