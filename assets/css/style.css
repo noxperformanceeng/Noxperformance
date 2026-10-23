@@ -344,3 +344,24 @@ body.menu-recolhido .principal { margin-left: 0; }
 .btn-expandir { display: none; position: fixed; left: 0; top: 50%; z-index: 30; border: 0; background: var(--grafite); color: #fff; padding: 14px 6px; border-radius: 0 8px 8px 0; cursor: pointer; font-size: 14px; box-shadow: 2px 0 8px rgba(0,0,0,.2); }
 body.menu-recolhido .btn-expandir { display: block; }
 @media (max-width: 860px) { .btn-recolher, .btn-expandir { display: none !important; } }
+
+/* Janela de edição compacta (cadastros e títulos) */
+.modal.form { max-width: 980px; padding: 16px 20px 18px; }
+.modal.form .acoes { bottom: -18px; padding: 10px 0 12px; }
+.modal.form h2 { font-size: 16px; margin: 0 0 8px; }
+.modal.form .grade-campos { gap: 0 10px; }
+.modal.form .campo { margin-bottom: 8px; min-width: 0; }
+.modal.form label { font-size: 11.5px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.modal.form input, .modal.form select, .modal.form textarea { padding: 5px 8px; font-size: 13px; border-radius: 6px; }
+.modal.form input[type=checkbox], .modal.form input[type=radio] { padding: 0; }
+.modal.form textarea { min-height: 0; }
+.modal.form .campo .chk { min-height: 30px; }
+.modal.form .secao { margin: 8px 0 6px; padding-top: 8px; font-size: 11px; }
+.modal.form .secao.primeira { margin-top: 0; padding-top: 0; }
+.modal.form .info { font-size: 12px; gap: 2px 16px; }
+.modal.form .ajuda { font-size: 11px; margin-top: 2px; }
+.modal.form table { font-size: 12.5px; }
+.modal.form .btn { padding: 6px 12px; font-size: 13px; }
+.dica { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--linha); color: var(--texto-suave);
+  font-size: 10px; font-weight: 600; cursor: help; margin-left: 3px; vertical-align: 1px; }
+.dica:hover, .dica:focus { background: var(--destaque); color: #fff; outline: none; }

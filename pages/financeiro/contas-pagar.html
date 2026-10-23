@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610231609">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610231611">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -26,11 +26,11 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610231609"></script>
-<script src="../../assets/js/ui.js?v=202610231609"></script>
-<script src="../../assets/js/auth.js?v=202610231609"></script>
-<script src="../../assets/js/layout.js?v=202610231609"></script>
-<script src="../../assets/js/cadastro.js?v=202610231609"></script>
+<script src="../../assets/js/supabase.js?v=202610231611"></script>
+<script src="../../assets/js/ui.js?v=202610231611"></script>
+<script src="../../assets/js/auth.js?v=202610231611"></script>
+<script src="../../assets/js/layout.js?v=202610231611"></script>
+<script src="../../assets/js/cadastro.js?v=202610231611"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -188,26 +188,26 @@ const cfg = {
       listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n;
         return n ? `<span class="texto-curto" title="${esc(n)}">${esc(n)}</span>`
           : (r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : ''); } },
-    { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato', listaHtml: r => r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '' },
-    { id: 'descricao', label: 'Descrição / histórico', col: 3, lista: true, ajuda: 'Nos títulos do Tiny: o histórico de lá.',
+    { id: 'documento', label: 'Documento', col: 2, lista: true, placeholder: 'NF, boleto, guia, contrato', listaHtml: r => r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '' },
+    { id: 'descricao', label: 'Descrição / histórico', col: 2, lista: true, ajuda: 'Nos títulos do Tiny: o histórico de lá.',
       listaHtml: r => r.descricao ? `<span class="texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</span>` : '' },
-    { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
-      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Para dividir em várias categorias, use o rateio abaixo.' },
     { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true },
     { id: 'saldo', label: 'Saldo (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
-    { id: 'data_competencia', label: 'Competência', tipo: 'data', somenteLeitura: true, secao: 'Competência e parcelas', ajuda: 'Automática: igual à data de emissão.' },
+    { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
+      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Para dividir em várias categorias, use o rateio abaixo.' },
     { id: 'parcela', label: 'Parcela', tipo: 'numero' },
     { id: 'parcelas', label: 'de (total de parcelas)', tipo: 'numero' },
-    { id: 'data_programada', label: 'Programado para', tipo: 'data', secao: 'Como vai ser pago' },
+    { id: 'data_programada', label: 'Programado para', tipo: 'data', secao: 'Pagamento e situação' },
     { id: 'conta_bancaria_id', label: 'Conta prevista', tipo: 'select', filtro: true, opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', filtro: true, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
-    { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 4 },
-    { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, secao: 'Situação' },
+    { id: 'valor_pago', label: 'Pago (R$)', tipo: 'moeda', somenteLeitura: true },
+    { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true },
     { id: 'projecao', label: 'Projeção', tipo: 'bool', textoBool: 'Valor estimado (projeção)', ajuda: 'Desmarque quando chegar a conta/boleto real.' },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'aberto' },
-    { id: 'valor_pago', label: 'Pago (R$)', tipo: 'moeda', somenteLeitura: true },
+    { id: 'data_competencia', label: 'Competência', tipo: 'data', somenteLeitura: true, ajuda: 'Automática: igual à data de emissão.' },
+    { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 2 },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 2 },
     { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
-    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 }
   ],
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx;

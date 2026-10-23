@@ -341,7 +341,7 @@ async function montarCadastro(cfg) {
         html += `${aberto ? '</div>' : ''}<div class="secao${aberto ? '' : ' primeira'}">${esc(c.secao)}</div><div class="grade-campos">`;
         secao = c.secao; aberto = true;
       } else if (!aberto) { html += '<div class="grade-campos">'; aberto = true; }
-      html += `<div class="campo l${c.col || 1}" data-campo="${c.id}"><label for="f_${c.id}">${esc(c.label)}${c.obrig ? ' <span class="obrig">*</span>' : ''}</label>${entrada(c, r[c.id], ro || (c.id === 'situacao' && !podeTotal && !novo))}${c.ajuda ? `<div class="ajuda">${esc(c.ajuda)}</div>` : ''}</div>`;
+      html += `<div class="campo l${c.col || 1}" data-campo="${c.id}"><label for="f_${c.id}">${esc(c.label)}${c.obrig ? ' <span class="obrig">*</span>' : ''}${c.ajuda ? ` <span class="dica" title="${esc(c.ajuda)}" tabindex="0">?</span>` : ''}</label>${entrada(c, r[c.id], ro || (c.id === 'situacao' && !podeTotal && !novo))}</div>`;
     }
     html += '</div>';
     const dls = campos.filter(c => c.lista_sugestoes).map(c => `<datalist id="dl_${c.id}">${[...new Set([...(c.lista_sugestoes || []), ...linhas.map(x => x[c.id]).filter(Boolean)])].sort().map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
