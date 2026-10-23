@@ -5,10 +5,14 @@
 // Endereço da raiz do sistema (funciona no GitHub Pages e local)
 const RAIZ = new URL('../../', document.currentScript.src).href;
 
+// Dentro de uma aba da barra de telas (iframe) as trocas de página vão para a janela principal
+const EMBUTIDO = (() => { try { return window.self !== window.top && window.top.location.origin === location.origin; } catch { return false; } })();
+function irTopo(url) { (EMBUTIDO ? window.top : window).location.href = url; }
+
 // Carrega quem está logado + telas liberadas. Sem login → volta para o login.
 async function carregarSessao() {
   const { data: { session } } = await db.auth.getSession();
-  if (!session) { location.href = RAIZ + 'index.html'; return null; }
+  if (!session) { irTopo(RAIZ + 'index.html'); return null; }
 
   const [{ data: usuario }, { data: perms, error }] = await Promise.all([
     db.from('usuarios').select('id, nome, email, perfil_id, ativo, perfis(nome)').eq('id', session.user.id).maybeSingle(),
@@ -19,7 +23,7 @@ async function carregarSessao() {
   if (usuario && !usuario.ativo) {
     await db.auth.signOut();
     alert('Seu acesso está desativado. Fale com o administrador.');
-    location.href = RAIZ + 'index.html';
+    irTopo(RAIZ + 'index.html');
     return null;
   }
 
@@ -36,5 +40,5 @@ async function carregarSessao() {
 
 async function sair() {
   await db.auth.signOut();
-  location.href = RAIZ + 'index.html';
+  irTopo(RAIZ + 'index.html');
 }

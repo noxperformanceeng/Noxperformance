@@ -114,6 +114,12 @@ async function montarCadastro(cfg) {
   cont.querySelectorAll('.filtros select, .filtros input[type=date]').forEach(e => e.addEventListener('change', desenhar));
   ligarPainelFiltros(cont, cfg.tabela, desenhar);
   if (cfg.porEmpresa) window.addEventListener('empresa', desenhar);
+  // Voltou para esta aba: atualiza os dados (sem mexer em filtros) se não houver formulário aberto
+  let ultimaCarga = Date.now();
+  window.addEventListener('aba-ativa', () => {
+    if (document.querySelector('.modal-fundo') || Date.now() - ultimaCarga < 15000) return;
+    ultimaCarga = Date.now(); carregar();
+  });
 
   const colunas = campos.filter(c => c.lista);
   botoesRelatorio('cRel', () => ({
