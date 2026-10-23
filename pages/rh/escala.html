@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escala · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
+  .cal { font-size: 12px; border-collapse: separate; border-spacing: 0; }
+  .cal th, .cal td { padding: 3px 2px; text-align: center; border-bottom: 1px solid var(--linha); min-width: 26px; }
+  .cal th.nome, .cal td.nome { text-align: left; min-width: 190px; position: sticky; left: 0; background: var(--superficie); z-index: 2; padding-left: 8px; }
+  .cal th small { display: block; font-weight: 400; color: var(--texto-suave); font-size: 10px; }
+  .cal th.fds { color: var(--destaque); }
+  .cal td.d { cursor: pointer; font-weight: 500; }
+  .cal td.d:hover { outline: 2px solid var(--destaque); outline-offset: -2px; }
+  .d-trabalho { background: #eef6f0; color: var(--ok); } .d-folga { background: #f3f4f6; color: #9aa0a8; }
+  .d-feriado { background: #fdeceb; color: var(--erro); } .d-compensacao { background: #fff4e5; color: #b45309; }
+  .d-exc { box-shadow: inset 0 -3px 0 var(--destaque); }
+  .semana { display: grid; grid-template-columns: 90px repeat(4, 1fr); gap: 4px 8px; align-items: center; font-size: 13px; }
+  .semana input { padding: 5px 6px; font-size: 13px; }
+  .legenda { display: flex; gap: 12px; font-size: 12px; color: var(--texto-suave); margin: 4px 0 8px; flex-wrap: wrap; }
+  .legenda span { display: inline-flex; gap: 5px; align-items: center; } .legenda i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+  @media print { .cal th.nome, .cal td.nome { position: static; } }
+</style>
+</head>
+<body data-modulo="escala" data-titulo="Escala" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Escala de trabalho
+   - Modelos de escala: horário de cada dia da semana (entrada, saída e volta do intervalo, saída).
+     Cada funcionário segue um modelo (sem modelo = segunda a sexta, 8h).
+   - Calendário do mês: dia a dia por funcionário. Clique no dia para trocar (folga, dia extra,
+     compensação, feriado). A linha "Todos" vale para a empresa inteira (feriados, pontes).
+   - O ponto e o VT usam a escala para saber os dias e horas previstos.
+   ===================================================================== */
+let CTX, MES = lerCompetencia(), aba = 'cal', PODE = false;
+const DIAS = ['', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+const SIGLA = { trabalho: 'T', folga: 'F', feriado: 'FE', compensacao: 'C' };
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  PODE = CTX.pode('escala', 'editar');
+  document.getElementById('conteudo').innerHTML = `
+    <div class="cab-tela"><div><h1>Escala</h1><p class="sub">Dias e horários de trabalho. Base do ponto (horas previstas) e do vale-transporte (dias).</p></div>
+      <div class="acoes-cab"><input type="month" id="mes">${PODE ? '<button class="btn primario" id="bNovo" hidden>+ Novo modelo</button>' : ''}</div></div>
+    <div class="barra-ferr"><div class="abas" id="abas"><button class="aba ativa" data-v="cal">Calendário do mês</button><button class="aba" data-v="mod">Modelos de escala</button></div>
+      <div class="ferr"><input id="busca" class="busca" type="search" placeholder="Buscar funcionário…"><div id="rel"></div></div></div>
+    <div id="area"><p class="vazio">Carregando…</p></div>`;
+  const mes = document.getElementById('mes'); mes.value = MES;
+  mes.onchange = async () => { if (!mes.value) return; MES = mes.value; gravarCompetencia(MES); await carregarEscalas(MES); desenhar(); };
+  document.querySelectorAll('#abas .aba').forEach(b => b.onclick = () => { aba = b.dataset.v; document.querySelectorAll('#abas .aba').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); });
+  document.getElementById('busca').addEventListener('input', desenhar);
+  if (PODE) document.getElementById('bNovo').onclick = () => editarModelo(null);
+  window.addEventListener('empresa', desenhar);
+  botoesRelatorio('rel', () => aba === 'mod'
+    ? { arquivo: 'escalas', colunas: ['Modelo', ...DIAS.slice(1), 'Horas/semana', 'Funcionários'], linhas: ESCALAS.map(e => [e.nome, ...[1, 2, 3, 4, 5, 6, 7].map(d => textoDia(e.dias[d])), horasBR(horasSemana(e) / 60), FUNCS.filter(f => f.escala_id === e.id).length]) }
+    : { arquivo: 'escala_' + MES, colunas: ['Funcionário', 'Escala', ...Array.from({ length: diasNoMes(MES) }, (_, i) => String(i + 1))],
+        linhas: visiveis().map(f => [f.nome, ESCALAS.find(e => e.id === f.escala_id)?.nome || 'Seg a sex (padrão)', ...dias().map(d => SIGLA[diaDaEscala(f, d).tipo])]) });
+  try { await Promise.all([carregarFuncionarios(), carregarEscalas(MES)]); desenhar(); }
+  catch (e) { aviso('Erro ao carregar: ' + (e.message || e), true); }
+})();
+
+const dias = () => Array.from({ length: diasNoMes(MES) }, (_, i) => `${MES}-${String(i + 1).padStart(2, '0')}`);
+const textoDia = h => !h ? 'folga' : [h.e, h.si && h.vi ? `${h.si}–${h.vi}` : null, h.s].filter(Boolean).join(' · ');
+const horasSemana = e => Object.values(e.dias || {}).reduce((s, h) => s + (h.e && h.s ? minutos(h.s) - minutos(h.e) - (h.si && h.vi ? minutos(h.vi) - minutos(h.si) : 0) : 0), 0);
+function visiveis() {
+  const b = document.getElementById('busca').value;
+  return ativosNoMes(MES, CTX.empresa).filter(f => !b || combinaBusca(f.nome + ' ' + (f.setor || ''), b));
+}
+
+function desenhar() {
+  document.getElementById('bNovo')?.toggleAttribute('hidden', aba !== 'mod');
+  const area = document.getElementById('area');
+  if (aba === 'mod') {
+    area.innerHTML = `<div class="cartao tabela-rolagem"><table><thead><tr><th>Modelo</th>${DIAS.slice(1).map(d => `<th>${d}</th>`).join('')}<th class="num">Horas/semana</th><th class="num">Funcionários</th></tr></thead>
+      <tbody>${ESCALAS.map(e => `<tr data-e="${e.id}" style="cursor:pointer" class="${e.situacao === 'inativo' ? 'apagado' : ''}"><td class="forte">${esc(e.nome)}<small class="sub2">${esc(e.descricao || '')}</small></td>
+        ${[1, 2, 3, 4, 5, 6, 7].map(d => `<td><small>${esc(textoDia(e.dias[d]))}</small></td>`).join('')}<td class="num">${horasBR(horasSemana(e) / 60)}</td><td class="num">${FUNCS.filter(f => f.escala_id === e.id && f.situacao !== 'desligado').length}</td></tr>`).join('')
+        || '<tr><td colspan="10" class="vazio">Nenhum modelo.</td></tr>'}</tbody></table></div>
+      <p class="sub" style="margin-top:8px">Sem modelo, o funcionário fica em segunda a sexta, 8 horas por dia. Clique no modelo para alterar horários e escolher quem segue.</p>`;
+    area.querySelectorAll('tr[data-e]').forEach(tr => tr.onclick = () => editarModelo(ESCALAS.find(e => e.id === +tr.dataset.e)));
+    return;
+  }
+  const ds = dias(), fs = visiveis();
+  const cel = (f, d) => { const x = f ? diaDaEscala(f, d) : diaGeral(d);
+    return `<td class="d d-${x.tipo}${x.excecao ? ' d-exc' : ''}" data-f="${f?.id || ''}" data-d="${d}" title="${esc(x.excecao?.observacao || (x.h ? textoDia(x.h) : x.tipo))}">${SIGLA[x.tipo]}</td>`; };
+  area.innerHTML = `<div class="legenda"><span><i class="d-trabalho"></i>T trabalho</span><span><i class="d-folga"></i>F folga</span><span><i class="d-feriado"></i>FE feriado</span><span><i class="d-compensacao"></i>C compensação</span><span><i class="d-exc" style="background:#fff"></i>alterado no dia</span></div>
+    <div class="cartao tabela-rolagem"><table class="cal"><thead><tr><th class="nome">Funcionário</th>${ds.map(d => { const w = diaSemana(d);
+      return `<th class="${w >= 6 ? 'fds' : ''}">${+d.slice(8)}<small>${'SSTQQSSD'[w]}</small></th>`; }).join('')}<th>Dias</th></tr></thead>
+    <tbody><tr><td class="nome forte">Todos (feriados)</td>${ds.map(d => cel(null, d)).join('')}<td></td></tr>
+      ${fs.map(f => `<tr><td class="nome">${esc(f.nome)}<small class="sub2">${esc(ESCALAS.find(e => e.id === f.escala_id)?.nome || 'Seg a sex (padrão)')}</small></td>${ds.map(d => cel(f, d)).join('')}<td class="num">${diasDeTrabalho(f, MES)}</td></tr>`).join('')}</tbody></table></div>`;
+  if (PODE) area.querySelectorAll('td.d').forEach(td => td.onclick = () => editarDia(td.dataset.f ? +td.dataset.f : null, td.dataset.d));
+}
+// Linha "Todos": só mostra exceções gerais (feriado etc.); o resto é dia útil seg-sex
+function diaGeral(d) {
+  const exc = EXCECOES.find(x => x.data === d && !x.funcionario_id && (!CTX.empresa || !x.empresa_id || x.empresa_id === CTX.empresa));
+  return { tipo: exc ? exc.tipo : diaSemana(d) >= 6 ? 'folga' : 'trabalho', excecao: exc };
+}
+
+function editarDia(fid, d) {
+  const f = fid ? funcionario(fid) : null;
+  const exc = EXCECOES.find(x => x.data === d && (fid ? x.funcionario_id === fid : !x.funcionario_id && (!CTX.empresa || x.empresa_id === CTX.empresa || !x.empresa_id)));
+  const padrao = f ? (ESCALAS.find(e => e.id === f.escala_id)?.dias || PADRAO_ESCALA)[diaSemana(d)] : null;
+  const m = abrirModal(`<h2>${dataCurta(d)} · ${DIAS[diaSemana(d)]}</h2>
+    <p class="sub" style="margin:-6px 0 10px">${f ? esc(f.nome) + ' · pela escala: ' + esc(textoDia(padrao)) : 'Todos os funcionários' + (CTX.empresa ? ' da empresa escolhida' : ' (todas as empresas)')}</p>
+    <div class="campo"><label>Neste dia</label><select id="dTipo"><option value="">Seguir a escala</option><option value="folga">Folga</option><option value="trabalho">Trabalho (dia extra / horário diferente)</option>
+      <option value="compensacao">Compensação</option><option value="feriado">Feriado</option></select></div>
+    <div class="semana" id="dHor"><span>Horário</span><input type="time" id="dE" title="Entrada"><input type="time" id="dSi" title="Saída intervalo"><input type="time" id="dVi" title="Volta intervalo"><input type="time" id="dS" title="Saída"></div>
+    <div class="campo" style="margin-top:10px"><label>Observação</label><input id="dObs" placeholder="ex.: feriado municipal, troca de folga com…"></div>
+    <div class="acoes"><button class="btn" id="dFechar">Cancelar</button><button class="btn primario" id="dOk">Salvar</button></div>`);
+  const q = s => m.querySelector(s);
+  q('#dTipo').value = exc?.tipo || ''; q('#dObs').value = exc?.observacao || '';
+  [['dE', 'entrada'], ['dSi', 'saida_intervalo'], ['dVi', 'volta_intervalo'], ['dS', 'saida']].forEach(([i, k]) => q('#' + i).value = exc?.[k]?.slice(0, 5) || '');
+  const hor = () => q('#dHor').style.display = ['trabalho', 'compensacao'].includes(q('#dTipo').value) ? '' : 'none';
+  q('#dTipo').onchange = hor; hor();
+  q('#dFechar').onclick = () => m.remove();
+  q('#dOk').onclick = async () => {
+    const tipo = q('#dTipo').value;
+    let error;
+    if (!tipo) { if (exc) ({ error } = await db.from('rh_escala_excecoes').delete().eq('id', exc.id)); }
+    else {
+      const dados = { funcionario_id: fid, empresa_id: fid ? f.empresa_id : CTX.empresa, data: d, tipo, observacao: q('#dObs').value.trim() || null,
+        entrada: q('#dE').value || null, saida_intervalo: q('#dSi').value || null, volta_intervalo: q('#dVi').value || null, saida: q('#dS').value || null };
+      ({ error } = exc ? await db.from('rh_escala_excecoes').update(dados).eq('id', exc.id) : await db.from('rh_escala_excecoes').insert(dados));
+    }
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    m.remove(); await carregarEscalas(MES); desenhar();
+  };
+}
+
+function editarModelo(e) {
+  const novo = !e; e = e || { nome: '', descricao: '', tolerancia_min: 10, dias: {}, situacao: 'ativo' };
+  const fs = FUNCS.filter(f => f.situacao !== 'desligado' && (!CTX.empresa || f.empresa_id === CTX.empresa));
+  const m = abrirModal(`<h2>${novo ? 'Novo modelo de escala' : esc(e.nome)}</h2>
+    <div class="grade-campos"><div class="campo l2"><label>Nome *</label><input id="mNome" value="${esc(e.nome)}"></div>
+      <div class="campo"><label>Tolerância (min/dia)</label><input id="mTol" inputmode="numeric" value="${e.tolerancia_min}"></div>
+      <div class="campo"><label>Situação</label><select id="mSit"><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></div>
+      <div class="campo l4"><label>Descrição</label><input id="mDesc" value="${esc(e.descricao || '')}"></div></div>
+    <div class="secao">Horários (deixe em branco nos dias de folga)</div>
+    <div class="semana"><span></span><small>Entrada</small><small>Saída intervalo</small><small>Volta intervalo</small><small>Saída</small>
+      ${[1, 2, 3, 4, 5, 6, 7].map(d => `<span>${DIAS[d]}</span>${['e', 'si', 'vi', 's'].map(k => `<input type="time" data-d="${d}" data-k="${k}" value="${esc(e.dias[d]?.[k] || '')}">`).join('')}`).join('')}</div>
+    <p class="sub" id="mHoras" style="margin:8px 0 0"></p>
+    <div class="secao">Quem segue este modelo</div>
+    <div style="max-height:200px;overflow:auto;columns:2;font-size:13px">${fs.map(f => `<label class="chk" style="margin:2px 0"><input type="checkbox" data-func="${f.id}" ${f.escala_id && f.escala_id === e.id ? 'checked' : ''}> ${esc(f.nome)}${f.escala_id && f.escala_id !== e.id ? ` <small style="color:var(--texto-suave)">(${esc(ESCALAS.find(x => x.id === f.escala_id)?.nome || '')})</small>` : ''}</label>`).join('')}</div>
+    <div class="acoes" style="margin-top:16px"><button class="btn" id="mFechar">${PODE ? 'Cancelar' : 'Fechar'}</button>${PODE ? '<button class="btn primario" id="mOk">Salvar</button>' : ''}</div>`);
+  m.querySelector('.modal').classList.add('form');
+  const q = s => m.querySelector(s);
+  q('#mSit').value = e.situacao;
+  const ler = () => { const out = {}; m.querySelectorAll('[data-d]').forEach(i => { if (i.value) (out[i.dataset.d] ||= {})[i.dataset.k] = i.value; }); return out; };
+  const horas = () => q('#mHoras').textContent = 'Total na semana: ' + horasBR(horasSemana({ dias: ler() }) / 60) + ' h';
+  m.querySelectorAll('[data-d]').forEach(i => i.onchange = horas); horas();
+  q('#mFechar').onclick = () => m.remove();
+  if (!PODE) return;
+  q('#mOk').onclick = async () => {
+    const dados = { nome: q('#mNome').value.trim(), descricao: q('#mDesc').value.trim() || null, tolerancia_min: lerNumero(q('#mTol').value) || 0, situacao: q('#mSit').value, dias: ler() };
+    if (!dados.nome) return aviso('Informe o nome', true);
+    for (const [d, h] of Object.entries(dados.dias)) if (!h.e || !h.s) return aviso(`${DIAS[d]}: informe entrada e saída (ou deixe o dia todo em branco)`, true);
+    const r = novo ? await db.from('rh_escalas').insert(dados).select('id').single() : await db.from('rh_escalas').update(dados).eq('id', e.id).select('id').single();
+    if (r.error) return aviso(r.error.code === '23505' ? 'Já existe modelo com este nome' : 'Não salvou: ' + r.error.message, true);
+    const id = r.data.id;
+    const marcar = [...m.querySelectorAll('[data-func]')].filter(c => c.checked && funcionario(c.dataset.func).escala_id !== id).map(c => +c.dataset.func);
+    const tirar = [...m.querySelectorAll('[data-func]')].filter(c => !c.checked && funcionario(c.dataset.func).escala_id === id).map(c => +c.dataset.func);
+    for (const [ids, v] of [[marcar, id], [tirar, null]]) if (ids.length) {
+      const { error } = await db.from('funcionarios').update({ escala_id: v }).in('id', ids);
+      if (error) aviso('Modelo salvo, mas a escala dos funcionários não (precisa poder editar Funcionários): ' + error.message, true);
+    }
+    m.remove(); aviso('Salvo'); await Promise.all([carregarFuncionarios(), carregarEscalas(MES)]); desenhar();
+  };
+}
+</script>
+</body>
+</html>

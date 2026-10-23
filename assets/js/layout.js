@@ -50,12 +50,17 @@ const MENU = [
   ]},
   { grupo: 'RH', itens: [
     { id: 'colaboradores', nome: 'Colaboradores',     arquivo: null },
-    { id: 'lancamentos',   nome: 'Lançamentos',       arquivo: null },
-    { id: 'ponto',         nome: 'Ponto',             arquivo: null },
-    { id: 'escala',        nome: 'Escala',            arquivo: null },
-    { id: 'ferias',        nome: 'Férias',            arquivo: null },
-    { id: 'advertencias',  nome: 'Advertências',      arquivo: null },
-    { id: 'holerites',     nome: 'Holerites',         arquivo: null }
+    { id: 'lancamentos',   nome: 'Lançamentos',       arquivo: 'pages/rh/lancamentos.html' },
+    { id: 'holerites',     nome: 'Holerites',         arquivo: 'pages/rh/holerites.html' },
+    { id: 'adiantamento',  nome: 'Adiantamento salarial', arquivo: 'pages/rh/adiantamento.html' },
+    { id: 'ferias',        nome: 'Férias',            arquivo: 'pages/rh/ferias.html' },
+    { id: 'vale_transporte', nome: 'Vale-transporte', arquivo: 'pages/rh/vale-transporte.html' },
+    { id: 'decimo_terceiro', nome: '13º salário',     arquivo: 'pages/rh/decimo-terceiro.html' },
+    { id: 'escala',        nome: 'Escala',            arquivo: 'pages/rh/escala.html' },
+    { id: 'ponto',         nome: 'Ponto',             arquivo: 'pages/rh/ponto.html' },
+    { id: 'faltas',        nome: 'Faltas',            arquivo: 'pages/rh/faltas.html' },
+    { id: 'advertencias',  nome: 'Documentos e advertências', arquivo: 'pages/rh/documentos.html' },
+    { id: 'rh_eventos',    nome: 'Eventos da folha',  arquivo: 'pages/rh/eventos.html' }
   ]},
   { grupo: 'Configurações', itens: [
     { id: 'usuarios',      nome: 'Usuários e acessos', arquivo: 'pages/config/usuarios.html' },

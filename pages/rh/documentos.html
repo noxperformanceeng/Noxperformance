@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentos e advertências · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="advertencias" data-titulo="Documentos e advertências" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Documentos do funcionário: atestados, advertências, suspensões, exames, declarações…
+   - O arquivo (PDF ou foto) fica no Storage do Supabase, pasta privada "rh-documentos";
+     abre com um link temporário só para quem tem acesso a esta tela.
+   - Atestado e suspensão: dá para lançar os dias direto na tela Faltas.
+   - Advertência e suspensão: botão para imprimir o termo para assinatura.
+   ===================================================================== */
+let CTX = null;
+const TIPOS = [{ v: 'atestado', n: 'Atestado médico' }, { v: 'advertencia', n: 'Advertência' }, { v: 'suspensao', n: 'Suspensão' }, { v: 'exame', n: 'Exame (ASO)' },
+  { v: 'declaracao', n: 'Declaração' }, { v: 'contrato', n: 'Contrato / aditivo' }, { v: 'outro', n: 'Outro' }];
+const cfg = {
+  textoNovo: '+ Novo documento',
+  tabela: 'rh_documentos', modulo: 'advertencias', titulo: 'Documentos e advertências', singular: 'documento', plural: 'documentos',
+  subtitulo: 'Atestados, advertências, suspensões e outros documentos, com o arquivo anexado.',
+  dicaBusca: 'funcionário, descrição…', ordem: 'data', revisao: false, porEmpresa: true,
+  abas: { campo: 'tipo', padrao: '', opcoes: [...TIPOS.slice(0, 4), { v: '', n: 'Todos' }] },
+  periodos: [{ campo: 'data', label: 'Data' }],
+  campos: [
+    campoFuncionario(),
+    { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPOS, obrig: true, padrao: 'atestado', lista: true, filtro: true },
+    { id: 'data', label: 'Data', tipo: 'data', obrig: true, lista: true, padrao: () => hoje() },
+    { id: 'data_fim', label: 'Até', tipo: 'data', ajuda: 'Atestado/suspensão: último dia.' },
+    { id: 'dias', label: 'Dias', tipo: 'numero', lista: true },
+    { id: 'descricao', label: 'Descrição / motivo', col: 3, lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Válido' }, { v: 'cancelado', n: 'Cancelado' }], obrig: true, padrao: 'ativo' },
+    { id: 'observacao', label: 'Observação', tipo: 'textarea', col: 4 }
+  ],
+  colunasExtras: [{ label: 'Arquivo', texto: r => r.arquivo_nome || '', html: r => r.arquivo_path ? `<a class="ext" data-arq="${esc(r.arquivo_path)}">${esc(r.arquivo_nome || 'abrir')}</a>` : '<span class="tg alerta">sem arquivo</span>' }],
+  async carregarExtra(linhas, ctx) { CTX = ctx; await carregarFuncionarios(); return {}; },
+  pendencias: [{ id: 'sem_arq', nome: 'Sem arquivo', cor: 'alerta', teste: r => r.situacao === 'ativo' && !r.arquivo_path }],
+  secaoExtra: r => `<div class="secao">Arquivo</div><div class="info"><div>${r.arquivo_path ? `<a class="ext" data-arq="${esc(r.arquivo_path)}">${esc(r.arquivo_nome)}</a>` : 'Nenhum arquivo anexado.'}</div>
+    ${['advertencia', 'suspensao'].includes(r.tipo) ? `<div><button class="btn fino" type="button" data-termo="${r.id}">Imprimir termo para assinatura</button></div>` : ''}</div>`,
+  aoAbrir(m, r) {
+    const q = s => m.querySelector(s);
+    q('[data-campo="observacao"]').insertAdjacentHTML('beforebegin', `<div class="campo l2"><label>${r.arquivo_path ? 'Trocar o arquivo' : 'Arquivo (PDF ou foto)'}</label><input type="file" id="f_arquivo" accept=".pdf,image/*"></div>
+      <div class="campo l2" id="cxFaltas" ${r.id ? 'hidden' : ''}><label>&nbsp;</label><label class="chk"><input type="checkbox" id="f_lancar_faltas" checked> Lançar os dias na tela Faltas</label></div>`);
+    const tipo = () => { const t = q('#f_tipo').value; q('#cxFaltas').hidden = !!r.id || !['atestado', 'suspensao'].includes(t); };
+    const dias = () => { const a = q('#f_data').value, b = q('#f_data_fim').value; if (a && b && b >= a) q('#f_dias').value = (new Date(b) - new Date(a)) / 864e5 + 1; };
+    const fim = () => { const a = q('#f_data').value, n = lerNumero(q('#f_dias').value); if (a && n) q('#f_data_fim').value = somaDias(a, n - 1); };
+    q('#f_tipo').addEventListener('change', tipo); q('#f_data_fim').addEventListener('change', dias); q('#f_dias').addEventListener('change', fim);
+    tipo();
+    m.querySelector('[data-termo]')?.addEventListener('click', () => termo(r));
+  },
+  validar: d => d.data_fim && d.data_fim < d.data ? '"Até" não pode ser antes da data' : null,
+  async depoisSalvar(id, dados, r, m) {
+    const arq = m.querySelector('#f_arquivo').files[0];
+    if (arq) {
+      if (arq.size > 10 * 1024 * 1024) throw new Error('Arquivo maior que 10 MB');
+      const nome = semAcento(arq.name).replace(/[^a-z0-9._-]+/gi, '_');
+      const path = `${dados.funcionario_id}/${id}/${Date.now()}_${nome}`;
+      const up = await db.storage.from('rh-documentos').upload(path, arq, { contentType: arq.type || undefined });
+      if (up.error) throw up.error;
+      const { error } = await db.from('rh_documentos').update({ arquivo_path: path, arquivo_nome: arq.name, arquivo_tipo: arq.type }).eq('id', id);
+      if (error) throw error;
+    }
+    // Atestado / suspensão novo → um registro por dia na tela Faltas
+    if (!r.id && ['atestado', 'suspensao'].includes(dados.tipo) && m.querySelector('#f_lancar_faltas')?.checked) {
+      const n = dados.dias || (dados.data_fim ? (new Date(dados.data_fim) - new Date(dados.data)) / 864e5 + 1 : 1);
+      const linhas = Array.from({ length: Math.min(n, 60) }, (_, i) => ({ funcionario_id: dados.funcionario_id, data: somaDias(dados.data, i), tipo: dados.tipo,
+        desconta: dados.tipo === 'suspensao', desconta_dsr: false, documento_id: id, observacao: dados.descricao }));
+      const { error } = await db.from('rh_faltas').insert(linhas);
+      if (error) aviso('Documento salvo, mas as faltas não: ' + error.message, true);
+    }
+  },
+  acoesLote: [{ nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
+  apagado: r => r.situacao === 'cancelado'
+};
+
+montarCadastro(cfg);
+
+// Abre o arquivo com link temporário (5 minutos)
+document.addEventListener('click', async e => {
+  const a = e.target.closest('[data-arq]'); if (!a) return;
+  e.preventDefault(); e.stopPropagation();
+  const { data, error } = await db.storage.from('rh-documentos').createSignedUrl(a.dataset.arq, 300);
+  if (error) return aviso('Não abriu o arquivo: ' + error.message, true);
+  window.open(data.signedUrl, '_blank');
+}, true);
+
+function termo(r) {
+  const f = funcionario(r.funcionario_id), emp = CTX.empresas.find(e => e.id === f.empresa_id) || {}, susp = r.tipo === 'suspensao';
+  const w = window.open('', '_blank');
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Termo de ${susp ? 'suspensão' : 'advertência'} · ${esc(f.nome)}</title>
+    <style>body{font-family:Arial,sans-serif;font-size:13px;line-height:1.6;max-width:720px;margin:40px auto;color:#111}h1{font-size:17px;text-align:center;margin-bottom:28px}
+    .ass{display:grid;grid-template-columns:1fr 1fr;gap:48px 40px;margin-top:70px}.ass div{border-top:1px solid #333;text-align:center;padding-top:4px;font-size:12px}</style></head><body>
+    <h1>TERMO DE ${susp ? 'SUSPENSÃO DISCIPLINAR' : 'ADVERTÊNCIA DISCIPLINAR'}</h1>
+    <p><b>Empresa:</b> ${esc(emp.nome || '')} · CNPJ ${esc(fmtDoc(emp.cnpj || ''))}<br><b>Funcionário(a):</b> ${esc(f.nome)}${f.matricula ? ' · Matrícula ' + esc(f.matricula) : ''}<br><b>Cargo:</b> ${esc(f.cargo || '')}</p>
+    <p>Pelo presente, fica V.Sa. ${susp ? `<b>suspenso(a) por ${esc(r.dias || 1)} dia(s)</b>, de ${dataCurta(r.data)} a ${dataCurta(r.data_fim || r.data)}, sem remuneração,` : '<b>advertido(a)</b>'}
+      em razão do seguinte fato ocorrido em ${dataCurta(r.data)}:</p>
+    <p style="border:1px solid #bbb;padding:10px 12px;min-height:60px">${esc(r.descricao || '')}${r.observacao ? '<br>' + esc(r.observacao) : ''}</p>
+    <p>Esclarecemos que a repetição de faltas desta natureza poderá ser considerada ato faltoso, sujeito às penalidades previstas na legislação trabalhista (art. 482 da CLT).</p>
+    <p>_______________________, ${new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}.</p>
+    <div class="ass"><div>${esc(emp.nome || 'Empresa')}</div><div>${esc(f.nome)}<br>(ciente)</div><div>Testemunha 1</div><div>Testemunha 2</div></div>
+    <script>window.onload=()=>window.print()<\/script></body></html>`);
+  w.document.close();
+}
+</script>
+</body>
+</html>

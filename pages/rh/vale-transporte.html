@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vale-transporte · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .modal.largo { max-width: 980px; }
+  .gerar-cab { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; margin: 8px 0 12px; align-items: end; }
+  .gerar-cab label { font-size: 11px; margin-bottom: 2px; }
+  .gerar-cab input { padding: 6px 8px; }
+  td input.v { width: 84px; padding: 4px 6px; text-align: right; }
+</style>
+</head>
+<body data-modulo="vale_transporte" data-titulo="Vale-transporte" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Vale-transporte
+   - Por mês: dias de trabalho (pela escala, menos feriados) − faltas × valor por dia.
+   - Desconto na folha: 6% do salário base, limitado ao valor do VT (evento 217).
+     Reembolso ao funcionário (307) e acerto do mês anterior (308) também saem daqui.
+   - Na tela Lançamentos esses eventos ficam travados.
+   - Valor por dia: cadastro do funcionário (VT por dia) ou VT do mês ÷ dias.
+   ===================================================================== */
+let CTX = null;
+const SIT = [{ v: 'previsto', n: 'Previsto' }, { v: 'entregue', n: 'Entregue / recarregado' }, { v: 'cancelado', n: 'Cancelado' }];
+const cfg = {
+  textoNovo: '+ Novo VT',
+  tabela: 'rh_vale_transporte', modulo: 'vale_transporte', titulo: 'Vale-transporte', singular: 'VT', plural: 'VTs',
+  subtitulo: 'Recarga do mês e desconto de 6% na folha. Na tela Lançamentos o VT fica travado.',
+  dicaBusca: 'funcionário…', ordem: 'competencia', revisao: false, porEmpresa: true,
+  abas: { campo: 'situacao', padrao: '', opcoes: [{ v: 'previsto', n: 'Previstos' }, { v: 'entregue', n: 'Entregues' }, { v: 'cancelado', n: 'Cancelados' }, { v: '', n: 'Todos' }] },
+  periodos: [{ campo: 'competencia', label: 'Competência' }],
+  campos: [
+    campoFuncionario(),
+    { id: 'competencia', label: 'Competência', tipo: 'mes', obrig: true, lista: true, filtro: true, padrao: () => lerCompetencia() + '-01', opcoes: [] },
+    { id: 'dias', label: 'Dias de trabalho', tipo: 'numero', obrig: true, lista: true },
+    { id: 'faltas', label: 'Faltas (dias)', tipo: 'numero', padrao: 0, lista: true },
+    { id: 'valor_dia', label: 'Valor por dia (R$)', tipo: 'moeda', obrig: true, lista: true },
+    { id: 'valor_total', label: 'Valor do VT (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'desconto', label: 'Desconto 6% (R$)', tipo: 'moeda', lista: true, ajuda: 'Em branco = 6% do salário base, até o valor do VT.' },
+    { id: 'reembolso', label: 'Reembolso (R$)', tipo: 'moeda', ajuda: 'Devolvido ao funcionário na folha (307).' },
+    { id: 'desconto_anterior', label: 'Acerto mês anterior (R$)', tipo: 'moeda', ajuda: 'Desconto de VT do mês anterior (308).' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, obrig: true, padrao: 'previsto', lista: true },
+    { id: 'observacao', label: 'Observação', tipo: 'textarea', col: 4 }
+  ],
+  ordenarPor: { competencia: r => r.competencia + (funcionario(r.funcionario_id)?.nome || '') },
+  totais: ['valor_total', 'desconto'],
+  async carregarExtra(linhas, ctx) {
+    CTX = ctx; await carregarFuncionarios();
+    cfg.campos[1].opcoes = [...new Set(linhas.map(r => r.competencia))].sort().reverse().map(v => ({ v, n: mesBR(v) }));
+    return {};
+  },
+  aoAbrir(m, r) {
+    const q = s => m.querySelector(s);
+    const total = () => { const v = ((lerNumero(q('#f_dias').value) || 0) - (lerNumero(q('#f_faltas').value) || 0)) * (lerNumero(q('#f_valor_dia').value) || 0);
+      q('#f_valor_total').value = num2(Math.max(v, 0));
+      const f = funcionario(q('#f_funcionario_id').value); if (f) q('#f_desconto').value = num2(Math.min(Number(f.salario_base || 0) * 0.06, Math.max(v, 0))); };
+    ['dias', 'faltas', 'valor_dia'].forEach(id => q('#f_' + id).addEventListener('change', total));
+    q('#f_funcionario_id').addEventListener('change', () => { const f = funcionario(q('#f_funcionario_id').value);
+      if (f?.vt_valor_dia && !q('#f_valor_dia').value) q('#f_valor_dia').value = num2(f.vt_valor_dia); total(); });
+  },
+  acoesLote: [{ nome: 'Marcar como entregue', dados: { situacao: 'entregue' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
+  apagado: r => r.situacao === 'cancelado',
+  msgDuplicado: 'Este funcionário já tem VT nesta competência'
+};
+
+(async () => {
+  await montarCadastro(cfg);
+  if (!CTX?.pode('vale_transporte', 'editar')) return;
+  const b = document.createElement('button'); b.className = 'btn fino'; b.textContent = 'Gerar VT do mês'; b.style.marginLeft = 'auto';
+  const cab = document.querySelector('.cab-tela'); cab.insertBefore(b, cab.lastElementChild); cab.lastElementChild.style.marginLeft = '6px';
+  b.onclick = gerarMes;
+})();
+
+async function gerarMes() {
+  const m = abrirModal(`<h2>Gerar VT do mês</h2>
+    <p class="sub" style="margin:0 0 6px">Recebe VT quem tem valor por dia (ou VT mensal) no cadastro, ou teve desconto de VT no último holerite. Dias pela escala, menos feriados; faltas da tela Faltas.</p>
+    <div class="gerar-cab"><div><label>Competência</label><input type="month" id="gComp" value="${lerCompetencia()}"></div></div>
+    <div class="tabela-rolagem" style="max-height:52vh"><table class="lista-mini"><thead><tr><th><input type="checkbox" id="gTodos"></th><th>Funcionário</th><th class="num">Dias</th><th class="num">Faltas</th><th class="num">R$/dia</th><th class="num">VT</th><th class="num">Desconto 6%</th></tr></thead><tbody id="gLista"><tr><td colspan="7" class="vazio">Calculando…</td></tr></tbody></table></div>
+    <div id="gTot" style="text-align:right;margin-top:8px;font-size:13px"></div>
+    <div class="acoes" style="margin-top:14px"><button class="btn" id="gFechar">Cancelar</button><button class="btn primario" id="gOk">Gravar VT</button></div>`);
+  m.querySelector('.modal').classList.add('form', 'largo');
+  const q = s => m.querySelector(s);
+  q('#gFechar').onclick = () => m.remove();
+  let linhas = [];
+  const calc = l => { l.total = Math.max(l.dias - l.faltas, 0) * (l.valor_dia || 0); l.desconto = Math.min(Number(l.f.salario_base || 0) * 0.06, l.total); };
+  const desenhar = () => {
+    q('#gLista').innerHTML = linhas.length ? linhas.map((l, i) => `<tr class="${l.ja ? 'apagado' : ''}"><td><input type="checkbox" data-i="${i}" ${l.ok ? 'checked' : ''} ${l.ja ? 'disabled' : ''}></td>
+      <td>${esc(l.f.nome)}${l.ja ? '<small class="sub2">já tem VT neste mês</small>' : !l.valor_dia ? '<small class="sub2">sem valor por dia no cadastro</small>' : ''}</td>
+      ${['dias', 'faltas', 'valor_dia'].map(k => `<td class="num"><input class="v" data-k="${k}" data-l="${i}" inputmode="decimal" value="${l[k] == null ? '' : k === 'valor_dia' ? num2(l[k]) : l[k]}" ${l.ja ? 'disabled' : ''}></td>`).join('')}
+      <td class="num">${num2(l.total)}</td><td class="num">${num2(l.desconto)}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="vazio">Nenhum funcionário ativo.</td></tr>';
+    m.querySelectorAll('[data-i]').forEach(c => c.onchange = () => { linhas[+c.dataset.i].ok = c.checked; tot(); });
+    m.querySelectorAll('[data-k]').forEach(c => c.onchange = () => { const l = linhas[+c.dataset.l]; l[c.dataset.k] = lerNumero(c.value) || 0; calc(l); if (l.valor_dia) l.ok = true; desenhar(); });
+    tot();
+  };
+  const tot = () => { const s = linhas.filter(l => l.ok && !l.ja); q('#gTot').innerHTML = `${s.length} marcado(s) · VT <b>${reais(s.reduce((a, l) => a + l.total, 0))}</b> · desconto <b>${reais(s.reduce((a, l) => a + l.desconto, 0))}</b>`; };
+  const montar = async () => {
+    const comp = q('#gComp').value; if (!comp) return;
+    const [, ult, ja, fal] = await Promise.all([carregarEscalas(comp), ultimosLancamentos('217', comp),
+      db.from('rh_vale_transporte').select('funcionario_id').eq('competencia', comp + '-01').neq('situacao', 'cancelado'),
+      db.from('rh_faltas').select('funcionario_id').gte('data', comp + '-01').lte('data', comp + '-' + diasNoMes(comp)).neq('situacao', 'cancelado').is('horas', null)]);
+    const jaSet = new Set((ja.data || []).map(x => x.funcionario_id));
+    const faltas = {}; (fal.data || []).forEach(x => faltas[x.funcionario_id] = (faltas[x.funcionario_id] || 0) + 1);
+    linhas = ativosNoMes(comp, CTX.empresa).filter(f => f.situacao !== 'afastado').map(f => {
+      const dias = diasDeTrabalho(f, comp);
+      const valor_dia = Number(f.vt_valor_dia) || (Number(f.vale_transporte) && dias ? Math.round(f.vale_transporte / dias * 100) / 100 : null);
+      const l = { f, dias, faltas: faltas[f.id] || 0, valor_dia, ja: jaSet.has(f.id), ok: !jaSet.has(f.id) && !!valor_dia, recebe: !!valor_dia || !!ult[f.id] };
+      calc(l); return l;
+    }).filter(l => l.recebe || l.ja).sort((a, b) => a.f.nome.localeCompare(b.f.nome));
+    desenhar();
+  };
+  q('#gComp').onchange = montar;
+  q('#gTodos').onchange = e => { linhas.forEach(l => { if (!l.ja) l.ok = e.target.checked; }); desenhar(); };
+  q('#gOk').onclick = async () => {
+    const comp = q('#gComp').value, sel = linhas.filter(l => l.ok && !l.ja && l.valor_dia > 0);
+    if (!sel.length) return aviso('Marque ao menos um funcionário com valor por dia', true);
+    q('#gOk').disabled = true;
+    const { error } = await db.from('rh_vale_transporte').insert(sel.map(l => ({ funcionario_id: l.f.id, competencia: comp + '-01', dias: l.dias, faltas: l.faltas, valor_dia: l.valor_dia, situacao: 'previsto' })));
+    if (error) { q('#gOk').disabled = false; return aviso('Não gravou: ' + error.message, true); }
+    gravarCompetencia(comp); m.remove(); aviso(`${sel.length} VT(s) gravado(s)`); cfg.recarregar();
+  };
+  montar();
+}
+</script>
+</body>
+</html>

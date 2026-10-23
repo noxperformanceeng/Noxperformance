@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ponto · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
+  .modal.largo { max-width: 1060px; }
+  .marc { display: inline-block; padding: 1px 6px; margin: 1px 2px; border-radius: 6px; background: var(--fundo); font-variant-numeric: tabular-nums; cursor: default; }
+  .marc.manual { background: #fff4e5; } .marc.fora { text-decoration: line-through; color: #9aa0a8; }
+  .podeeditar .marc { cursor: pointer; } .podeeditar .marc:hover { outline: 1px solid var(--destaque); }
+  tr.fds td { background: #fafafa; }
+  .imp-grade { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px 12px; margin: 10px 0; }
+  .fech { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 8px 12px; align-items: end; margin-top: 10px; }
+  .fech label { font-size: 11px; margin-bottom: 2px; } .fech input { padding: 6px 8px; }
+</style>
+</head>
+<body data-modulo="ponto" data-titulo="Ponto" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Ponto — leitura do relógio
+   - Importa o arquivo do relógio: AFD (Portaria 1510 ou 671, o arquivo fiscal que todo REP gera)
+     ou planilha/CSV com identificador, data e hora. O funcionário é achado pelo PIS, CPF,
+     código no relógio ou matrícula (cadastro de Funcionários). Marcação repetida é ignorada.
+   - Mês a mês: horas previstas (escala) × trabalhadas, horas extras 50% / 100% (folga, domingo, feriado),
+     atrasos, faltas (dia de escala sem marcação) e dias com marcação ímpar.
+   - Marcação esquecida: incluir à mão com motivo. Marcação errada: desconsiderar (não apaga).
+   - "Fechar ponto" grava as horas do mês e manda HE e atrasos para os Lançamentos (150, 9161, 8069).
+     Faltas vão para a tela Faltas, onde são abonadas ou descontadas.
+   ===================================================================== */
+let CTX, MES = lerCompetencia(), MARC = [], FALTAS = [], FECH = {}, PODE = false, RES = [];
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  PODE = CTX.pode('ponto', 'editar');
+  document.getElementById('conteudo').innerHTML = `
+    <div class="cab-tela"><div><h1>Ponto</h1><p class="sub">Leitura do relógio, conferência do mês e envio de horas extras e atrasos para a folha.</p></div>
+      <div class="acoes-cab"><input type="month" id="mes">${PODE ? '<button class="btn fino" id="bFecharTodos">Fechar ponto de todos</button><button class="btn primario" id="bImp">Importar arquivo do relógio</button>' : ''}</div></div>
+    <div class="barra-ferr"><div></div><div class="ferr"><input id="busca" class="busca" type="search" placeholder="Buscar funcionário…"><div id="rel"></div></div></div>
+    <div class="pendencias" id="pend"></div>
+    <div class="barra-lista"><span id="contagem"></span><span class="resumo" id="resumo"></span></div>
+    <div class="cartao tabela-rolagem"><table><thead><tr><th>Funcionário</th><th class="num">Dias c/ marcação</th><th class="num">Previsto</th><th class="num">Trabalhado</th><th class="num">HE 50%</th><th class="num">HE 100%</th><th class="num">Atrasos</th><th class="num">Faltas</th><th>Pendências</th><th>Folha</th></tr></thead>
+      <tbody id="lista"><tr><td colspan="10" class="vazio">Carregando…</td></tr></tbody></table></div>
+    <p class="sub" style="margin-top:8px">Horas em h:mm. Tolerância diária da escala (padrão 10 min) não conta como atraso nem extra.</p>`;
+  const mes = document.getElementById('mes'); mes.value = MES;
+  mes.onchange = () => { if (!mes.value) return; MES = mes.value; gravarCompetencia(MES); carregar(); };
+  document.getElementById('busca').addEventListener('input', desenhar);
+  window.addEventListener('empresa', desenhar);
+  if (PODE) { document.getElementById('bImp').onclick = importar; document.getElementById('bFecharTodos').onclick = fecharTodos; }
+  botoesRelatorio('rel', () => ({ arquivo: 'ponto_' + MES, colunas: ['Funcionário', 'Matrícula', 'Dias com marcação', 'Previsto', 'Trabalhado', 'HE 50%', 'HE 100%', 'Atrasos', 'Faltas', 'Marcações ímpares', 'Fechado'],
+    linhas: RES.map(r => [r.f.nome, r.f.matricula || '', r.diasMarc, horasBR(r.prev / 60), horasBR(r.trab / 60), horasBR(r.he50 / 60), horasBR(r.he100 / 60), horasBR(r.atraso / 60), r.faltas.length, r.impares.length, FECH[r.f.id] ? 'Sim' : 'Não']) }));
+  try { await carregarFuncionarios(); await carregar(); }
+  catch (e) { aviso('Erro ao carregar: ' + (e.message || e), true); }
+})();
+
+async function carregar() {
+  const ini = MES + '-01', fim = MES + '-' + diasNoMes(MES);
+  const [m, fa, fe] = await Promise.all([
+    buscarTodos(() => db.from('rh_marcacoes').select('*').gte('data', ini).lte('data', fim).order('data').order('hora')),
+    db.from('rh_faltas').select('*').gte('data', ini).lte('data', fim).neq('situacao', 'cancelado'),
+    db.from('rh_ponto_fechamentos').select('*').eq('competencia', ini), carregarEscalas(MES)]);
+  MARC = m; FALTAS = fa.data || []; FECH = Object.fromEntries((fe.data || []).map(x => [x.funcionario_id, x]));
+  desenhar();
+}
+
+/* ---------- Cálculo do mês de um funcionário (minutos) ---------- */
+function calcular(f) {
+  const h = hoje(), tol = ESCALAS.find(e => e.id === f.escala_id)?.tolerancia_min ?? 10;
+  const r = { f, dias: [], prev: 0, trab: 0, he50: 0, he100: 0, atraso: 0, faltas: [], impares: [], diasMarc: 0 };
+  for (let i = 1; i <= diasNoMes(MES); i++) {
+    const d = `${MES}-${String(i).padStart(2, '0')}`;
+    if ((f.data_admissao && d < f.data_admissao) || (f.data_demissao && d > f.data_demissao)) continue;
+    const todas = MARC.filter(x => x.funcionario_id === f.id && x.data === d), ms = todas.filter(x => !x.desconsiderada).map(x => minutos(x.hora));
+    const x = diaDaEscala(f, d), prev = x.previstoMin;
+    let trab = 0; for (let k = 0; k + 1 < ms.length; k += 2) trab += ms[k + 1] - ms[k];
+    const dia = { d, x, todas, prev, trab, he50: 0, he100: 0, atraso: 0, oc: [] };
+    if (ms.length) r.diasMarc++;
+    if (ms.length % 2) { dia.oc.push('ímpar'); r.impares.push(d); }
+    const falta = FALTAS.find(y => y.funcionario_id === f.id && y.data === d);
+    if (x.tipo === 'trabalho' || x.tipo === 'compensacao') {
+      if (!ms.length) { if (d < h && f.situacao !== 'afastado') { dia.oc.push(falta ? 'falta registrada (' + falta.tipo + ')' : 'falta'); if (!falta) r.faltas.push(d); } }
+      else { const dif = trab - prev; if (dif > tol) dia.he50 = dif; else if (dif < -tol && !(falta && falta.horas != null)) dia.atraso = -dif; }
+    } else if (trab > 0) {
+      if (x.tipo === 'feriado' || diaSemana(d) === 7) dia.he100 = trab; else dia.he50 = trab;
+    }
+    if (dia.he50) dia.oc.push('extra'); if (dia.he100) dia.oc.push('extra 100%'); if (dia.atraso) dia.oc.push('atraso');
+    r.prev += (x.tipo === 'trabalho' || x.tipo === 'compensacao') && (d < h || ms.length) ? prev : 0;   // dias que ainda não vieram não contam r.trab += trab; r.he50 += dia.he50; r.he100 += dia.he100; r.atraso += dia.atraso;
+    r.dias.push(dia);
+  }
+  return r;
+}
+
+function desenhar() {
+  const b = document.getElementById('busca').value;
+  const ids = new Set([...ativosNoMes(MES, CTX.empresa).map(f => f.id), ...MARC.filter(m => !CTX.empresa || m.empresa_id === CTX.empresa).map(m => m.funcionario_id)]);
+  RES = [...ids].map(funcionario).filter(f => f && (!b || combinaBusca(f.nome, b))).sort((a, c) => a.nome.localeCompare(c.nome)).map(calcular);
+  const semMarc = RES.filter(r => !r.diasMarc).length;
+  document.getElementById('pend').innerHTML = !MARC.length ? '<span class="tg alerta">Nenhuma marcação neste mês: importe o arquivo do relógio</span>'
+    : (semMarc ? `<span class="tg neutro">${semMarc} funcionário(s) sem marcação no mês (confira PIS/CPF/código no relógio no cadastro)</span>` : '');
+  document.getElementById('lista').innerHTML = RES.length ? RES.map(r => { const fe = FECH[r.f.id];
+    return `<tr data-f="${r.f.id}" style="cursor:pointer"><td class="forte">${esc(r.f.nome)}<small class="sub2">${esc(ESCALAS.find(e => e.id === r.f.escala_id)?.nome || 'Seg a sex (padrão)')}</small></td>
+      <td class="num">${r.diasMarc}</td><td class="num">${horasBR(r.prev / 60)}</td><td class="num">${horasBR(r.trab / 60)}</td>
+      <td class="num">${r.he50 ? horasBR(r.he50 / 60) : ''}</td><td class="num">${r.he100 ? horasBR(r.he100 / 60) : ''}</td><td class="num">${r.atraso ? horasBR(r.atraso / 60) : ''}</td><td class="num">${r.faltas.length || ''}</td>
+      <td>${r.impares.length ? `<span class="tg erro">${r.impares.length} dia(s) ímpar</span>` : ''}${r.faltas.length ? `<span class="tg alerta">${r.faltas.length} falta(s) sem registro</span>` : ''}</td>
+      <td>${fe ? `<span class="tg ok">fechado</span><small class="sub2">HE ${horasBR(Number(fe.he50_horas) + Number(fe.he100_horas))} · atraso ${horasBR(fe.atraso_horas)}</small>` : ''}</td></tr>`; }).join('')
+    : '<tr><td colspan="10" class="vazio">Ninguém neste mês.</td></tr>';
+  document.getElementById('contagem').textContent = `${RES.length} funcionário(s) · ${MARC.length} marcação(ões) em ${mesBR(MES)}`;
+  const s = k => horasBR(RES.reduce((a, r) => a + r[k], 0) / 60);
+  document.getElementById('resumo').innerHTML = `<span>HE 50% <b>${s('he50')}</b></span><span>HE 100% <b>${s('he100')}</b></span><span>Atrasos <b>${s('atraso')}</b></span>`;
+  document.querySelectorAll('#lista tr[data-f]').forEach(tr => tr.onclick = () => detalhe(+tr.dataset.f));
+}
+
+/* ---------- Espelho do ponto de um funcionário ---------- */
+function detalhe(fid) {
+  const r = calcular(funcionario(fid)), f = r.f, fe = FECH[fid];
+  const m = abrirModal(`<h2>${esc(f.nome)} · ${mesBR(MES)}</h2>
+    <p class="sub" style="margin:-6px 0 10px">${esc(ESCALAS.find(e => e.id === f.escala_id)?.nome || 'Seg a sex (padrão)')}${PODE ? ' · clique numa marcação para desconsiderar/considerar' : ''}</p>
+    <div class="tabela-rolagem ${PODE ? 'podeeditar' : ''}" style="max-height:50vh"><table class="lista-mini"><thead><tr><th>Dia</th><th>Escala</th><th>Marcações</th><th class="num">Trabalhado</th><th class="num">Extra</th><th class="num">Atraso</th><th>Ocorrência</th>${PODE ? '<th></th>' : ''}</tr></thead>
+    <tbody>${r.dias.map(d => `<tr class="${d.x.tipo !== 'trabalho' ? 'fds' : ''}"><td>${dataCurta(d.d).slice(0, 5)} <small>${['', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'][diaSemana(d.d)]}</small></td>
+      <td><small>${d.x.tipo === 'trabalho' ? horasBR(d.prev / 60) : d.x.tipo}</small></td>
+      <td>${d.todas.map(x => `<span class="marc${x.origem === 'manual' ? ' manual' : ''}${x.desconsiderada ? ' fora' : ''}" data-m="${x.id}" title="${esc(x.motivo || (x.origem === 'manual' ? 'manual' : 'relógio' + (x.nsr ? ' · NSR ' + x.nsr : '')))}">${x.hora.slice(0, 5)}</span>`).join('')}</td>
+      <td class="num">${d.trab ? horasBR(d.trab / 60) : ''}</td><td class="num">${d.he50 || d.he100 ? horasBR((d.he50 + d.he100) / 60) + (d.he100 ? ' (100%)' : '') : ''}</td><td class="num">${d.atraso ? horasBR(d.atraso / 60) : ''}</td>
+      <td>${d.oc.map(o => `<span class="tg ${o === 'falta' || o === 'ímpar' ? 'erro' : o.startsWith('falta') ? 'neutro' : o === 'atraso' ? 'alerta' : 'ok'}">${esc(o)}</span>`).join('')}</td>
+      ${PODE ? `<td><button class="btn discreto fino" data-add="${d.d}" title="Incluir marcação">+</button></td>` : ''}</tr>`).join('')}</tbody></table></div>
+    <div class="tot-hol" style="display:flex;gap:16px;justify-content:flex-end;font-size:13px;margin-top:8px">
+      <span>Previsto <b>${horasBR(r.prev / 60)}</b></span><span>Trabalhado <b>${horasBR(r.trab / 60)}</b></span><span>Saldo <b>${horasBR((r.trab - r.prev) / 60)}</b></span></div>
+    ${PODE ? `<div class="secao">Fechar o ponto do mês (vai para os Lançamentos)</div>
+    <div class="fech"><div><label>HE 50%</label><input id="fHe50" value="${horasBR((fe ? fe.he50_horas * 60 : r.he50) / 60)}"></div>
+      <div><label>HE 100%</label><input id="fHe100" value="${horasBR((fe ? fe.he100_horas * 60 : r.he100) / 60)}"></div>
+      <div><label>Atrasos</label><input id="fAtr" value="${horasBR((fe ? fe.atraso_horas * 60 : r.atraso) / 60)}"></div>
+      <div><label>Observação</label><input id="fObs" value="${esc(fe?.observacao || '')}"></div>
+      <div><button class="btn primario fino" id="fOk">${fe ? 'Atualizar fechamento' : 'Fechar ponto'}</button></div></div>
+    <p class="sub" style="margin:6px 0 0">${fe ? `Fechado em ${dataHoraBR(fe.atualizado_em)}. ` : ''}Valores sugeridos pelo cálculo; ajuste se houver banco de horas ou acordo.</p>` : ''}
+    <div class="acoes" style="margin-top:14px">${PODE && r.faltas.length ? `<button class="btn" id="fFaltas">Registrar ${r.faltas.length} falta(s) na tela Faltas</button>` : ''}${PODE && fe ? '<button class="btn" id="fDesf">Desfazer fechamento</button>' : ''}<button class="btn" id="fFechar">Fechar</button></div>`);
+  m.querySelector('.modal').classList.add('form', 'largo');
+  const q = s => m.querySelector(s);
+  q('#fFechar').onclick = () => m.remove();
+  if (!PODE) return;
+  const reabrir = async () => { m.remove(); await carregar(); detalhe(fid); };
+  m.querySelectorAll('[data-m]').forEach(s => s.onclick = async () => {
+    const x = MARC.find(y => y.id === +s.dataset.m);
+    if (x.origem === 'manual' && !x.desconsiderada && confirm(`Apagar a marcação manual das ${x.hora.slice(0, 5)}?`)) {
+      const { error } = await db.from('rh_marcacoes').delete().eq('id', x.id); if (error) return aviso('Não apagou: ' + error.message, true); return reabrir();
+    }
+    const motivo = x.desconsiderada ? null : prompt(`Desconsiderar a marcação das ${x.hora.slice(0, 5)}? Motivo:`);
+    if (!x.desconsiderada && !motivo) return;
+    const { error } = await db.from('rh_marcacoes').update({ desconsiderada: !x.desconsiderada, motivo }).eq('id', x.id);
+    if (error) return aviso('Não salvou: ' + error.message, true); reabrir();
+  });
+  m.querySelectorAll('[data-add]').forEach(b => b.onclick = async () => {
+    const hora = prompt(`Incluir marcação em ${dataCurta(b.dataset.add)} — hora (hh:mm):`); if (!hora) return;
+    if (!/^\d{1,2}:\d{2}$/.test(hora.trim())) return aviso('Hora inválida (use hh:mm)', true);
+    const motivo = prompt('Motivo (ex.: esqueceu de bater, relógio parado):'); if (!motivo) return aviso('Informe o motivo', true);
+    const { error } = await db.from('rh_marcacoes').insert({ funcionario_id: fid, data: b.dataset.add, hora: hora.trim().padStart(5, '0'), origem: 'manual', motivo });
+    if (error) return aviso(error.code === '23505' ? 'Já existe marcação nesse horário' : 'Não salvou: ' + error.message, true); reabrir();
+  });
+  q('#fOk').onclick = async () => {
+    const h = id => lerHoras(q(id).value) || 0;
+    const { error } = await db.from('rh_ponto_fechamentos').upsert({ funcionario_id: fid, competencia: MES + '-01', horas_previstas: r.prev / 60, horas_trabalhadas: r.trab / 60,
+      he50_horas: h('#fHe50'), he100_horas: h('#fHe100'), atraso_horas: h('#fAtr'), faltas_dias: r.faltas.length, observacao: q('#fObs').value.trim() || null }, { onConflict: 'funcionario_id,competencia' });
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    aviso('Ponto fechado: horas enviadas para os Lançamentos'); m.remove(); carregar();
+  };
+  q('#fDesf')?.addEventListener('click', async () => {
+    if (!confirm('Desfazer o fechamento? As horas extras e atrasos saem dos Lançamentos.')) return;
+    const { error } = await db.from('rh_ponto_fechamentos').delete().eq('id', fe.id);
+    if (error) return aviso('Não desfez: ' + error.message, true); m.remove(); carregar();
+  });
+  q('#fFaltas')?.addEventListener('click', async () => {
+    if (!confirm(`Registrar ${r.faltas.length} falta(s) injustificada(s) (${r.faltas.map(d => dataCurta(d).slice(0, 5)).join(', ')})?\nDepois, na tela Faltas, dá para trocar para atestado/justificada.`)) return;
+    const { error } = await db.from('rh_faltas').insert(r.faltas.map(d => ({ funcionario_id: fid, data: d, tipo: 'injustificada', desconta: true, desconta_dsr: true, observacao: 'Sem marcação no ponto' })));
+    if (error) return aviso('Não salvou: ' + error.message, true); reabrir();
+  });
+}
+
+async function fecharTodos() {
+  const pend = RES.filter(r => r.impares.length);
+  const ok = RES.filter(r => r.diasMarc && !r.impares.length);
+  if (!ok.length) return aviso('Ninguém para fechar (sem marcações ou com marcação ímpar)', true);
+  if (!confirm(`Fechar o ponto de ${ok.length} funcionário(s) em ${mesBR(MES)} com os valores calculados?${pend.length ? `\n\n${pend.length} ficam de fora por terem marcação ímpar: ${pend.map(r => r.f.nome.split(' ')[0]).join(', ')}.` : ''}\nQuem já foi fechado é atualizado.`)) return;
+  const { error } = await db.from('rh_ponto_fechamentos').upsert(ok.map(r => ({ funcionario_id: r.f.id, competencia: MES + '-01', horas_previstas: r.prev / 60, horas_trabalhadas: r.trab / 60,
+    he50_horas: Math.round(r.he50 / 60 * 100) / 100, he100_horas: Math.round(r.he100 / 60 * 100) / 100, atraso_horas: Math.round(r.atraso / 60 * 100) / 100, faltas_dias: r.faltas.length })), { onConflict: 'funcionario_id,competencia' });
+  if (error) return aviso('Não salvou: ' + error.message, true);
+  aviso(`${ok.length} fechamento(s) gravado(s)`); carregar();
+}
+
+/* ---------- Importação do arquivo do relógio ---------- */
+// AFD Portaria 1510: NSR(9) tipo(1)=3 data(ddmmaaaa) hora(hhmm) PIS(12)
+// AFD Portaria 671:  NSR(9) tipo(1)=3 aaaa-mm-ddThh:mm:00-0300 CPF(12) CRC(4)
+// Planilha/CSV: identificador ; data ; hora   (ou identificador ; data hora)
+function lerAFD(txt) {
+  const out = [];
+  txt.split(/\r?\n/).forEach(l => {
+    if (l.length >= 34 && l[9] === '3' && /^\d{9}$/.test(l.slice(0, 9))) {
+      if (l[14] === '-') { const dh = l.slice(10, 34); out.push({ id: l.slice(34, 46).replace(/\D/g, ''), data: dh.slice(0, 10), hora: dh.slice(11, 16), nsr: l.slice(0, 9) }); }
+      else { const d = l.slice(10, 18); out.push({ id: l.slice(22, 34).replace(/\D/g, ''), data: `${d.slice(4, 8)}-${d.slice(2, 4)}-${d.slice(0, 2)}`, hora: `${l.slice(18, 20)}:${l.slice(20, 22)}`, nsr: l.slice(0, 9) }); }
+      return;
+    }
+    const c = l.split(/[;,\t]/).map(x => x.trim().replace(/^"|"$/g, '')); if (c.length < 2) return;
+    const iData = c.findIndex(x => /^\d{1,2}\/\d{1,2}\/\d{2,4}|^\d{4}-\d{2}-\d{2}/.test(x)); if (iData < 0) return;
+    let data = c[iData], hora = (data.match(/(\d{1,2}:\d{2})/) || [])[1] || c.slice(iData + 1).find(x => /^\d{1,2}:\d{2}/.test(x));
+    const id = c.find((x, i) => i !== iData && /^[\w.\-\/]+$/.test(x) && !/:/.test(x) && !/^\d{1,2}\/\d{1,2}\//.test(x));
+    if (!hora || !id) return;
+    const m = data.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    data = m ? `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : data.slice(0, 10);
+    out.push({ id: id.replace(/[.\-\/]/g, ''), data, hora: hora.padStart(5, '0').slice(0, 5), nsr: null });
+  });
+  return out.filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.data) && /^\d{2}:\d{2}$/.test(x.hora));
+}
+// Identificador do relógio → funcionário (PIS, CPF, código no relógio, matrícula; zeros à esquerda não contam)
+function acharFuncionario(id, mapa) {
+  if (mapa[id]) return mapa[id];
+  const z = s => String(s || '').replace(/\D/g, '').replace(/^0+/, ''), alvo = z(id) || id;
+  return FUNCS.find(f => [f.pis, f.cpf, f.codigo_ponto, f.matricula].some(v => v && (z(v) || v) === alvo))?.id || null;
+}
+
+function importar() {
+  const m = abrirModal(`<h2>Importar arquivo do relógio</h2>
+    <p class="sub" style="margin:0 0 8px">AFD (arquivo fiscal do REP, Portaria 1510 ou 671) ou planilha CSV com identificador, data e hora. O funcionário é achado pelo PIS, CPF, código no relógio ou matrícula.</p>
+    <div class="imp-grade"><div><label>Arquivo</label><input type="file" id="iArq" accept=".txt,.afd,.csv,.dat"></div>
+      <div><label>De</label><input type="date" id="iDe" value="${MES}-01"></div><div><label>Até</label><input type="date" id="iAte" value="${MES}-${diasNoMes(MES)}"></div></div>
+    <div id="iRes"></div>
+    <div class="acoes" style="margin-top:14px"><button class="btn" id="iFechar">Fechar</button><button class="btn primario" id="iOk" disabled>Importar</button></div>`);
+  m.querySelector('.modal').classList.add('form', 'largo');
+  const q = s => m.querySelector(s);
+  q('#iFechar').onclick = () => m.remove();
+  let regs = [], mapa = {};
+  const analisar = () => {
+    const de = q('#iDe').value, ate = q('#iAte').value;
+    const no = regs.filter(r => (!de || r.data >= de) && (!ate || r.data <= ate));
+    const porId = {}; no.forEach(r => (porId[r.id] ||= []).push(r));
+    const achados = Object.keys(porId).filter(id => acharFuncionario(id, mapa)), faltam = Object.keys(porId).filter(id => !acharFuncionario(id, mapa));
+    const nMarc = achados.reduce((s, id) => s + porId[id].length, 0);
+    q('#iRes').innerHTML = `<p><b>${regs.length}</b> marcação(ões) no arquivo · <b>${no.length}</b> no período · <b>${nMarc}</b> de ${achados.length} funcionário(s) reconhecido(s).</p>
+      ${faltam.length ? `<div class="secao">Não reconhecidos: escolha o funcionário (o código fica salvo no cadastro)</div>
+        <table class="lista-mini">${faltam.map(id => `<tr><td>${esc(id)}</td><td>${porId[id].length} marcação(ões)</td><td><select data-id="${esc(id)}"><option value="">— ignorar —</option>${FUNCS.filter(f => f.situacao !== 'desligado').map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</select></td></tr>`).join('')}</table>` : ''}`;
+    m.querySelectorAll('[data-id]').forEach(s => s.onchange = () => { if (s.value) mapa[s.dataset.id] = +s.value; else delete mapa[s.dataset.id]; analisar(); });
+    q('#iOk').disabled = !nMarc;
+    return no;
+  };
+  q('#iArq').onchange = async () => {
+    const arq = q('#iArq').files[0]; if (!arq) return;
+    regs = lerAFD(new TextDecoder('latin1').decode(await arq.arrayBuffer()));
+    if (!regs.length) { q('#iRes').innerHTML = '<p class="tg erro">Nenhuma marcação reconhecida no arquivo.</p>'; q('#iOk').disabled = true; return; }
+    analisar();
+  };
+  q('#iDe').onchange = analisar; q('#iAte').onchange = analisar;
+  q('#iOk').onclick = async () => {
+    const no = analisar(), arq = q('#iArq').files[0].name;
+    const linhas = []; const vistos = new Set();
+    no.forEach(r => { const fid = acharFuncionario(r.id, mapa); const k = `${fid}|${r.data}|${r.hora}`;
+      if (fid && !vistos.has(k)) { vistos.add(k); linhas.push({ funcionario_id: fid, data: r.data, hora: r.hora, origem: 'relogio', nsr: r.nsr, arquivo: arq }); } });
+    q('#iOk').disabled = true;
+    for (let i = 0; i < linhas.length; i += 500) {
+      const { error } = await db.from('rh_marcacoes').upsert(linhas.slice(i, i + 500), { onConflict: 'funcionario_id,data,hora', ignoreDuplicates: true });
+      if (error) { q('#iOk').disabled = false; return aviso('Parou na importação: ' + error.message, true); }
+    }
+    for (const [id, fid] of Object.entries(mapa)) {
+      if (!funcionario(fid).codigo_ponto) await db.from('funcionarios').update({ codigo_ponto: id }).eq('id', fid);
+    }
+    m.remove(); aviso(`${linhas.length} marcação(ões) lidas (repetidas ignoradas)`); await carregarFuncionarios(); carregar();
+  };
+}
+</script>
+</body>
+</html>
