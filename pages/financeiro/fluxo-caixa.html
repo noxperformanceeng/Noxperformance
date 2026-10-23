@@ -6,7 +6,7 @@
 <title>Fluxo de caixa · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610231611">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610231624">
 <style>
   .fc-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
   .fc-filtros > div { display: flex; flex-direction: column; }
@@ -26,6 +26,7 @@
   table.fc td.v.zero:hover { background: none; }
   table.fc td.neg { color: var(--erro); }
   table.fc td.prev { font-style: italic; }
+  table.fc td.pc { box-shadow: inset 0 -2px 0 #8b5cf6; }
   tr.sec td { background: #eef0f3 !important; font-weight: 700; text-transform: uppercase; font-size: 11.5px; letter-spacing: .4px; }
   tr.grp td { font-weight: 600; }
   tr.grp td:first-child { cursor: pointer; }
@@ -61,13 +62,13 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610231611"></script>
-<script src="../../assets/js/ui.js?v=202610231611"></script>
-<script src="../../assets/js/auth.js?v=202610231611"></script>
-<script src="../../assets/js/layout.js?v=202610231611"></script>
+<script src="../../assets/js/supabase.js?v=202610231624"></script>
+<script src="../../assets/js/ui.js?v=202610231624"></script>
+<script src="../../assets/js/auth.js?v=202610231624"></script>
+<script src="../../assets/js/layout.js?v=202610231624"></script>
 <script>
 let ctx, CATS = [], dados = null, visao = 'mes', modo = 'ambos', fechados = new Set();
-const ORIG = { rec: 'Recebimento', rec_ajuste: 'Ajuste no recebimento', pag: 'Pagamento', pag_juros: 'Juros/multa pagos', extrato: 'Extrato classificado', prev_rec: 'Previsto a receber', prev_pag: 'Previsto a pagar' };
+const ORIG = { rec: 'Recebimento', rec_ajuste: 'Ajuste no recebimento', pag: 'Pagamento', pag_juros: 'Juros/multa pagos', extrato: 'Extrato classificado', prev_rec: 'Previsto a receber', prev_pag: 'Previsto a pagar', prev_pag_pc: 'Pedido de compra aprovado · aguardando NF' };
 const reais = v => (v < 0 ? '-' : '') + Math.abs(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const iso = d => d.toLocaleDateString('sv-SE');
 
@@ -115,7 +116,7 @@ async function carregar() {
   // contas sem saldo de abertura: o saldo do fluxo soma todo o histórico e fica distorcido
   const sem = (data.contas || []).filter(c => !c.data_saldo && !/a conferir|histórico|NÃO USAR/i.test(c.nome));
   document.getElementById('avisoSaldo').innerHTML = sem.length
-    ? `<span class="tg alerta">Saldo de abertura não informado: ${esc(sem.map(c => c.nome).join(', '))}</span><span>Informe o saldo do extrato numa data em Cadastros › Contas bancárias; o fluxo passa a partir dele.</span>` : '';
+    ? `<span class="tg alerta">Saldo de abertura não informado: ${esc(sem.map(c => c.nome).join(', '))}</span><span>Essas contas entram com saldo zero até você informar o saldo do extrato numa data em <a href="${RAIZ}pages/financeiro/contas-bancarias.html" style="color:var(--destaque)">Financeiro › Contas bancárias</a> (campos Saldo inicial e Data do saldo inicial).</span>` : '';
 }
 
 // colunas do período
@@ -144,17 +145,18 @@ function desenhar() {
   if (!dados) return;
   const cols = colunas(), ls = linhasAtivas();
   // soma por categoria × coluna
-  const soma = {}, temPrev = {};
+  const soma = {}, temPrev = {}, temPc = {};
   ls.forEach(x => { const k = chave(x.d), c = x.c ?? 0;
     soma[c] = soma[c] || {}; soma[c][k] = (soma[c][k] || 0) + Number(x.v);
-    if (x.o.startsWith('prev')) { temPrev[c] = temPrev[c] || {}; temPrev[c][k] = true; } });
+    if (x.o.startsWith('prev')) { temPrev[c] = temPrev[c] || {}; temPrev[c][k] = true; }
+    if (x.o === 'prev_pag_pc') { temPc[c] = temPc[c] || {}; temPc[c][k] = true; } });
   const usadas = Object.keys(soma).map(Number);
   const SEC = [['entrada', 'Entradas'], ['saida', 'Saídas'], ['mov', 'Movimentações (fora do resultado)']];
   const totSec = {};
   let html = `<thead><tr><th>Categoria</th>${cols.map(c => `<th>${esc(c.n)}</th>`).join('')}<th>Total</th></tr></thead><tbody>`;
   const celula = (v, cats, k, prev) => {
-    const z = Math.abs(v) < 0.005;
-    return `<td class="v${z ? ' zero' : ''}${v < 0 ? ' neg' : ''}${prev ? ' prev' : ''}" data-cats="${cats.join(',')}" data-k="${k || ''}">${z ? '–' : reais(v)}</td>`;
+    const z = Math.abs(v) < 0.005, pc = k && cats.some(id => temPc[id]?.[k]);
+    return `<td class="v${z ? ' zero' : ''}${v < 0 ? ' neg' : ''}${prev ? ' prev' : ''}${pc ? ' pc' : ''}"${pc ? ' title="Inclui pedido de compra aprovado aguardando NF"' : ''} data-cats="${cats.join(',')}" data-k="${k || ''}">${z ? '–' : reais(v)}</td>`;
   };
   SEC.forEach(([s, nome]) => {
     const doSec = usadas.filter(id => secao(cat(id)) === s);
