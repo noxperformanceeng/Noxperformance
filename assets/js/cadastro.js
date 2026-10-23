@@ -73,6 +73,12 @@ async function montarCadastro(cfg) {
       default: return v;
     }
   };
+  // Célula da lista: html próprio do campo (listaHtml) ou empresa como etiqueta curta e colorida (NOX 30 / NOX 37)
+  const celula = (c, r) => {
+    if (c.listaHtml) return c.listaHtml(r, extra);
+    if (c.tipo === 'empresa' && r[c.id]) return etiquetaEmpresa(r[c.id], rotulo(c, r[c.id]));
+    return esc(mostrar(c, r[c.id]));
+  };
   const statusRev = r => !cfg.revisao ? null : !r.revisado_em ? { cls: 'neutro', t: 'Não revisado' }
     : new Date(r.atualizado_em) > new Date(r.revisado_em) ? { cls: 'alerta', t: 'Alterado após revisão' } : { cls: 'ok', t: 'Revisado' };
   const PEND = [...(cfg.pendencias || []), ...(cfg.revisao ? [
@@ -85,7 +91,7 @@ async function montarCadastro(cfg) {
   /* ---------- Esqueleto da tela ---------- */
   const filtrosCampo = campos.filter(c => c.filtro);
   cont.innerHTML = `
-    <div class="cab-tela"><div><h1>${esc(cfg.titulo)}</h1><p class="sub">${esc(cfg.subtitulo || '')}</p></div>
+    <div class="cab-tela"><div style="min-width:0"><h1>${esc(cfg.titulo)}</h1><p class="sub uma-linha" title="${esc(cfg.subtitulo || '')}">${esc(cfg.subtitulo || '')}</p></div>
       ${podeEditar ? `<button class="btn primario" id="cNovo">${esc(cfg.textoNovo || '+ Novo ' + cfg.singular)}</button>` : ''}</div>
     <div class="barra-ferr">
       ${cfg.abas ? '<div class="abas" id="cAbas"></div>' : '<div></div>'}
@@ -216,7 +222,7 @@ async function montarCadastro(cfg) {
       const pend = r._pend.filter(p => !p.startsWith('_')).map(p => { const d = PEND.find(x => x.id === p); return `<span class="tg ${d.cor}">${esc(d.nome)}</span>`; }).join('');
       return `<tr data-id="${r.id}" class="${cfg.apagado?.(r) ? 'apagado' : ''}" style="cursor:pointer">
         ${podeEditar ? `<td class="nao-imprimir"><input type="checkbox" class="sel" data-id="${r.id}" ${selecionados.has(r.id) ? 'checked' : ''}></td>` : ''}
-        ${colunas.map((c, i) => `<td class="${i === 0 ? 'forte' : ''}${['moeda', 'numero'].includes(c.tipo) ? ' num' : ''}">${i === 0 && cfg.arvore ? seta(r) : ''}${esc(mostrar(c, r[c.id]))}${i === 0 && cfg.subtituloLinha ? `<small class="sub2">${esc(cfg.subtituloLinha(r, extra) || '')}</small>` : ''}</td>`).join('')}
+        ${colunas.map((c, i) => `<td class="${i === 0 ? 'forte' : ''}${['moeda', 'numero'].includes(c.tipo) ? ' num' : ''}${['data', 'moeda', 'empresa', 'mes'].includes(c.tipo) ? ' nw' : ''}">${i === 0 && cfg.arvore ? seta(r) : ''}${celula(c, r)}${i === 0 && cfg.subtituloLinha && cfg.subtituloLinha(r, extra) ? `<small class="sub2">${esc(cfg.subtituloLinha(r, extra))}</small>` : ''}</td>`).join('')}
         ${(cfg.colunasExtras || []).map(x => `<td>${x.html ? x.html(r, extra) : esc(x.texto(r, extra))}</td>`).join('')}
         ${rv ? `<td class="rev"><span class="tg ${rv.cls}">${rv.t}</span>${rv.cls === 'ok' ? `<small>${dataBR(r.revisado_em)} · ${esc(nomes[r.revisado_por] || '')}</small>` : rv.cls === 'alerta' ? `<small>alterado ${dataBR(r.atualizado_em)} · ${esc(nomes[r.atualizado_por] || '')}</small>` : ''}</td>` : ''}
         <td>${pend}</td></tr>`;

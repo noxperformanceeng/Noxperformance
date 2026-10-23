@@ -6,131 +6,158 @@
 <title>Quarentena das importações · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610231539">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610231559">
 <style>
-  .lote-q { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; padding: 10px 12px; }
+  .filtros-q { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .filtros-q label { font-size: 11px; margin-bottom: 2px; }
+  .filtros-q input, .filtros-q select { padding: 5px 8px; font-size: 12.5px; }
+  .lote-q { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; padding: 8px 12px; }
   .lote-q select, .lote-q input { padding: 6px 8px; max-width: 360px; }
   .lote-q .n { font-size: 13px; color: var(--texto-suave); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td small { display: block; color: var(--texto-suave); font-size: 11.5px; }
-  .grupo-q { cursor: pointer; }
-  .abas .aba b { font-weight: 600; margin-left: 4px; font-variant-numeric: tabular-nums; }
+  td.nw { white-space: nowrap; }
+  .pq { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; margin: 1px 2px 1px 0; white-space: nowrap; background: color-mix(in srgb, var(--erro) 12%, transparent); color: var(--erro); }
+  .pq.ok { background: var(--fundo); color: var(--texto-suave); text-decoration: line-through; }
+  th.ord { cursor: pointer; }
 </style>
 </head>
 <body data-modulo="quarentena" data-titulo="Quarentena das importações" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610231539"></script>
-<script src="../../assets/js/ui.js?v=202610231539"></script>
-<script src="../../assets/js/auth.js?v=202610231539"></script>
-<script src="../../assets/js/layout.js?v=202610231539"></script>
+<script src="../../assets/js/supabase.js?v=202610231559"></script>
+<script src="../../assets/js/ui.js?v=202610231559"></script>
+<script src="../../assets/js/auth.js?v=202610231559"></script>
+<script src="../../assets/js/layout.js?v=202610231559"></script>
 <script>
 /* =====================================================================
-   Quarentena: títulos importados do Tiny com algo a revisar. Eles já estão no Contas a pagar
-   (e no fluxo de caixa), só ficam aqui até alguém corrigir ou marcar como revisado.
-   Os ajustes são em lote (escolha os títulos → aplique) e ficam na auditoria.
+   Quarentena: títulos importados do Tiny com algo a revisar — numa lista só.
+   Cada título mostra suas pendências (coluna); filtre por pendência, situação, período e busca,
+   marque e aplique o ajuste em lote. Os títulos já contam no Contas a pagar e no fluxo de caixa.
    ===================================================================== */
-const MOTIVOS = [
-  { id: 'sem_categoria', nome: 'Sem categoria', acao: 'categoria', dica: 'Escolha a categoria do plano novo e aplique nos marcados.' },
-  { id: 'categoria_antiga', nome: 'Categoria antiga (99)', acao: 'categoria', dica: 'Categorias antigas do Tiny: troque pela categoria do plano novo.' },
-  { id: 'sem_fornecedor', nome: 'Sem fornecedor', acao: 'fornecedor', dica: 'Ligue ao fornecedor cadastrado. Governo, folha e transferências internas: marque como revisado.' },
-  { id: 'conta_a_conferir', nome: 'Conta a conferir', acao: 'conta', dica: 'O Tiny não informou de qual conta saiu o pagamento. Escolha a conta (confira no extrato).' },
-  { id: 'data_suspeita', nome: 'Data suspeita', acao: 'data_pagamento', dica: 'Pagamento com data impossível ou no futuro. Informe a data certa.' }
-];
-let CTX, DADOS = [], CATS = [], FORN = [], CONTAS = [], motivo = 'sem_categoria', marcados = new Set();
+const MOTIVOS = { sem_categoria: 'Sem categoria', categoria_antiga: 'Categoria antiga (99)', sem_fornecedor: 'Sem fornecedor',
+  conta_a_conferir: 'Conta a conferir', data_suspeita: 'Data suspeita' };
+const ACOES = [
+  { v: 'categoria', n: 'Definir categoria' }, { v: 'fornecedor', n: 'Ligar ao fornecedor' },
+  { v: 'conta', n: 'Definir conta do pagamento' }, { v: 'data_pagamento', n: 'Corrigir data do pagamento' },
+  { v: 'revisado', n: 'Marcar pendência como revisada (sem mudar o título)' }];
+let CTX, DADOS = [], CATS = [], FORN = [], CONTAS = [], marcados = new Set(), ordem = { c: 'data_vencimento', asc: true };
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const num2 = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dt = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
+const v = id => document.getElementById(id).value;
 
 (async () => {
   CTX = await iniciarTela(); if (!CTX) return;
   document.getElementById('conteudo').innerHTML = `
-    <div class="cab-tela"><div><h1>Quarentena das importações</h1>
-      <p class="sub">Títulos que vieram do Tiny com algo a revisar. Já contam no Contas a pagar e no fluxo de caixa; aqui você corrige em lote.</p></div></div>
-    <div class="barra-ferr"><div class="abas" id="abas"></div>
-      <div class="ferr"><input id="busca" class="busca" type="search" placeholder="Buscar: fornecedor, categoria do Tiny, descrição…"><div id="rel"></div></div></div>
+    <div class="cab-tela"><div style="min-width:0"><h1>Quarentena das importações</h1>
+      <p class="sub uma-linha" title="Títulos que vieram do Tiny com algo a revisar. Já contam no Contas a pagar e no fluxo de caixa.">Títulos que vieram do Tiny com algo a revisar. Já contam no Contas a pagar e no fluxo de caixa.</p></div>
+      <div id="rel"></div></div>
+    <div class="cartao filtros-q">
+      <div><label>Pendência</label><select id="fMot"><option value="">Todas as pendências</option>${Object.entries(MOTIVOS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></div>
+      <div><label>Mostrar</label><select id="fRev"><option value="pend">Só o que falta revisar</option><option value="todos">Inclusive revisados</option></select></div>
+      <div><label>Situação</label><select id="fSit"><option value="">Todas</option><option value="aberto">Em aberto</option><option value="pago">Pagos</option><option value="cancelado">Cancelados</option></select></div>
+      <div><label>Período por</label><select id="fPer"><option value="data_vencimento">Vencimento</option><option value="data_pagamento">Pagamento</option></select></div>
+      <div><label>De</label><input type="date" id="fDe"></div>
+      <div><label>Até</label><input type="date" id="fAte"></div>
+      <div style="grid-column:span 2"><label>Buscar</label><input id="fBusca" type="search" placeholder="fornecedor, histórico, valor (ex.: 224,97), nº do Tiny…"></div>
+    </div>
     <div class="cartao lote-q" id="lote"></div>
     <div class="barra-lista"><span id="contagem"></span><span class="resumo" id="resumo"></span></div>
     <div class="cartao tabela-rolagem"><table><thead><tr><th style="width:30px"><input type="checkbox" id="todos" title="Marcar todos os da lista"></th>
-      <th>Título</th><th>No Tiny</th><th>Descrição</th><th class="num">Valor</th><th>Vencimento</th><th>Situação</th></tr></thead><tbody id="lista"><tr><td colspan="7" class="vazio">Carregando…</td></tr></tbody></table></div>`;
-  document.getElementById('busca').oninput = () => { marcados.clear(); desenhar(); };
+      <th class="ord" data-o="id">Título</th><th class="ord" data-o="data_vencimento">Vencimento</th><th class="ord" data-o="fornecedor_tiny">Fornecedor (Tiny)</th>
+      <th>Categoria</th><th>Histórico</th><th class="ord num" data-o="valor">Valor</th><th class="ord" data-o="situacao">Situação / pagamento</th><th>Pendências</th></tr></thead>
+      <tbody id="lista"><tr><td colspan="9" class="vazio">Carregando…</td></tr></tbody></table></div>`;
+  ['fMot', 'fRev', 'fSit', 'fPer', 'fDe', 'fAte', 'fBusca'].forEach(id => document.getElementById(id).addEventListener(id === 'fBusca' ? 'input' : 'change', () => { marcados.clear(); desenhar(); }));
   document.getElementById('todos').onchange = e => { visiveis().forEach(r => e.target.checked ? marcados.add(r.id) : marcados.delete(r.id)); desenhar(); };
-  window.addEventListener('empresa', () => { CTX.empresa = lerEmpresa(); marcados.clear(); desenhar(); });
-  botoesRelatorio('rel', () => ({ arquivo: 'quarentena_' + motivo, colunas: ['Título', 'Empresa', 'ID Tiny', 'Fornecedor no Tiny', 'Categoria no Tiny', 'Descrição', 'Valor', 'Vencimento', 'Situação', 'Pagamento'],
-    linhas: visiveis().map(r => [r.id, nomeEmp(r.empresa_id), r.tiny_id, r.fornecedor_tiny, r.categoria_tiny, r.descricao, num2(r.valor), dt(r.data_vencimento), r.situacao, dt(r.data_pagamento)]) }));
+  document.querySelectorAll('th.ord').forEach(th => th.onclick = () => { ordem = { c: th.dataset.o, asc: ordem.c === th.dataset.o ? !ordem.asc : true }; desenhar(); });
+  window.addEventListener('empresa', () => { marcados.clear(); desenhar(); });
+  botoesRelatorio('rel', () => ({ arquivo: 'quarentena', colunas: ['Título', 'Empresa', 'ID Tiny', 'Vencimento', 'Fornecedor no Tiny', 'Categoria no Tiny', 'Categoria atual', 'Histórico', 'Valor', 'Situação', 'Pagamento', 'Conta do pagamento', 'Pendências'],
+    linhas: visiveis().map(r => [r.id, nomeEmp(r.empresa_id), r.tiny_id, dt(r.data_vencimento), r.fornecedor_tiny, r.categoria_tiny, catNome(r.categoria_financeira_id), r.descricao, num2(r.valor), r.situacao, dt(r.data_pagamento), r.conta_pagamento, pendencias(r).join(', ')]) }));
   const [c, f, b] = await Promise.all([
-    db.from('categorias_financeiras').select('id, codigo, nome, tipo, aceita_lancamento, situacao').order('codigo'),
+    db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, situacao').order('codigo'),
     buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj').eq('situacao', 'ativo').order('nome')),
     db.from('contas_bancarias').select('id, empresa_id, descricao, situacao').order('id')]);
-  CATS = (c.data || []).filter(x => x.aceita_lancamento && !String(x.codigo).startsWith('99') && x.situacao !== 'inativo');
-  FORN = f; CONTAS = (b.data || []).filter(x => x.situacao === 'ativo' && !x.descricao.startsWith('Pagamentos Tiny a conferir'));
+  CATS = c.data || []; FORN = f;
+  CONTAS = (b.data || []).filter(x => x.situacao === 'ativo' && !x.descricao.startsWith('Pagamentos Tiny a conferir'));
   carregar();
 })();
 
 const nomeEmp = id => CTX.empresas.find(e => e.id === id)?.nome || id;
-async function carregar() {
-  DADOS = await buscarTodos(() => db.from('quarentena_pagar').select('*').order('data_vencimento'));
-  desenhar();
-}
-const pendente = (r, m) => r[m] && !(r.revisado || []).includes(m);
+const catNome = id => { const c = CATS.find(x => x.id === id); return c ? `${c.codigo} ${c.nome}` : ''; };
+async function carregar() { DADOS = await buscarTodos(() => db.from('quarentena_pagar').select('*').order('data_vencimento')); desenhar(); }
+const pendencias = (r, inclusiveRevisadas = false) => Object.keys(MOTIVOS).filter(m => r[m] && (inclusiveRevisadas || !(r.revisado || []).includes(m)));
+
 function visiveis() {
-  const busca = document.getElementById('busca').value;
-  return DADOS.filter(r => (!CTX.empresa || r.empresa_id === CTX.empresa) && pendente(r, motivo)
-    && (!busca || combinaBusca([r.fornecedor_tiny, r.categoria_tiny, r.descricao, r.documento, r.tiny_id, r.id].join(' '), busca)));
+  const mot = v('fMot'), rev = v('fRev'), sit = v('fSit'), per = v('fPer'), de = v('fDe'), ate = v('fAte'), busca = v('fBusca');
+  const lista = DADOS.filter(r => {
+    if (CTX.empresa && r.empresa_id !== CTX.empresa) return false;
+    const pend = pendencias(r, rev === 'todos');
+    if (!pend.length || (mot && !pend.includes(mot))) return false;
+    if (sit && r.situacao !== sit) return false;
+    const d = r[per]; if ((de || ate) && !d) return false;
+    if (de && d < de) return false; if (ate && d > ate) return false;
+    if (busca && !combinaBusca([r.fornecedor_tiny, r.categoria_tiny, r.descricao, r.documento, r.tiny_id, r.id, num2(r.valor), catNome(r.categoria_financeira_id)].join(' '), busca)) return false;
+    return true;
+  });
+  const k = ordem.c, s = ordem.asc ? 1 : -1;
+  return lista.sort((a, b) => (a[k] ?? '') > (b[k] ?? '') ? s : (a[k] ?? '') < (b[k] ?? '') ? -s : 0);
 }
 
 function desenhar() {
-  const base = DADOS.filter(r => !CTX.empresa || r.empresa_id === CTX.empresa);
-  document.getElementById('abas').innerHTML = MOTIVOS.map(m => `<button class="aba${m.id === motivo ? ' ativa' : ''}" data-m="${m.id}">${m.nome}<b>${base.filter(r => pendente(r, m.id)).length}</b></button>`).join('');
-  document.querySelectorAll('#abas .aba').forEach(b => b.onclick = () => { motivo = b.dataset.m; marcados.clear(); document.getElementById('busca').value = ''; desenhar(); });
-  const vis = visiveis(), M = MOTIVOS.find(m => m.id === motivo);
+  const vis = visiveis();
   [...marcados].forEach(id => { if (!vis.some(r => r.id === id)) marcados.delete(id); });
+  const base = DADOS.filter(r => !CTX.empresa || r.empresa_id === CTX.empresa);
   document.getElementById('contagem').textContent = `${vis.length} título(s)`;
-  document.getElementById('resumo').innerHTML = `<span>Total <b>${reais(vis.reduce((s, r) => s + Number(r.valor), 0))}</b></span>`;
+  document.getElementById('resumo').innerHTML = `<span>Total <b>${reais(vis.reduce((s, r) => s + Number(r.valor), 0))}</b></span>`
+    + Object.entries(MOTIVOS).map(([m, n]) => `<span>${n} <b>${base.filter(r => pendencias(r).includes(m)).length}</b></span>`).join('');
   document.getElementById('todos').checked = vis.length > 0 && vis.every(r => marcados.has(r.id));
   document.getElementById('lista').innerHTML = vis.length ? vis.slice(0, 1500).map(r => `<tr>
       <td><input type="checkbox" data-id="${r.id}" ${marcados.has(r.id) ? 'checked' : ''}></td>
-      <td><a href="contas-pagar.html?abrir=${r.id}">#${r.id}</a><small>${esc(nomeEmp(r.empresa_id))}</small></td>
-      <td>${esc(r.fornecedor_tiny || '—')}<small>${esc(r.categoria_tiny || 'sem categoria')} · Tiny ${esc(r.tiny_id || '')}</small></td>
-      <td>${esc(r.descricao || '')}${r.documento ? `<small>${esc(r.documento)}</small>` : ''}</td>
-      <td class="num">${num2(r.valor)}</td><td>${dt(r.data_vencimento)}</td>
-      <td>${esc(r.situacao)}${r.data_pagamento ? `<small>pago ${dt(r.data_pagamento)}</small>` : ''}</td></tr>`).join('')
-    + (vis.length > 1500 ? `<tr><td colspan="7" class="vazio">Mostrando 1.500 de ${vis.length}. Use a busca para filtrar (ex.: nome do fornecedor) e marcar todos de uma vez.</td></tr>` : '')
-    : '<tr><td colspan="7" class="vazio">Nada pendente aqui. 🎉</td></tr>';
+      <td class="nw"><a href="contas-pagar.html?abrir=${r.id}">#${r.id}</a> ${etiquetaEmpresa(r.empresa_id, nomeEmp(r.empresa_id))}<small>Tiny ${esc(r.tiny_id || '')}</small></td>
+      <td class="nw">${dt(r.data_vencimento)}</td>
+      <td><span class="texto-curto" style="max-width:220px" title="${esc(r.fornecedor_tiny || '')}">${esc(r.fornecedor_tiny || '—')}</span></td>
+      <td><span class="texto-curto" style="max-width:200px" title="${esc(catNome(r.categoria_financeira_id))}">${esc(catNome(r.categoria_financeira_id) || '—')}</span><small>Tiny: ${esc(r.categoria_tiny || 'sem categoria')}</small></td>
+      <td><span class="texto-curto" style="max-width:240px" title="${esc(r.descricao || '')}">${esc(r.descricao || '')}</span>${r.documento ? `<small>${esc(r.documento)}</small>` : ''}</td>
+      <td class="num">${num2(r.valor)}</td>
+      <td class="nw">${esc(r.situacao)}${r.data_pagamento ? `<small>pago ${dt(r.data_pagamento)} · ${esc(r.conta_pagamento || '')}</small>` : ''}</td>
+      <td>${pendencias(r, true).map(m => `<span class="pq${(r.revisado || []).includes(m) ? ' ok' : ''}">${MOTIVOS[m]}</span>`).join('')}</td></tr>`).join('')
+    + (vis.length > 1500 ? `<tr><td colspan="9" class="vazio">Mostrando 1.500 de ${vis.length}. Use os filtros para chegar ao que procura.</td></tr>` : '')
+    : '<tr><td colspan="9" class="vazio">Nada com esses filtros.</td></tr>';
   document.querySelectorAll('[data-id]').forEach(c => c.onchange = () => { c.checked ? marcados.add(+c.dataset.id) : marcados.delete(+c.dataset.id); desenharLote(); });
   desenharLote();
 }
 
 function desenharLote() {
-  const M = MOTIVOS.find(m => m.id === motivo), n = marcados.size, pode = CTX.pode('quarentena', 'editar') && CTX.pode('pagar', 'editar');
+  const n = marcados.size, pode = CTX.pode('quarentena', 'editar') && CTX.pode('pagar', 'editar');
+  const el = document.getElementById('lote');
+  if (!pode) { el.innerHTML = '<span class="n">Só leitura.</span>'; return; }
   const sel = [...marcados].map(id => DADOS.find(r => r.id === id)).filter(Boolean);
-  const empresas = [...new Set(sel.map(r => r.empresa_id))];
-  let campo = '';
-  if (M.acao === 'categoria') campo = `<select id="qVal"><option value="">— categoria —</option>${CATS.map(c => `<option value="${c.id}">${esc(c.codigo)} · ${esc(c.nome)}</option>`).join('')}</select>`;
-  if (M.acao === 'fornecedor') campo = `<input id="qBusca" list="qForn" placeholder="Digite o fornecedor"><datalist id="qForn">${FORN.map(f => `<option value="${esc(f.nome)}${f.cnpj ? ' · ' + esc(f.cnpj) : ''}">`).join('')}</datalist>`;
-  if (M.acao === 'conta') campo = `<select id="qVal"><option value="">— conta —</option>${CONTAS.filter(c => empresas.length === 1 && c.empresa_id === empresas[0]).map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select>`
-    + (empresas.length > 1 ? '<span class="n">Marque títulos de uma empresa só para escolher a conta.</span>' : '');
-  if (M.acao === 'data_pagamento') campo = '<input type="date" id="qVal">';
-  document.getElementById('lote').innerHTML = `<span class="n">${esc(M.dica)}</span><span style="flex-basis:100%"></span>
-    <span class="n"><b>${n}</b> marcado(s)${n ? ' · ' + reais(sel.reduce((s, r) => s + Number(r.valor), 0)) : ''}</span>
-    ${pode ? `${campo}<button class="btn primario fino" id="qAplicar" ${n ? '' : 'disabled'}>Aplicar nos marcados</button>
-      <button class="btn fino" id="qRev" ${n ? '' : 'disabled'} title="Tira da lista sem mudar o título">Marcar como revisado</button>` : '<span class="n">Só leitura.</span>'}`;
-  if (!pode) return;
-  document.getElementById('qAplicar').onclick = async () => {
-    let valor = document.getElementById('qVal')?.value;
-    if (M.acao === 'fornecedor') { const t = document.getElementById('qBusca').value.split(' · ')[0].trim(); valor = FORN.find(f => f.nome === t)?.id; }
-    if (!valor) return aviso('Escolha o valor para aplicar', true);
-    await aplicar(M.acao, String(valor));
+  const acao = el.querySelector('#qAcao')?.value || 'categoria';
+  el.innerHTML = `<span class="n"><b>${n}</b> marcado(s)${n ? ' · ' + reais(sel.reduce((s, r) => s + Number(r.valor), 0)) : ''}</span>
+    <select id="qAcao">${ACOES.map(a => `<option value="${a.v}"${a.v === acao ? ' selected' : ''}>${a.n}</option>`).join('')}</select>
+    <span id="qCampo"></span>
+    <button class="btn primario fino" id="qAplicar" ${n ? '' : 'disabled'}>Aplicar nos marcados</button>`;
+  const campo = () => {
+    const a = el.querySelector('#qAcao').value, emp = [...new Set(sel.map(r => r.empresa_id))];
+    el.querySelector('#qCampo').innerHTML =
+      a === 'categoria' ? `<select id="qVal"><option value="">— categoria —</option>${CATS.filter(c => c.aceita_lancamento && !String(c.codigo).startsWith('99') && c.situacao !== 'inativo').map(c => `<option value="${c.id}">${esc(c.codigo)} · ${esc(c.nome)}</option>`).join('')}</select>`
+      : a === 'fornecedor' ? `<select id="qVal"><option value="">— fornecedor —</option>${FORN.map(f => `<option value="${f.id}">${esc(f.nome)}${f.cnpj ? ' · ' + esc(f.cnpj) : ''}</option>`).join('')}</select>`
+      : a === 'conta' ? (emp.length > 1 ? '<span class="n">Marque títulos de uma empresa só.</span>' : `<select id="qVal"><option value="">— conta —</option>${CONTAS.filter(c => !emp.length || c.empresa_id === emp[0]).map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select>`)
+      : a === 'data_pagamento' ? '<input type="date" id="qVal">'
+      : `<select id="qVal">${Object.entries(MOTIVOS).map(([k, m]) => `<option value="${k}"${k === v('fMot') ? ' selected' : ''}>${m}</option>`).join('')}</select>`;
   };
-  document.getElementById('qRev').onclick = () => aplicar('revisado', motivo);
-}
-
-async function aplicar(campo, valor) {
-  const ids = [...marcados];
-  if (!confirm(`Aplicar em ${ids.length} título(s)?`)) return;
-  const { data, error } = await db.rpc('quarentena_ajustar', { p_titulos: ids, p_campo: campo, p_valor: valor });
-  if (error) return aviso('Não aplicou: ' + error.message, true);
-  aviso(`${data} registro(s) ajustado(s)`); marcados.clear(); carregar();
+  campo();
+  el.querySelector('#qAcao').onchange = campo;
+  el.querySelector('#qAplicar').onclick = async () => {
+    const a = el.querySelector('#qAcao').value, valor = el.querySelector('#qVal')?.value;
+    if (!valor) return aviso('Escolha o valor para aplicar', true);
+    const ids = [...marcados];
+    if (!confirm(`${ACOES.find(x => x.v === a).n}: aplicar em ${ids.length} título(s)?`)) return;
+    const { data, error } = await db.rpc('quarentena_ajustar', { p_titulos: ids, p_campo: a, p_valor: String(valor) });
+    if (error) return aviso('Não aplicou: ' + error.message, true);
+    aviso(`${data} registro(s) ajustado(s)`); marcados.clear(); carregar();
+  };
 }
 </script>
 </body>

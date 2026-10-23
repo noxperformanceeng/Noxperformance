@@ -319,3 +319,28 @@ a.ext::after { content: ' ↗'; font-size: 10px; }
 .sel-busca .sel-item.ativo, .sel-busca .sel-item:hover { background: color-mix(in srgb, var(--destaque) 10%, transparent); }
 .sel-busca .sel-grupo { padding: 6px 9px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-suave); }
 .sel-busca .sel-vazio { padding: 8px 9px; font-size: 13px; color: var(--texto-suave); }
+
+/* Empresa: etiqueta curta e colorida; barra de escolha (Consolidado / por empresa) no topo das telas */
+.tg-emp { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.tg-emp.e1 { background: #e6efff; color: #1d4fb8; }
+.tg-emp.e2 { background: #e9f7ee; color: #1f7a42; }
+.tg-emp.e3 { background: #fff1e0; color: #a35a00; }
+.tg-emp.e0 { background: #f1e8ff; color: #6a2fb8; }
+.empresa-chips { display: flex; align-items: center; gap: 6px; padding: 8px 24px 0; font-size: 12px; color: var(--texto-suave); flex-wrap: wrap; }
+.empresa-chips button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 14px; padding: 4px 12px; font: 500 12.5px var(--fonte); cursor: pointer; color: var(--texto); }
+.empresa-chips button.on { background: var(--texto); color: #fff; border-color: var(--texto); }
+.empresa-chips button.on.e1 { background: #1d4fb8; border-color: #1d4fb8; }
+.empresa-chips button.on.e2 { background: #1f7a42; border-color: #1f7a42; }
+/* Lista mais enxuta: datas, valores e empresa não quebram linha; subtítulo da tela em uma linha */
+.tabela-rolagem td.nw { white-space: nowrap; }
+.cab-tela .sub.uma-linha { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70vw; }
+.texto-curto { display: inline-block; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.sem-cadastro { color: var(--texto-suave); font-style: italic; }
+/* Menu lateral recolhido: a tela usa toda a largura */
+body.menu-recolhido .menu { transform: translateX(-100%); }
+body.menu-recolhido .principal { margin-left: 0; }
+.btn-recolher { position: absolute; top: 14px; right: 8px; border: 0; background: none; color: var(--aco); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.btn-recolher:hover { background: rgba(255,255,255,.08); color: #fff; }
+.btn-expandir { display: none; position: fixed; left: 0; top: 50%; z-index: 30; border: 0; background: var(--grafite); color: #fff; padding: 14px 6px; border-radius: 0 8px 8px 0; cursor: pointer; font-size: 14px; box-shadow: 2px 0 8px rgba(0,0,0,.2); }
+body.menu-recolhido .btn-expandir { display: block; }
+@media (max-width: 860px) { .btn-recolher, .btn-expandir { display: none !important; } }

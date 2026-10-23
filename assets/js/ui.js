@@ -144,13 +144,13 @@ function desenharPendencias(lista, atual) {
 }
 
 /* ---------- SELEÇÃO INTELIGENTE (todas as listas de escolha do sistema) ----------
-   Qualquer <select> com mais de 6 opções vira uma lista com busca: ao clicar (ou digitar com ele
+   Qualquer <select> com 5 opções ou mais vira uma lista com busca: ao clicar (ou digitar com ele
    focado) abre uma caixa de busca que filtra por qualquer parte do texto, sem acento, várias palavras.
    O <select> original continua sendo o valor (as telas leem .value e escutam 'change' como antes).
    Para não usar num campo específico: <select data-simples>. No celular fica a lista nativa. */
 (function () {
   if (window.__selecaoInteligente) return; window.__selecaoInteligente = true;
-  const MIN = 7;
+  const MIN = 5;
   const toque = () => window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   const usar = s => s && s.tagName === 'SELECT' && !s.multiple && !s.disabled && !s.hasAttribute('data-simples') && s.options.length >= MIN && !toque();
   let aberto = null;
@@ -237,3 +237,9 @@ function desenharPendencias(lista, atual) {
     if (e.target === document || e.target.contains?.(aberto.sel)) fechar();
   }, true);
 })();
+
+/* ---------- Empresa como etiqueta (NOX 30 / NOX 37) — mesma cor em todas as telas ---------- */
+function etiquetaEmpresa(id, nome) {
+  const curto = String(nome || id).split('·')[0].trim();
+  return `<span class="tg-emp e${Number(id) % 4}" title="${esc(nome || '')}">${esc(curto)}</span>`;
+}

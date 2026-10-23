@@ -67,12 +67,12 @@ async function rodar(jobId: number, chave: string) {
       const itens = ret.vazio ? [] : (ret[def.lista] ?? []).map((x: Record<string, Record<string, unknown>>) => x[def.item] ?? x);
       if (itens.length) {
         const linhas = itens.map((i: Record<string, unknown>) => ({ empresa_id: job.empresa_id, recurso: job.recurso, tiny_id: String(i.id), resumo: i, lido_em: new Date().toISOString() }));
-        // resumo mudou → detalhe precisa ser lido de novo
+        // resumo mudou → detalhe precisa ser lido de novo e a carga reaplica a mudança no título
         const { data: atuais } = await db.from('tiny_brutos').select('tiny_id, resumo').eq('empresa_id', job.empresa_id).eq('recurso', job.recurso).in('tiny_id', linhas.map((l: { tiny_id: string }) => l.tiny_id));
         const mapa = new Map((atuais ?? []).map((a: { tiny_id: string; resumo: unknown }) => [a.tiny_id, JSON.stringify(a.resumo)]));
         const mudou = linhas.filter((l: { tiny_id: string; resumo: unknown }) => mapa.get(l.tiny_id) !== JSON.stringify(l.resumo));
         if (mudou.length) {
-          const { error } = await db.from('tiny_brutos').upsert(mudou.map((l: Record<string, unknown>) => ({ ...l, detalhe: null, detalhado_em: null })), { onConflict: 'empresa_id,recurso,tiny_id' });
+          const { error } = await db.from('tiny_brutos').upsert(mudou.map((l: Record<string, unknown>) => ({ ...l, detalhe: null, detalhado_em: null, processado_em: null })), { onConflict: 'empresa_id,recurso,tiny_id' });
           if (error) throw new Error('gravar: ' + error.message);
         }
         lidos += itens.length;
@@ -106,6 +106,11 @@ async function rodar(jobId: number, chave: string) {
       }
     }
     await salvar({ situacao: 'ok', detalhados, falhas, params: p, mensagem: `Concluído: ${lidos} lidos, ${detalhados} detalhados, ${falhas} falhas` });
+    // contas a pagar: aplica no sistema o que é novo ou mudou no Tiny
+    if (job.recurso === 'contas_pagar' && p.carregar !== false) {
+      const { data: r, error } = await db.rpc('tiny_carregar_contas_pagar', { p_empresa: job.empresa_id, p_incluir_pessoal: true });
+      await salvar({ mensagem: `Concluído: ${lidos} lidos, ${detalhados} detalhados, ${falhas} falhas · carga: ${error ? error.message : JSON.stringify(r)}`.slice(0, 1000) });
+    }
   } catch (e) {
     await salvar({ situacao: 'erro', pagina, lidos, detalhados, falhas, params: p, mensagem: String((e as Error).message ?? e).slice(0, 500) });
   }

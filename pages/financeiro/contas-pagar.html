@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610231539">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610231559">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -26,11 +26,11 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610231539"></script>
-<script src="../../assets/js/ui.js?v=202610231539"></script>
-<script src="../../assets/js/auth.js?v=202610231539"></script>
-<script src="../../assets/js/layout.js?v=202610231539"></script>
-<script src="../../assets/js/cadastro.js?v=202610231539"></script>
+<script src="../../assets/js/supabase.js?v=202610231559"></script>
+<script src="../../assets/js/ui.js?v=202610231559"></script>
+<script src="../../assets/js/auth.js?v=202610231559"></script>
+<script src="../../assets/js/layout.js?v=202610231559"></script>
+<script src="../../assets/js/cadastro.js?v=202610231559"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -183,9 +183,14 @@ const cfg = {
     { id: 'data_pagamento', label: 'Pagamento', tipo: 'data', somenteLeitura: true, lista: true, ajuda: 'Preenchida ao registrar o pagamento (data do último pagamento).' },
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true,
       opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
-    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN },
-    { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato' },
-    { id: 'descricao', label: 'Descrição', col: 3 },
+    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN,
+      // sem cadastro: mostra o nome que veio do Tiny (ou o colaborador, nos títulos do RH)
+      listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n;
+        return n ? `<span class="texto-curto" title="${esc(n)}">${esc(n)}</span>`
+          : (r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : ''); } },
+    { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato', listaHtml: r => r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '' },
+    { id: 'descricao', label: 'Descrição / histórico', col: 3, lista: true, ajuda: 'Nos títulos do Tiny: o histórico de lá.',
+      listaHtml: r => r.descricao ? `<span class="texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</span>` : '' },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
       opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Para dividir em várias categorias, use o rateio abaixo.' },
     { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true },
@@ -230,8 +235,8 @@ const cfg = {
     { label: 'Prazo', texto: r => textoPrazo(r), html: r => `<span class="prazo p-${faixa(r)}">${textoPrazo(r)}</span>` },
     { label: 'Conta', texto: (r, e) => { const p = (e.pagamentos[r.id] || []).filter(x => !x.estornado); return conta(p.length ? p.at(-1).conta_bancaria_id : r.conta_bancaria_id)?.descricao || ''; } }
   ],
-  textoBuscaExtra: r => `${cat(r.categoria_financeira_id)?.codigo || ''} ${conta(r.conta_bancaria_id)?.descricao || ''} ${r.descricao || ''}`,
-  subtituloLinha: r => [r.projecao ? 'projeção' : '', r.parcela && r.parcelas ? `parcela ${r.parcela}/${r.parcelas}` : '', ORIGENS.find(o => o.v === r.origem)?.n].filter(Boolean).join(' · '),
+  textoBuscaExtra: r => `${cat(r.categoria_financeira_id)?.codigo || ''} ${conta(r.conta_bancaria_id)?.descricao || ''} ${r.descricao || ''} ${r.origem_ref?.fornecedor_tiny || ''} ${r.origem_ref?.categoria_tiny || ''} ${r.origem_ref?.tiny_id || ''} ${Number(r.valor || 0).toFixed(2).replace('.', ',')}`,
+  subtituloLinha: r => [r.projecao ? 'projeção' : '', r.parcela && r.parcelas ? `parcela ${r.parcela}/${r.parcelas}` : ''].filter(Boolean).join(' · '),
   resumo: v => {
     window.__visiveisNox = v;
     const venc = v.filter(vencido);

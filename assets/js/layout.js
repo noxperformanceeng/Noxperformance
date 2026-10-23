@@ -142,6 +142,7 @@ async function iniciarTela() {
   // A barra de cima só aparece no celular (botão ☰): no computador a tela inteira fica para os dados.
   const marca = menuHtml.slice(0, menuHtml.indexOf('</a>') + 4), itens = menuHtml.slice(menuHtml.indexOf('</a>') + 4);
   app.innerHTML = `<nav class="menu" id="menu">
+      <button class="btn-recolher" id="btnRecolher" type="button" title="Ocultar o menu (mais espaço para a tela)">«</button>
       ${marca}
       ${usaEmpresa || ehShell ? `<div class="menu-empresa"${ehShell ? ' hidden' : ''} id="menuEmpresa"><label for="seletorEmpresa">Empresa</label>
         <select id="seletorEmpresa" title="Empresa">
@@ -152,10 +153,16 @@ async function iniciarTela() {
       <div class="menu-usuario"><div><b>${esc(ctx.usuario.nome)}</b><small>${esc(ctx.usuario.perfis?.nome || 'sem perfil')}</small></div>
         <button class="btn-sair" type="button" onclick="sair()">Sair</button></div>
     </nav>
+    <button class="btn-expandir" id="btnExpandir" type="button" title="Mostrar o menu">»</button>
     <div class="principal">
       <header class="topo"><button class="btn-menu" id="btnMenu" aria-label="Abrir menu">☰</button><b>${esc(document.body.dataset.titulo || 'NOX')}</b></header>
     </div>`;
   document.body.prepend(app);
+  // Menu lateral recolhível (lembra a escolha)
+  const recolher = v => { document.body.classList.toggle('menu-recolhido', v); try { localStorage.setItem('nox_menu_recolhido', v ? '1' : ''); } catch {} };
+  try { if (localStorage.getItem('nox_menu_recolhido')) document.body.classList.add('menu-recolhido'); } catch {}
+  document.getElementById('btnRecolher').onclick = () => recolher(true);
+  document.getElementById('btnExpandir').onclick = () => recolher(false);
   // Ícone da aba e cabeçalho que aparece só na impressão dos relatórios
   const icone = document.createElement('link'); icone.rel = 'icon'; icone.href = RAIZ + 'assets/img/favicon.png'; document.head.appendChild(icone);
   const cab = document.createElement('div'); cab.className = 'cabecalho-impressao';
@@ -311,6 +318,11 @@ function montarBarraTelas(ctx, app) {
     const f = [...telas.querySelectorAll('iframe')].find(x => x.contentWindow === e.source);
     const c = f?.parentElement.dataset.caminho;
     if (e.data.nox === 'abrir') return abrir(caminhoTela(e.data.url));
+    if (e.data.nox === 'empresa-escolher') {     // botões de empresa no topo da tela → mesmo efeito do seletor do menu
+      const sel = document.getElementById('seletorEmpresa');
+      if (sel) { sel.value = e.data.valor ? String(e.data.valor) : ''; sel.dispatchEvent(new Event('change')); }
+      return;
+    }
     if (!c) return;
     if (e.data.nox === 'tela') {
       info[c] = { empresa: !!e.data.empresa };
@@ -358,6 +370,18 @@ function montarEmbutido(ctx, usaEmpresa) {
   });
   document.title = (document.body.dataset.titulo || 'NOX') + ' · NOX ERP';
   window.top.postMessage({ nox: 'tela', titulo: document.body.dataset.titulo || '', empresa: usaEmpresa }, location.origin);
+  // Telas com dados das duas empresas: botões Consolidado / NOX 30 / NOX 37 no topo (separação visível)
+  if (usaEmpresa && ctx.empresas.length > 1) {
+    const barra = document.createElement('div'); barra.className = 'empresa-chips nao-imprimir';
+    const desenhar = () => { barra.innerHTML = '<span>Empresa:</span>' + [{ id: null, nome: 'Consolidado' }, ...ctx.empresas].map(e =>
+      `<button type="button" data-emp="${e.id ?? ''}" class="${(e.id ?? null) === (ctx.empresa ?? null) ? 'on' : ''} e${e.id ? e.id % 4 : ''}" title="${esc(e.nome)}">${esc(e.id ? String(e.nome).split('·')[0].trim() : e.nome)}</button>`).join(''); };
+    desenhar();
+    barra.addEventListener('click', ev => { const b = ev.target.closest('[data-emp]'); if (!b) return;
+      const v = b.dataset.emp ? Number(b.dataset.emp) : null;
+      window.top.postMessage({ nox: 'empresa-escolher', valor: v }, location.origin); });
+    window.addEventListener('empresa', desenhar);
+    document.body.insertBefore(barra, document.getElementById('conteudo'));
+  }
   // Se a tela limpar o próprio endereço (history.replaceState), a aba acompanha
   const rs = history.replaceState.bind(history);
   history.replaceState = (...a) => { rs(...a); window.top.postMessage({ nox: 'endereco', url: location.href }, location.origin); };
