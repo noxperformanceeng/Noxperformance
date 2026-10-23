@@ -1,7 +1,8 @@
 /* =====================================================================
    ERP NOX · layout.js — menu lateral e topo de todas as telas
    Para ligar uma tela nova: preencha "arquivo" do item correspondente.
-   Item com arquivo null aparece como "em breve".
+   Item com arquivo null aparece como "em breve" (só para o administrador).
+   exige: 'modulo' → o item só aparece se a pessoa também tiver essa outra tela.
    Os ids precisam ser os mesmos da tabela "modulos" do banco.
    ===================================================================== */
 const MENU = [
@@ -65,7 +66,7 @@ const MENU = [
   ]},
   { grupo: 'Integrações', itens: [
     { id: 'integracoes',   nome: 'Painel de integrações', arquivo: 'pages/config/integracoes.html' },
-    { id: 'canais_venda',  nome: 'Mercado Livre e Shopee', arquivo: 'pages/cadastros/canais-venda.html' }
+    { id: 'canais_venda',  nome: 'Mercado Livre e Shopee', arquivo: 'pages/cadastros/canais-venda.html', exige: 'integracoes' }
   ]},
   { grupo: 'Configurações', itens: [
     { id: 'usuarios',      nome: 'Usuários e acessos', arquivo: 'pages/config/usuarios.html' },
@@ -119,7 +120,9 @@ async function iniciarTela() {
     <a class="item${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html">Início</a>`;
 
   MENU.forEach(g => {
-    const visiveis = g.itens.filter(i => ctx.pode(i.id));
+    // Só o que a pessoa pode abrir: tela liberada no perfil/usuário (e a tela que o item exige, quando houver).
+    // Itens "em breve" (sem tela pronta) só aparecem para o administrador.
+    const visiveis = g.itens.filter(i => ctx.pode(i.id) && (!i.exige || ctx.pode(i.exige)) && (i.arquivo || ctx.admin));
     if (!visiveis.length) return;
     menuHtml += `<div class="grupo${fechados.includes(g.grupo) ? ' fechado' : ''}" data-grupo="${g.grupo}">
       <button class="grupo-titulo" type="button">${g.grupo}</button><div class="grupo-itens">`;

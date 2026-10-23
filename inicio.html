@@ -30,7 +30,7 @@
     const nome = (ctx.usuario.nome || '').split(' ')[0];
     document.getElementById('saudacao').textContent = (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + ', ' + nome;
 
-    const prontos = MENU.flatMap(g => g.itens.map(i => ({ ...i, grupo: g.grupo }))).filter(i => i.arquivo && ctx.pode(i.id));
+    const prontos = MENU.flatMap(g => g.itens.map(i => ({ ...i, grupo: g.grupo }))).filter(i => i.arquivo && ctx.pode(i.id) && (!i.exige || ctx.pode(i.exige)));
     document.getElementById('atalhos').innerHTML = prontos.length
       ? prontos.map(i => `<a class="atalho" href="${RAIZ + i.arquivo}"><b>${i.nome}</b><small>${i.grupo}</small></a>`).join('')
       : '<div class="cartao vazio">Ainda não há telas liberadas para você. Fale com o administrador.</div>';
