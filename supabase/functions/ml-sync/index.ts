@@ -31,6 +31,41 @@ Deno.serve(async req => {
       EdgeRuntime.waitUntil(tarefa);
       return resp({ ok: true });
     }
+    if (corpo.acao === 'buscar_periodo') {
+      // busca vendas de um período longo, semana a semana, continuando sozinho até o fim (pula as já guardadas sem alteração)
+      const tarefa = (async () => {
+        const inicio = Date.now();
+        const { data: conta } = await db0.from('ml_contas').select('*').eq('canal_id', corpo.canal_id).maybeSingle();
+        if (!conta) return;
+        const token = await tokenValido(db0, conta as Conta);
+        let de = new Date(corpo.de + 'T12:00:00Z'); const fim = new Date(corpo.ate + 'T12:00:00Z');
+        let offset = Number(corpo.offset ?? 0);
+        while (de <= fim) {
+          const ate = new Date(Math.min(de.getTime() + 6 * 864e5, fim.getTime()));
+          const d1 = de.toISOString().slice(0, 10), d2 = ate.toISOString().slice(0, 10);
+          const q = `/orders/search?seller=${conta.ml_user_id}&order.date_created.from=${d1}T00:00:00.000-03:00&order.date_created.to=${d2}T23:59:59.999-03:00&sort=date_asc&limit=50&offset=${offset}`;
+          const pag = await mlGet(token, q);
+          const lista = pag?.results ?? [];
+          const ids = lista.map((o: { id: number }) => o.id);
+          const { data: ja } = await db0.from('ml_pedidos_brutos').select('ml_order_id, ordem->>last_updated, processado_em, envio').in('ml_order_id', ids.length ? ids : [0]);
+          const igual = new Set((ja ?? []).filter((x: Record<string, unknown>) => x.processado_em && x.envio).map((x: Record<string, unknown>) => `${x.ml_order_id}|${x.last_updated ?? ''}`));
+          for (const o of lista) {
+            if (Date.now() - inicio > 110_000) {
+              await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ml-sync`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nox-chave': cfg.valor },
+                body: JSON.stringify({ acao: 'buscar_periodo', canal_id: corpo.canal_id, de: d1, ate: corpo.ate, offset }) });
+              return;
+            }
+            if (!igual.has(`${o.id}|${o.last_updated ?? ''}`)) { try { await buscarEGravarVenda(db0, conta as Conta, o.id); } catch { /* segue */ } }
+            offset++;
+          }
+          if (!lista.length || offset >= (pag?.paging?.total ?? 0)) { de = new Date(ate.getTime() + 864e5); offset = 0; }
+        }
+        await db0.from('ml_contas').update({ ultima_sync: new Date().toISOString() }).eq('id', conta.id);
+      })();
+      // @ts-ignore EdgeRuntime existe no Supabase
+      EdgeRuntime.waitUntil(tarefa);
+      return resp({ ok: true });
+    }
     return resp({ erro: 'Ação desconhecida' });
   }
   // quem está pedindo (login do sistema)

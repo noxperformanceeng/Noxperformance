@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Funcionários · NOX ERP</title>
+<title>Colaboradores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../assets/css/style.css">
 </head>
-<body data-modulo="funcionarios" data-titulo="Funcionários" data-empresa="sim">
+<body data-modulo="funcionarios" data-titulo="Colaboradores" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/supabase.js"></script>
@@ -23,10 +23,16 @@ const CONTRATO = [{ v: 'clt', n: 'CLT' }, { v: 'pj', n: 'PJ' }, { v: 'estagio', 
 const SETORES = ['Corte', 'Dobra', 'Solda', 'Polimento / acabamento', 'Montagem', 'Usinagem', 'Pintura', 'Almoxarifado', 'Expedição',
   'Compras', 'Comercial', 'Financeiro', 'RH', 'Engenharia', 'Administração', 'Limpeza / manutenção'];
 let USUARIOS = [], ESCALAS_RH = [];
+// Perfil do login direto no cadastro do colaborador (só o administrador troca)
+document.addEventListener('change', async ev => {
+  const s = ev.target.closest('[data-perfil-func]'); if (!s) return;
+  const { error } = await db.from('usuarios').update({ perfil_id: s.value || null }).eq('id', s.dataset.perfilFunc);
+  aviso(error ? 'Não salvou o perfil: ' + error.message : 'Perfil do login atualizado.', !!error);
+});
 
 montarCadastro({
-  tabela: 'funcionarios', modulo: 'funcionarios', titulo: 'Funcionários', singular: 'funcionário', plural: 'funcionários',
-  subtitulo: 'Cadastro das pessoas, por empresa. Ponto, férias, lançamentos e holerites ficam no RH.',
+  tabela: 'funcionarios', modulo: 'funcionarios', titulo: 'Colaboradores', singular: 'colaborador', plural: 'colaboradores',
+  subtitulo: 'Cadastro das pessoas, por empresa, com o acesso de cada uma ao sistema (perfil e telas). Ponto, férias, lançamentos e holerites ficam nas outras telas do RH.',
   dicaBusca: 'nome, CPF, matrícula, cargo, setor…', ordem: 'nome', revisao: true, porEmpresa: true,
   abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'ferias', n: 'Férias' }, { v: 'afastado', n: 'Afastados' }, { v: 'desligado', n: 'Desligados' }, { v: '', n: 'Todos' }] },
   periodos: [{ campo: 'data_admissao', label: 'Admissão' }, { campo: 'data_demissao', label: 'Desligamento' }, { campo: 'atualizado_em', label: 'Última alteração' }],
@@ -95,19 +101,24 @@ montarCadastro({
     // Acesso ao sistema (telas e ações) — só para quem cuida de usuários
     if (!ctx.pode('usuarios')) return { acesso: null };
     const r = await Promise.all([db.from('usuarios').select('id, perfil_id, ativo, perfis(nome)'), db.from('permissoes_usuario').select('usuario_id, modulo_id, nivel'),
-      db.from('usuario_acoes').select('usuario_id, acao_id, permitido'), db.from('acoes').select('id, nome'), db.from('modulos').select('id, nome')]);
-    const [us, aj, ua, ac, mo] = r.map(x => x.error ? [] : x.data || []);
-    return { acesso: { us, aj, ua, ac, mo } };
+      db.from('usuario_acoes').select('usuario_id, acao_id, permitido'), db.from('acoes').select('id, nome'), db.from('modulos').select('id, nome'),
+      db.from('perfis').select('id, nome').order('nome')]);
+    const [us, aj, ua, ac, mo, pf] = r.map(x => x.error ? [] : x.data || []);
+    return { acesso: { us, aj, ua, ac, mo, pf, admin: ctx.admin } };
   },
   secaoExtra: (r, e) => {
-    if (!e.acesso || !r.usuario_id) return '';
+    if (!e.acesso) return '';
+    if (!r.usuario_id) return `<div class="secao">Telas e ações no sistema</div><div class="info">
+      <div>Sem login ligado. Para dar acesso: convide o e-mail da pessoa no Supabase (Authentication → Invite), depois escolha o login acima em <b>Usuário do sistema</b> e o perfil aqui.</div></div>`;
     const u = e.acesso.us.find(x => x.id === r.usuario_id); if (!u) return '';
     const nome = id => e.acesso.mo.find(m => m.id === id)?.nome || id;
     const mais = e.acesso.aj.filter(x => x.usuario_id === u.id && x.nivel !== 'nenhum').map(x => nome(x.modulo_id));
     const menos = e.acesso.aj.filter(x => x.usuario_id === u.id && x.nivel === 'nenhum').map(x => nome(x.modulo_id));
     const acoes = e.acesso.ua.filter(x => x.usuario_id === u.id && x.permitido).map(x => e.acesso.ac.find(a => a.id === x.acao_id)?.nome).filter(Boolean);
     return `<div class="secao">Telas e ações no sistema</div><div class="info">
-      <div>Perfil: <b>${esc(u.perfis?.nome || 'sem perfil')}</b>${u.ativo ? '' : ' · <b>login inativo</b>'}</div>
+      <div>Perfil: ${e.acesso.admin && e.acesso.pf.length
+        ? `<select data-perfil-func="${esc(u.id)}" style="max-width:260px"><option value="">— sem perfil —</option>${e.acesso.pf.map(p => `<option value="${esc(p.id)}"${p.id === u.perfil_id ? ' selected' : ''}>${esc(p.nome)}</option>`).join('')}</select>`
+        : `<b>${esc(u.perfis?.nome || 'sem perfil')}</b>`}${u.ativo ? '' : ' · <b>login inativo</b>'}</div>
       <div>Telas a mais: <b>${esc(mais.join(', ') || '—')}</b></div>
       <div>Telas bloqueadas: <b>${esc(menos.join(', ') || '—')}</b></div>
       <div>Ações liberadas: <b>${esc(u.perfil_id === 'admin' ? 'todas (gestor)' : acoes.join(', ') || 'só as do perfil')}</b></div>

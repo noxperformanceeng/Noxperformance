@@ -9,7 +9,6 @@ const MENU = [
     { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
     { id: 'clientes',      nome: 'Clientes',          arquivo: 'pages/cadastros/clientes.html' },
     { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
-    { id: 'funcionarios',  nome: 'Funcionários',      arquivo: 'pages/cadastros/funcionarios.html' },
     { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' },
     { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' },
     { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html' },
@@ -49,7 +48,7 @@ const MENU = [
     { id: 'notas',         nome: 'Notas fiscais',     arquivo: null }
   ]},
   { grupo: 'RH', itens: [
-    { id: 'colaboradores', nome: 'Colaboradores',     arquivo: null },
+    { id: 'funcionarios',  nome: 'Colaboradores',     arquivo: 'pages/cadastros/funcionarios.html' },
     { id: 'lancamentos',   nome: 'Lançamentos',       arquivo: 'pages/rh/lancamentos.html' },
     { id: 'holerites',     nome: 'Holerites',         arquivo: 'pages/rh/holerites.html' },
     { id: 'adiantamento',  nome: 'Adiantamento salarial', arquivo: 'pages/rh/adiantamento.html' },
