@@ -41,7 +41,9 @@ const dataCurta = v => v ? String(v).slice(0, 10).split('-').reverse().join('/')
 async function montarCadastro(cfg) {
   const ctx = await iniciarTela();
   if (!ctx) return;
-  const podeEditar = ctx.pode(cfg.modulo, 'editar');
+  const podeCriar = ctx.pode(cfg.modulo, 'criar'), podeAlterar = ctx.pode(cfg.modulo, 'alterar'), podeTotal = ctx.pode(cfg.modulo, 'total');
+  const podeEditar = podeAlterar;   // seleção em lote e edição de existentes
+  const INATIVA = /inativ|reativ|exclu|cancel|deslig/i;
   const campos = cfg.campos;
   const C = Object.fromEntries(campos.map(c => [c.id, c]));
   const cont = document.getElementById('conteudo');
@@ -92,7 +94,7 @@ async function montarCadastro(cfg) {
   const filtrosCampo = campos.filter(c => c.filtro);
   cont.innerHTML = `
     <div class="cab-tela"><div style="min-width:0"><h1>${esc(cfg.titulo)}</h1><p class="sub uma-linha" title="${esc(cfg.subtitulo || '')}">${esc(cfg.subtitulo || '')}</p></div>
-      ${podeEditar ? `<button class="btn primario" id="cNovo">${esc(cfg.textoNovo || '+ Novo ' + cfg.singular)}</button>` : ''}</div>
+      ${podeCriar ? `<button class="btn primario" id="cNovo">${esc(cfg.textoNovo || '+ Novo ' + cfg.singular)}</button>` : ''}</div>
     <div class="barra-ferr">
       ${cfg.abas ? '<div class="abas" id="cAbas"></div>' : '<div></div>'}
       <div class="ferr">
@@ -115,7 +117,7 @@ async function montarCadastro(cfg) {
     <div class="cartao tabela-rolagem"><table><thead><tr id="cHead"></tr></thead><tbody id="cLista"><tr><td class="vazio">Carregando…</td></tr></tbody><tfoot id="cTotais"></tfoot></table></div>
     <p class="sub" id="cRodape" style="margin-top:8px"></p>`;
   const $ = s => cont.querySelector(s);
-  if (podeEditar) $('#cNovo').onclick = () => abrir(null);
+  if (podeCriar) $('#cNovo').onclick = () => abrir(null);
   $('#fBusca').addEventListener('input', desenhar);
   cont.querySelectorAll('.filtros select, .filtros input[type=date]').forEach(e => e.addEventListener('change', desenhar));
   ligarPainelFiltros(cont, cfg.tabela, desenhar);
@@ -269,7 +271,7 @@ async function montarCadastro(cfg) {
     if (el.hidden) return;
     el.innerHTML = `<span>${selecionados.size} selecionado(s)</span>
       ${cfg.revisao ? '<button class="btn primario" id="lRev">Marcar como revisados</button>' : ''}
-      ${(cfg.acoesLote || []).map((a, i) => `<button class="btn" data-lote="${i}">${esc(a.nome)}</button>`).join('')}
+      ${(cfg.acoesLote || []).map((a, i) => (!podeTotal && INATIVA.test(a.nome)) ? '' : `<button class="btn" data-lote="${i}">${esc(a.nome)}</button>`).join('')}
       <button class="btn discreto" id="lLimpa">Limpar</button>`;
     if (cfg.revisao) el.querySelector('#lRev').onclick = async () => {
       const sel = linhas.filter(r => selecionados.has(r.id));
@@ -319,7 +321,7 @@ async function montarCadastro(cfg) {
   function abrir(r) {
     const novo = !r;
     r = r || Object.fromEntries(campos.filter(c => c.padrao !== undefined).map(c => [c.id, typeof c.padrao === 'function' ? c.padrao(ctx) : c.padrao]));
-    const ro = !podeEditar;
+    const ro = novo ? !podeCriar : !podeAlterar, podeGravar = !ro;
     let html = '', secao = null, aberto = false;
     for (const c of campos) {
       if (c.oculto?.(r)) continue;
@@ -327,7 +329,7 @@ async function montarCadastro(cfg) {
         html += `${aberto ? '</div>' : ''}<div class="secao${aberto ? '' : ' primeira'}">${esc(c.secao)}</div><div class="grade-campos">`;
         secao = c.secao; aberto = true;
       } else if (!aberto) { html += '<div class="grade-campos">'; aberto = true; }
-      html += `<div class="campo l${c.col || 1}" data-campo="${c.id}"><label for="f_${c.id}">${esc(c.label)}${c.obrig ? ' <span class="obrig">*</span>' : ''}</label>${entrada(c, r[c.id], ro)}${c.ajuda ? `<div class="ajuda">${esc(c.ajuda)}</div>` : ''}</div>`;
+      html += `<div class="campo l${c.col || 1}" data-campo="${c.id}"><label for="f_${c.id}">${esc(c.label)}${c.obrig ? ' <span class="obrig">*</span>' : ''}</label>${entrada(c, r[c.id], ro || (c.id === 'situacao' && !podeTotal && !novo))}${c.ajuda ? `<div class="ajuda">${esc(c.ajuda)}</div>` : ''}</div>`;
     }
     html += '</div>';
     const dls = campos.filter(c => c.lista_sugestoes).map(c => `<datalist id="dl_${c.id}">${[...new Set([...(c.lista_sugestoes || []), ...linhas.map(x => x[c.id]).filter(Boolean)])].sort().map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
@@ -340,12 +342,12 @@ async function montarCadastro(cfg) {
     const m = abrirModal(`<h2>${novo ? esc(cfg.textoNovo ? cfg.textoNovo.replace('+ ', '') : 'Novo ' + cfg.singular) : esc(cfg.tituloRegistro ? cfg.tituloRegistro(r) : r.nome || r.codigo)}</h2>
       <div id="cAviso"></div>${html}${dls}
       ${cfg.secaoExtra && !novo ? cfg.secaoExtra(r, extra) : ''}${hist}
-      <div class="acoes" style="margin-top:18px"><button class="btn" id="mFechar">${podeEditar ? 'Cancelar' : 'Fechar'}</button>
-      ${podeEditar ? `<button class="btn" id="mSalvar">Salvar</button>${cfg.revisao ? '<button class="btn primario" id="mRevisar">Salvar e marcar revisado</button>' : ''}` : ''}</div>`);
+      <div class="acoes" style="margin-top:18px"><button class="btn" id="mFechar">${podeGravar ? 'Cancelar' : 'Fechar'}</button>
+      ${podeGravar ? `<button class="btn" id="mSalvar">Salvar</button>${cfg.revisao ? '<button class="btn primario" id="mRevisar">Salvar e marcar revisado</button>' : ''}` : ''}</div>`);
     m.querySelector('.modal').classList.add('form');
     const q = s => m.querySelector(s);
     q('#mFechar').onclick = () => m.remove();
-    if (!podeEditar) return;
+    if (!podeGravar) return;
 
     // CEP → endereço (ViaCEP)
     campos.filter(c => c.tipo === 'cep').forEach(c => q(`#f_${c.id}`).addEventListener('blur', async e => {

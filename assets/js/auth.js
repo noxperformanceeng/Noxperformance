@@ -34,7 +34,11 @@ async function carregarSessao() {
     usuario: usuario || { id: session.user.id, email: session.user.email, nome: session.user.email },
     admin: usuario?.perfil_id === 'admin',
     niveis,
-    pode: (modulo, nivel = 'ver') => niveis[modulo] === 'editar' || (nivel === 'ver' && niveis[modulo] === 'ver')
+    // níveis: ver < criar < alterar < editar (tudo, inclusive inativar). 'editar' pedido = pode gravar algo; 'total' = tudo
+    pode: (modulo, nivel = 'ver') => {
+      const R = { ver: 1, criar: 2, alterar: 3, editar: 4, total: 4 }, tem = R[niveis[modulo]] || 0;
+      return nivel === 'editar' ? tem >= 2 : tem >= Math.max(R[nivel] || 1, 1);
+    }
   };
 }
 
