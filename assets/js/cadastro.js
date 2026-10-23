@@ -164,6 +164,18 @@ async function montarCadastro(cfg) {
     } catch (e) { aviso('Erro ao carregar: ' + (e.message || e), true); }
   }
 
+  // Atualiza só o registro salvo na lista (resposta imediata)
+  async function atualizarUm(id) {
+    if (!id) return;
+    try {
+      const { data } = await db.from(cfg.tabela).select('*').eq('id', id).maybeSingle();
+      if (!data) return;
+      const i = linhas.findIndex(x => x.id === id);
+      i >= 0 ? (linhas[i] = data) : linhas.push(data);
+      data._pend = pendDe(data); desenhar();
+    } catch { /* a recarga completa resolve */ }
+  }
+
   /* ---------- Lista ---------- */
   function filtrar(ignorarPend) {
     const busca = $('#fBusca').value, de = $('#fDe').value, ate = $('#fAte').value, pc = $('#fPerCampo').value;
@@ -415,7 +427,8 @@ async function montarCadastro(cfg) {
         }
         if (cfg.depoisSalvar) await cfg.depoisSalvar(id, dados, r, m);
         if (revisar) { const { error } = await db.rpc('marcar_revisado', { p_tabela: cfg.tabela, p_ids: [id] }); if (error) throw error; }
-        m.remove(); aviso(revisar ? 'Salvo e revisado' : 'Salvo'); carregar();
+        m.remove(); aviso(revisar ? 'Salvo e revisado' : 'Salvo');
+        await atualizarUm(id); carregar();   // mostra a linha na hora; o resto (pagamentos, rateio...) atualiza em segundo plano
       } catch (e) {
         m.querySelectorAll('.acoes .btn').forEach(b => b.disabled = false);
         aviso(e.code === '23505' ? (cfg.msgDuplicado || 'Já existe um registro com esse documento/código') : 'Não salvou: ' + (e.message || e), true);

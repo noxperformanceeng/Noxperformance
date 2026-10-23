@@ -78,13 +78,14 @@ function linhasVisiveis(tbodyId) {
 // Busca TODAS as linhas (o banco entrega no máximo 1000 por vez).
 // Uso: const lista = await buscarTodos(() => db.from('produtos').select('*').order('codigo'));
 async function buscarTodos(montar) {
-  const tam = 1000; let de = 0, tudo = [];
-  for (;;) {
-    const { data, error } = await montar().range(de, de + tam - 1);
-    if (error) throw error;
-    tudo = tudo.concat(data);
-    if (data.length < tam) return tudo;
-    de += tam;
+  // 1ª página; se vier cheia, busca as próximas em paralelo (lotes de 8) — evita 1 ida ao servidor por página
+  const tam = 1000, LOTE = 8;
+  const pag = async de => { const { data, error } = await montar().range(de, de + tam - 1); if (error) throw error; return data; };
+  let tudo = await pag(0);
+  if (tudo.length < tam) return tudo;
+  for (let de = tam; ; de += tam * LOTE) {
+    const partes = await Promise.all(Array.from({ length: LOTE }, (_, k) => pag(de + k * tam)));
+    for (const p of partes) { tudo = tudo.concat(p); if (p.length < tam) return tudo; }
   }
 }
 
