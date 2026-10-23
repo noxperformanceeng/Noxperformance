@@ -45,7 +45,9 @@ async function importar(db: ReturnType<typeof adminDb>, contaId: number, arquivo
     novas += data?.length ?? 0;
   }
   const { data: lig } = await db.rpc('extrato_ligar_pagamentos_ml', { p_conta: contaId });
-  return { linhas: regs.length, novas, repetidas: regs.length - novas, ligadas_a_venda: lig };
+  // vendas do ML cujo dinheiro foi liberado: baixa no contas a receber, já conciliada com a linha do extrato
+  const { data: baixa, error: eb } = await db.rpc('cr_baixar_extrato_mp', { p_conta: contaId });
+  return { linhas: regs.length, novas, repetidas: regs.length - novas, ligadas_a_venda: lig, baixa: eb ? eb.message : baixa };
 }
 
 Deno.serve(async req => {

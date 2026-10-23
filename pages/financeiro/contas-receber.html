@@ -210,7 +210,8 @@ const cfg = {
   subtituloLinha: r => [r.parcela && r.parcelas > 1 ? `parcela ${r.parcela}/${r.parcelas}` : '', r.documento].filter(Boolean).join(' · '),
   resumo: v => { window.__visiveisNox = v; const venc = v.filter(vencido);
     return (venc.length ? `<span class="vermelho">Vencido <b>${reais(venc.reduce((s, r) => s + Number(r.saldo), 0))}</b> (${venc.length})</span>` : '')
-      + '<button type="button" class="btn discreto fino nao-imprimir" id="btnAging">Relatório de prazos (aging)</button>'; },
+      + '<button type="button" class="btn discreto fino nao-imprimir" id="btnAging">Relatório de prazos (aging)</button>'
+      + '<button type="button" class="btn fino nao-imprimir" id="btnBaixaMP" title="Vendas do ML com dinheiro liberado no extrato do Mercado Pago: baixa conciliada com a linha do extrato">Baixar vendas ML pelo extrato MP</button>'; },
   pendencias: [
     { id: 'vencido', nome: 'Vencido / liberação atrasada', cor: 'erro', teste: vencido },
     { id: 'sem_cat', nome: 'Sem categoria', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !r.categoria_financeira_id && !(e.rateio[r.id] || []).length },
@@ -326,6 +327,19 @@ function relatorioAging(visiveis, ctx) {
 
 montarCadastro(cfg).then(() => {
   document.addEventListener('click', e => { if (e.target.id === 'btnAging') relatorioAging(window.__visiveisNox || [], window.__ctxNox); });
+  // Regra: só dá baixa quando a soma das liberações do pedido no extrato MP fecha com o saldo do título.
+  // O que não fecha (cancelado, devolução, disputa, valor diferente) fica pendente na conciliação.
+  document.addEventListener('click', async e => {
+    if (e.target.id !== 'btnBaixaMP') return;
+    if (!confirm('Baixar as vendas do Mercado Livre cujo dinheiro já foi liberado no extrato do Mercado Pago?\n\nSó entra o que fecha exatamente com o saldo do título; o resto fica pendente na conciliação.')) return;
+    e.target.disabled = true;
+    const { data, error } = await db.rpc('cr_baixar_extrato_mp', { p_conta: null });
+    e.target.disabled = false;
+    if (error) return aviso('Não baixou: ' + error.message, true);
+    const p = data.pendentes || {};
+    alert(`${data.titulos} título(s) baixado(s) · ${data.linhas} linha(s) do extrato · ${Number(data.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\n\nPendentes na conciliação:\n• sem pedido ligado: ${p.linhas_payment_sem_pedido || 0}\n• pedido cancelado/sem título aberto: ${p.pedido_sem_titulo_aberto || 0}\n• valor diferente do título: ${p.valor_diferente || 0}`);
+    location.reload();
+  });
   const id = new URLSearchParams(location.search).get('titulo');
   if (id) document.querySelector(`#cLista tr[data-id="${Number(id)}"]`)?.click();
 });
