@@ -6,9 +6,12 @@
 --  - Rateios mensais: EPI, uniforme, exames, contabilidade, outros custos
 --  - Base do custo por hora: horas mensais e eficiência (% das horas que são produtivas)
 -- Encargos (FGTS, INSS, RAT, 13º e férias) não são guardados: serão calculados sobre esses valores.
+-- Também: matrícula e CBO da folha (vêm no recibo de pagamento), para conferir e importar sem depender do nome.
 -- Pode rodar mais de uma vez.
 -- =====================================================================
 alter table public.funcionarios
+  add column if not exists matricula              text,
+  add column if not exists cbo                    text,
   add column if not exists insalubridade          numeric(12,2),
   add column if not exists gratificacao_confianca numeric(12,2),
   add column if not exists vale_transporte        numeric(12,2),
@@ -28,3 +31,5 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   alter table public.funcionarios add constraint funcionarios_horas_mensais check (horas_mensais is null or horas_mensais > 0);
 exception when duplicate_object then null; end $$;
+
+create unique index if not exists funcionarios_matricula_uk on public.funcionarios (empresa_id, matricula) where matricula is not null and matricula <> '';

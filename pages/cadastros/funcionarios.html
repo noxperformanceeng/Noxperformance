@@ -27,7 +27,7 @@ let USUARIOS = [];
 montarCadastro({
   tabela: 'funcionarios', modulo: 'funcionarios', titulo: 'Funcionários', singular: 'funcionário', plural: 'funcionários',
   subtitulo: 'Cadastro das pessoas, por empresa. Ponto, férias, lançamentos e holerites ficam no RH.',
-  dicaBusca: 'nome, CPF, cargo, setor…', ordem: 'nome', revisao: true, porEmpresa: true,
+  dicaBusca: 'nome, CPF, matrícula, cargo, setor…', ordem: 'nome', revisao: true, porEmpresa: true,
   abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'ferias', n: 'Férias' }, { v: 'afastado', n: 'Afastados' }, { v: 'desligado', n: 'Desligados' }, { v: '', n: 'Todos' }] },
   periodos: [{ campo: 'data_admissao', label: 'Admissão' }, { campo: 'data_demissao', label: 'Desligamento' }, { campo: 'atualizado_em', label: 'Última alteração' }],
   campos: [
@@ -46,7 +46,9 @@ montarCadastro({
     { id: 'uf', label: 'UF', tipo: 'uf' },
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, secao: 'Contrato',
       opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
+    { id: 'matricula', label: 'Matrícula (folha)', ajuda: 'Código do funcionário no recibo de pagamento.' },
     { id: 'cargo', label: 'Cargo', lista: true, filtro: true, lista_sugestoes: [] },
+    { id: 'cbo', label: 'CBO', placeholder: 'ex.: 724315' },
     { id: 'setor', label: 'Setor', lista: true, filtro: true, lista_sugestoes: SETORES },
     { id: 'area_custo', label: 'Área de custo', tipo: 'select', lista: true, filtro: true, filtroVazio: true,
       opcoes: [{ v: 'producao', n: 'Produção (custo do produto)' }, { v: 'administrativo', n: 'Administrativo' }, { v: 'comercial', n: 'Comercial' }],
