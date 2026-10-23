@@ -6,7 +6,7 @@
 <title>Lançamentos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610231529">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610231539">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -24,12 +24,12 @@
 <body data-modulo="lancamentos" data-titulo="Lançamentos" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610231529"></script>
-<script src="../../assets/js/ui.js?v=202610231529"></script>
-<script src="../../assets/js/auth.js?v=202610231529"></script>
-<script src="../../assets/js/layout.js?v=202610231529"></script>
-<script src="../../assets/js/cadastro.js?v=202610231529"></script>
-<script src="../../assets/js/rh.js?v=202610231529"></script>
+<script src="../../assets/js/supabase.js?v=202610231539"></script>
+<script src="../../assets/js/ui.js?v=202610231539"></script>
+<script src="../../assets/js/auth.js?v=202610231539"></script>
+<script src="../../assets/js/layout.js?v=202610231539"></script>
+<script src="../../assets/js/cadastro.js?v=202610231539"></script>
+<script src="../../assets/js/rh.js?v=202610231539"></script>
 <script>
 /* =====================================================================
    Lançamentos do mês (competência)
@@ -51,6 +51,7 @@ const MULT_HORA = { '150': 1.5, '9161': 2, '8069': 1, 'N002': 1.5 };   // horas 
     <div class="cab-tela"><div><h1>Lançamentos</h1><p class="sub">Eventos do mês por funcionário. Base do holerite de conferência (contábil e não contábil).</p></div>
       <div class="acoes-cab"><input type="month" id="comp" title="Competência">
         ${PODE ? '<button class="btn fino" id="bFixos">Gerar fixos do mês</button>' : ''}
+        <a class="btn fino" href="conferencia.html">Conferência →</a>
         <a class="btn fino" id="bHol" href="#">Holerites →</a>
         <button class="btn fino" id="bFechar" hidden></button></div></div>
     <div class="barra-ferr">
@@ -117,7 +118,8 @@ function desenhar() {
   const ids = new Set([...ativos.map(f => f.id), ...LANC.filter(l => empresaOk(l.empresa_id)).map(l => l.funcionario_id)]);
   const salario = eventoCod('8781');
   const semSalario = ativos.filter(f => f.situacao !== 'afastado' && !LANC.some(l => l.funcionario_id === f.id && l.evento_id === salario?.id));
-  document.getElementById('pend').innerHTML = (algumaFechada ? `<span class="tg ok">🔒 Competência ${mesBR(COMP)} fechada${todasFechadas ? '' : ' em parte das empresas'}</span>` : '') +
+  const aConferir = LANC.filter(l => empresaOk(l.empresa_id) && l.conferido === false);
+  document.getElementById('pend').innerHTML = (aConferir.length ? `<span class="tg alerta" title="Lançamentos repetidos do mês anterior: confirme cada valor na janela do colaborador">${aConferir.length} lançamento(s) a conferir · ${new Set(aConferir.map(l => l.funcionario_id)).size} colaborador(es)</span>` : '') + (algumaFechada ? `<span class="tg ok">🔒 Competência ${mesBR(COMP)} fechada${todasFechadas ? '' : ' em parte das empresas'}</span>` : '') +
     (semSalario.length ? `<span>Pendências</span><span class="tg alerta" title="${esc(semSalario.map(f => f.nome).join(', '))}">${semSalario.length} sem dias normais (use Gerar fixos do mês)</span>` : '');
   const head = document.getElementById('head'), lista = document.getElementById('lista'), tf = document.getElementById('totais');
 
@@ -128,7 +130,8 @@ function desenhar() {
       .sort((a, b) => a.nome.localeCompare(b.nome))
       .map(f => ({ f, ls: LANC.filter(l => l.funcionario_id === f.id) }));
     lista.innerHTML = linhas.length ? linhas.map(({ f, ls }) => { const t = totais(ls);
-      return `<tr data-f="${f.id}" style="cursor:pointer" class="${f.situacao === 'desligado' ? 'apagado' : ''}"><td class="forte">${esc(f.nome)}<small class="sub2">${esc([f.matricula && 'Matr. ' + f.matricula, f.cargo, f.situacao === 'afastado' && 'afastado'].filter(Boolean).join(' · '))}</small></td>
+      const nConf = ls.filter(l => l.conferido === false).length;
+      return `<tr data-f="${f.id}" style="cursor:pointer" class="${f.situacao === 'desligado' ? 'apagado' : ''}"><td class="forte">${esc(f.nome)}${nConf ? ` <span class="tg alerta">${nConf} a conferir</span>` : ''}<small class="sub2">${esc([f.matricula && 'Matr. ' + f.matricula, f.cargo, f.situacao === 'afastado' && 'afastado'].filter(Boolean).join(' · '))}</small></td>
         <td class="num">${num2(t.pc)}</td><td class="num">${num2(t.dc)}</td><td class="num"><b>${num2(t.pc - t.dc)}</b></td>
         <td class="num">${t.pn || t.dn ? num2(t.pn - t.dn) : '—'}</td><td class="num">${ls.length}</td></tr>`; }).join('')
       : '<tr><td colspan="6" class="vazio">Nenhum funcionário nesta competência.</td></tr>';
@@ -170,7 +173,7 @@ function abrirFuncionario(fid) {
     <div class="tabela-rolagem" style="max-height:52vh"><table class="lista-mini"><thead><tr><th>Código</th><th>Evento</th><th class="num">Ref.</th><th class="num">Vencimentos</th><th class="num">Descontos</th><th>Lançado por</th><th></th></tr></thead><tbody id="lLista"></tbody></table></div>
     <div class="tot-hol" id="lTot"></div>
     <div id="lFin" style="margin-top:10px"></div>
-    <div class="acoes" style="margin-top:14px"><a class="btn" href="holerites.html?c=${COMP}&f=${f.id}">Holerite de conferência</a><button class="btn" id="lFechar">Fechar</button></div>`);
+    <div class="acoes" style="margin-top:14px">${pode ? `<button class="btn" id="lRepetir" title="Traz os lançamentos do mês anterior deste colaborador para você conferir">↻ Repetir ${mesBR(somaMes(COMP, -1))}</button><button class="btn" id="lConfTodos" hidden>✓ Conferir todos</button><span style="flex:1"></span>` : ''}<a class="btn" href="holerites.html?c=${COMP}&f=${f.id}">Holerite de conferência</a><button class="btn" id="lFechar">Fechar</button></div>`);
   m.querySelector('.modal').classList.add('form', 'largo');
   m.querySelector('#lFechar').onclick = () => m.remove();
   let editando = null;
@@ -181,15 +184,18 @@ function abrirFuncionario(fid) {
     let nat = null;
     m.querySelector('#lLista').innerHTML = ls.length ? ls.map(l => { const ev = evento(l.evento_id);
       const sep = ev.natureza !== nat ? `<tr><td colspan="7" class="secao" style="padding-top:10px">${(nat = ev.natureza) === 'contabil' ? 'Contábil' : 'Não contábil'}</td></tr>` : '';
-      const manual = l.origem === 'lancamentos';
-      return sep + `<tr><td>${esc(ev.codigo)}</td><td>${esc(ev.descricao)}${l.observacao ? `<small class="sub2">${esc(l.observacao)}</small>` : ''}</td><td class="num">${refBR(ev, l.referencia)}</td>
+      const manual = l.origem === 'lancamentos', aConf = l.conferido === false;
+      return sep + `<tr${aConf ? ' style="background:color-mix(in srgb,#f5a623 16%,transparent)"' : ''}><td>${esc(ev.codigo)}</td><td>${esc(ev.descricao)}${aConf ? ' <span class="tg alerta">a conferir</span>' : ''}${l.observacao ? `<small class="sub2">${esc(l.observacao)}</small>` : ''}</td><td class="num">${refBR(ev, l.referencia)}</td>
         <td class="num">${ev.tipo === 'provento' ? num2(l.valor) : ''}</td><td class="num">${ev.tipo === 'desconto' ? num2(l.valor) : ev.tipo === 'informativo' ? '(' + num2(l.valor) + ')' : ''}</td>
         <td>${manual ? '<small>Lançamentos</small>' : `<a class="tg neutro" href="${TELAS_URL[l.origem] || '#'}${l.origem_id && CADASTRO_RH.includes(l.origem) ? '?abrir=' + l.origem_id : ''}" title="Abrir o registro de origem">🔒 ${esc(TELAS_RH[l.origem] || l.origem)} ↗</a>`}</td>
-        <td style="white-space:nowrap">${manual && pode ? `<button class="acao-linha" data-ed="${l.id}" title="Alterar">✎</button><button class="acao-linha" data-rm="${l.id}" title="Excluir">✕</button>` : ''}</td></tr>`; }).join('')
+        <td style="white-space:nowrap">${manual && pode ? `${aConf ? `<button class="acao-linha" data-conf="${l.id}" title="Valor conferido" style="color:var(--ok,#2e9e5b);font-weight:700">✓</button>` : ''}<button class="acao-linha" data-ed="${l.id}" title="Alterar">✎</button><button class="acao-linha" data-rm="${l.id}" title="Excluir">✕</button>` : ''}</td></tr>`; }).join('')
       : '<tr><td colspan="7" class="vazio">Nenhum lançamento neste mês.</td></tr>';
     const t = totais(ls);
     m.querySelector('#lTot').innerHTML = `<span>Contábil: vencimentos <b>${num2(t.pc)}</b> · descontos <b>${num2(t.dc)}</b> · líquido <b>${reais(t.pc - t.dc)}</b></span>` +
       (t.pn || t.dn ? `<span>Não contábil: líquido <b>${reais(t.pn - t.dn)}</b></span>` : '');
+    const pend = ls.filter(l => l.conferido === false);
+    const bTodos = m.querySelector('#lConfTodos'); if (bTodos) { bTodos.hidden = !pend.length; bTodos.textContent = `✓ Conferir todos (${pend.length})`; }
+    m.querySelectorAll('[data-conf]').forEach(b => b.onclick = () => conferir([+b.dataset.conf]));
     m.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
       if (!confirm('Excluir este lançamento?')) return;
       const { error } = await db.from('rh_lancamentos').delete().eq('id', +b.dataset.rm);
@@ -204,9 +210,21 @@ function abrirFuncionario(fid) {
       m.querySelector('#lAdd').textContent = 'Salvar';
     });
   };
+  // Conferência: o RH confirma cada valor repetido (fica registrado quem e quando)
+  const conferir = async ids => {
+    if (!ids.length) return;
+    const { error } = await db.from('rh_lancamentos').update({ conferido: true }).in('id', ids);
+    if (error) return aviso('Não conferiu: ' + error.message, true);
+    LANC = LANC.map(x => ids.includes(x.id) ? { ...x, conferido: true } : x); desenharLista(); desenhar();
+  };
   desenharLista();
   financeiroDoFuncionario(m, fid);
   if (!pode) return;
+  m.querySelector('#lConfTodos').onclick = () => {
+    const ids = LANC.filter(l => l.funcionario_id === fid && l.conferido === false).map(l => l.id);
+    if (confirm(`Confirmar que os ${ids.length} valor(es) a conferir de ${f.nome} estão corretos para ${mesBR(COMP)}?`)) conferir(ids);
+  };
+  m.querySelector('#lRepetir').onclick = () => repetirMesAnterior(f, () => { desenharLista(); desenhar(); });
 
   // Valor sugerido pela referência: horas × salário/hora × fator; dias × salário/30; valor do cadastro
   const ajustarRef = () => { const ev = evento(m.querySelector('#lEv').value);
@@ -232,7 +250,7 @@ function abrirFuncionario(fid) {
     const referencia = ev.referencia_tipo === 'horas' ? lerHoras(refTxt) : lerNumero(refTxt);
     if (valor == null || isNaN(valor) || valor <= 0) return aviso('Informe o valor', true);
     if (referencia != null && isNaN(referencia)) return aviso('Referência inválida', true);
-    const dados = { funcionario_id: fid, competencia: COMP + '-01', evento_id: ev.id, referencia, valor: Math.round(valor * 100) / 100, observacao: m.querySelector('#lObs').value.trim() || null, origem: 'lancamentos' };
+    const dados = { funcionario_id: fid, competencia: COMP + '-01', evento_id: ev.id, referencia, valor: Math.round(valor * 100) / 100, observacao: m.querySelector('#lObs').value.trim() || null, origem: 'lancamentos', conferido: true };
     const q = editando ? db.from('rh_lancamentos').update(dados).eq('id', editando) : db.from('rh_lancamentos').insert(dados);
     const { data, error } = await q.select('*').single();
     if (error) return aviso('Não salvou: ' + error.message, true);
@@ -258,6 +276,49 @@ async function financeiroDoFuncionario(m, fid) {
         <td class="num">${num2(t.valor)}</td><td>${dataBR(t.data_vencimento + 'T12:00:00')}</td>
         <td>${SIT_TIT[t.situacao] || t.situacao}${t.data_pagamento ? ' em ' + dataBR(t.data_pagamento + 'T12:00:00') : ''}${t.situacao === 'pago' ? (t.conciliado ? ' · conciliado' : ' · falta conciliar') : ''}</td></tr>`).join('')}</tbody></table>`
     : '<p class="sub" style="font-size:12.5px;margin:4px 0">Nada enviado ainda. Adiantamento, VT e 13º vão ao confirmar na tela deles; o salário vai ao fechar a folha.</p>');
+}
+
+/* ---------- Repetir o mês anterior (por colaborador) ----------
+   Traz os lançamentos manuais do mês anterior. O RH marca um a um o que repete (pode ajustar o valor),
+   e eles entram "a conferir": precisam de um segundo ✓ antes de fechar a folha. */
+async function repetirMesAnterior(f, depois) {
+  const ant = somaMes(COMP, -1);
+  const prev = await buscarTodos(() => db.from('rh_lancamentos').select('*').eq('funcionario_id', f.id).eq('competencia', ant + '-01').eq('origem', 'lancamentos').order('id'));
+  const linhas = prev.filter(l => { const ev = evento(l.evento_id); return ev && !ev.tela_exclusiva && ev.situacao === 'ativo'; })
+    .map(l => ({ l, ev: evento(l.evento_id), ja: LANC.some(x => x.funcionario_id === f.id && x.evento_id === l.evento_id), ok: false, valor: Number(l.valor) }));
+  if (!linhas.length) return aviso(`Nenhum lançamento manual de ${f.nome} em ${mesBR(ant)} para repetir.`);
+  const m = abrirModal(`<h2>Repetir ${mesBR(ant)} → ${mesBR(COMP)}</h2>
+    <p class="sub" style="margin:-6px 0 10px">${esc(f.nome)}. Marque cada lançamento que se repete e confira o valor. Eles entram <b>a conferir</b> e precisam ser confirmados (✓) antes de fechar a folha. Adiantamento, VT, férias, 13º e faltas vêm das telas próprias.</p>
+    <div class="tabela-rolagem" style="max-height:50vh"><table class="lista-mini"><thead><tr><th><input type="checkbox" id="rTodos"></th><th>Evento</th><th class="num">Ref.</th><th class="num">${mesBR(ant)}</th><th class="num">Valor em ${mesBR(COMP)}</th></tr></thead><tbody id="rLista"></tbody></table></div>
+    <div class="tot-hol" id="rTot"></div>
+    <div class="acoes"><button class="btn" id="rX">Cancelar</button><button class="btn primario" id="rOk">Lançar marcados (a conferir)</button></div>`);
+  m.querySelector('.modal').classList.add('form', 'largo');
+  const q = s => m.querySelector(s);
+  const total = () => { const sel = linhas.filter(x => x.ok && !x.ja); q('#rTot').innerHTML = `<span>${sel.length} marcado(s)</span>`; };
+  const desenharR = () => {
+    q('#rLista').innerHTML = linhas.map((x, i) => `<tr class="${x.ja ? 'apagado' : ''}"><td><input type="checkbox" data-i="${i}" ${x.ok ? 'checked' : ''} ${x.ja ? 'disabled' : ''}></td>
+      <td>${esc(x.ev.codigo)} · ${esc(x.ev.descricao)} <small>${x.ev.tipo === 'provento' ? '(+)' : x.ev.tipo === 'desconto' ? '(−)' : ''}</small>${x.ja ? '<small class="sub2">já lançado neste mês</small>' : ''}${x.l.observacao ? `<small class="sub2">${esc(x.l.observacao)}</small>` : ''}</td>
+      <td class="num">${refBR(x.ev, x.l.referencia)}</td><td class="num">${num2(x.l.valor)}</td>
+      <td class="num"><input data-v="${i}" inputmode="decimal" style="width:110px;text-align:right;padding:4px 8px" value="${num2(x.valor)}" ${x.ja ? 'disabled' : ''}></td></tr>`).join('');
+    m.querySelectorAll('[data-i]').forEach(c => c.onchange = () => { linhas[+c.dataset.i].ok = c.checked; total(); });
+    m.querySelectorAll('[data-v]').forEach(c => c.onchange = () => { const v = lerNumero(c.value); linhas[+c.dataset.v].valor = v; c.value = num2(v); });
+    total();
+  };
+  desenharR();
+  q('#rTodos').onchange = e => { linhas.forEach(x => { if (!x.ja) x.ok = e.target.checked; }); desenharR(); };
+  q('#rX').onclick = () => m.remove();
+  q('#rOk').onclick = async () => {
+    const sel = linhas.filter(x => x.ok && !x.ja);
+    if (!sel.length) return aviso('Marque ao menos um lançamento', true);
+    if (sel.some(x => !(x.valor > 0))) return aviso('Há valor vazio ou zerado nos marcados', true);
+    q('#rOk').disabled = true;
+    const { data, error } = await db.from('rh_lancamentos').insert(sel.map(x => ({ funcionario_id: f.id, competencia: COMP + '-01', evento_id: x.ev.id,
+      referencia: x.l.referencia, valor: Math.round(x.valor * 100) / 100, origem: 'lancamentos', conferido: false,
+      observacao: [x.l.observacao, `Repetido de ${mesBR(ant)}${Math.abs(x.valor - Number(x.l.valor)) > 0.005 ? ' (valor ajustado)' : ''}`].filter(Boolean).join(' · ') }))).select('*');
+    if (error) { q('#rOk').disabled = false; return aviso('Não lançou: ' + error.message, true); }
+    LANC = [...LANC, ...(data || [])]; m.remove();
+    aviso(`${sel.length} lançamento(s) repetido(s). Confira cada valor (✓) antes de fechar a folha.`); depois();
+  };
 }
 
 /* ---------- Gerar fixos do mês ---------- */

@@ -52,6 +52,7 @@ const MENU = [
   { grupo: 'RH', itens: [
     { id: 'funcionarios',  nome: 'Colaboradores',     arquivo: 'pages/cadastros/funcionarios.html' },
     { id: 'lancamentos',   nome: 'Lançamentos',       arquivo: 'pages/rh/lancamentos.html' },
+    { id: 'lancamentos',   nome: 'Conferência da folha', arquivo: 'pages/rh/conferencia.html' },
     { id: 'holerites',     nome: 'Holerites',         arquivo: 'pages/rh/holerites.html' },
     { id: 'adiantamento',  nome: 'Adiantamento salarial', arquivo: 'pages/rh/adiantamento.html' },
     { id: 'ferias',        nome: 'Férias',            arquivo: 'pages/rh/ferias.html' },

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conferência da folha · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610231539">
+<style>
+  .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td small { display: block; color: var(--texto-suave); font-size: 11.5px; }
+  tr.func td { padding-top: 14px; border-bottom: 0; }
+  .t-faltou { background: color-mix(in srgb, var(--erro) 12%, transparent); }
+  .t-novo { background: color-mix(in srgb, #2e9e5b 14%, transparent); }
+  .t-variou { background: color-mix(in srgb, #f5a623 18%, transparent); }
+  .tag-t { font-size: 11.5px; padding: 1px 7px; border-radius: 10px; white-space: nowrap; }
+  .lote-c { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; }
+  .lote-c input[type=text] { flex: 1; min-width: 240px; padding: 6px 8px; }
+  .resumo-c { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; margin: 2px 0 10px; }
+</style>
+</head>
+<body data-modulo="lancamentos" data-titulo="Conferência da folha" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610231539"></script>
+<script src="../../assets/js/ui.js?v=202610231539"></script>
+<script src="../../assets/js/auth.js?v=202610231539"></script>
+<script src="../../assets/js/layout.js?v=202610231539"></script>
+<script src="../../assets/js/cadastro.js?v=202610231539"></script>
+<script src="../../assets/js/rh.js?v=202610231539"></script>
+<script>
+/* =====================================================================
+   Conferência da folha — segunda conferência antes de fechar o mês.
+   Compara cada colaborador com o mês anterior, evento a evento:
+     faltou  → tinha no mês anterior e não tem neste
+     novo    → apareceu neste mês
+     variou  → valor mudou mais de 1% (e mais de R$ 1,00)
+   O RH confirma cada divergência (com observação). Se o valor mudar depois, ela volta.
+   A folha só fecha com tudo confirmado e nenhum lançamento "a conferir".
+   ===================================================================== */
+let CTX, COMP = lerCompetencia(), DIV = [], CONF = [], aba = 'pend', marcados = new Set(), PODE = false;
+const TIPO = { faltou: 'Não veio neste mês', novo: 'Novo neste mês', variou: 'Valor mudou' };
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  PODE = CTX.pode('lancamentos', 'editar');
+  document.getElementById('conteudo').innerHTML = `
+    <div class="cab-tela"><div><h1>Conferência da folha</h1>
+      <p class="sub">Divergências com o mês anterior: o que faltou, o que é novo e o que mudou de valor. Confirme cada uma; a folha só fecha com tudo conferido.</p></div>
+      <div class="acoes-cab"><input type="month" id="comp" title="Competência"><a class="btn fino" href="lancamentos.html">Lançamentos →</a></div></div>
+    <div class="barra-ferr"><div class="abas" id="abas"></div>
+      <div class="ferr"><input id="busca" class="busca" type="search" placeholder="Buscar colaborador ou evento…"><div id="rel"></div></div></div>
+    <div id="resumo" class="resumo-c"></div>
+    <div class="cartao lote-c" id="lote" hidden></div>
+    <div class="cartao tabela-rolagem"><table><thead><tr><th style="width:30px"><input type="checkbox" id="todos"></th><th>Evento</th><th>Divergência</th>
+      <th class="num" id="hAnt">Mês anterior</th><th class="num" id="hAtu">Este mês</th><th class="num">Diferença</th><th class="num">%</th><th>Conferência</th></tr></thead>
+      <tbody id="lista"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody></table></div>`;
+  const c = document.getElementById('comp'); c.value = COMP;
+  c.onchange = () => { if (!c.value) return; COMP = c.value; gravarCompetencia(COMP); carregar(); };
+  document.getElementById('busca').oninput = desenhar;
+  document.getElementById('todos').onchange = e => { visiveis().filter(d => !d.confirmada).forEach(d => e.target.checked ? marcados.add(chave(d)) : marcados.delete(chave(d))); desenhar(); };
+  window.addEventListener('empresa', () => { CTX.empresa = lerEmpresa(); carregar(); });
+  botoesRelatorio('rel', () => ({ arquivo: 'conferencia_folha_' + COMP, colunas: ['Colaborador', 'Evento', 'Divergência', mesBR(somaMes(COMP, -1)), mesBR(COMP), 'Diferença', 'Situação', 'Observação'],
+    linhas: visiveis().map(d => [funcionario(d.funcionario_id)?.nome, `${evento(d.evento_id)?.codigo} ${evento(d.evento_id)?.descricao}`, TIPO[d.tipo],
+      num2(d.valor_anterior), num2(d.valor_atual), num2(d.valor_atual - d.valor_anterior), d.confirmada ? 'Confirmada' : 'Pendente', d.observacao || '']) }));
+  await Promise.all([carregarFuncionarios(), carregarEventos()]);
+  carregar();
+})();
+
+const chave = d => `${d.funcionario_id}|${d.evento_id}|${d.tipo}`;
+async function carregar() {
+  marcados.clear();
+  document.getElementById('hAnt').textContent = mesBR(somaMes(COMP, -1)); document.getElementById('hAtu').textContent = mesBR(COMP);
+  const emp = CTX.empresa ? [CTX.empresa] : CTX.empresas.map(e => e.id);
+  const rs = await Promise.all(emp.map(id => db.rpc('rh_divergencias', { p_empresa: id, p_competencia: COMP + '-01' })));
+  const erro = rs.find(r => r.error); if (erro) return aviso('Erro: ' + erro.error.message, true);
+  DIV = rs.flatMap(r => r.data || []);
+  const { data } = await db.from('rh_lancamentos').select('funcionario_id, empresa_id').eq('competencia', COMP + '-01').eq('conferido', false);
+  CONF = (data || []).filter(l => !CTX.empresa || l.empresa_id === CTX.empresa);
+  desenhar();
+}
+function visiveis() {
+  const b = document.getElementById('busca').value;
+  return DIV.filter(d => (aba === 'todas' || (aba === 'pend' ? !d.confirmada : d.confirmada))
+    && (!b || combinaBusca(`${funcionario(d.funcionario_id)?.nome} ${evento(d.evento_id)?.codigo} ${evento(d.evento_id)?.descricao}`, b)));
+}
+
+function desenhar() {
+  const pend = DIV.filter(d => !d.confirmada).length, ok = DIV.length - pend;
+  document.getElementById('abas').innerHTML = [['pend', 'Pendentes', pend], ['ok', 'Confirmadas', ok], ['todas', 'Todas', DIV.length]]
+    .map(([v, n, q]) => `<button class="aba${aba === v ? ' ativa' : ''}" data-v="${v}">${n} <b>${q}</b></button>`).join('');
+  document.querySelectorAll('#abas .aba').forEach(b => b.onclick = () => { aba = b.dataset.v; marcados.clear(); desenhar(); });
+  const nConf = new Set(CONF.map(l => l.funcionario_id)).size;
+  document.getElementById('resumo').innerHTML = `<span>Competência <b>${mesBR(COMP)}</b> × <b>${mesBR(somaMes(COMP, -1))}</b></span>
+    <span>${pend ? `<span class="tg alerta">${pend} divergência(s) a confirmar</span>` : '<span class="tg ok">Divergências conferidas</span>'}</span>
+    ${CONF.length ? `<span><span class="tg alerta">${CONF.length} lançamento(s) repetido(s) a conferir · ${nConf} colaborador(es)</span> <a href="lancamentos.html">conferir nos Lançamentos →</a></span>` : ''}
+    ${!DIV.length ? '<span>Sem divergências (ou mês anterior sem lançamentos para comparar).</span>' : ''}`;
+  const vis = visiveis().sort((a, b) => (funcionario(a.funcionario_id)?.nome || '').localeCompare(funcionario(b.funcionario_id)?.nome || '') || (evento(a.evento_id)?.ordem || 0) - (evento(b.evento_id)?.ordem || 0));
+  let html = '', fAtual = null;
+  vis.forEach(d => {
+    const f = funcionario(d.funcionario_id), ev = evento(d.evento_id), dif = d.valor_atual - d.valor_anterior;
+    if (d.funcionario_id !== fAtual) { fAtual = d.funcionario_id;
+      html += `<tr class="func"><td></td><td colspan="7"><b>${esc(f?.nome || '#' + d.funcionario_id)}</b><small>${esc(f?.cargo || '')}</small></td></tr>`; }
+    html += `<tr class="t-${d.tipo}"><td>${d.confirmada || !PODE ? '' : `<input type="checkbox" data-k="${esc(chave(d))}" ${marcados.has(chave(d)) ? 'checked' : ''}>`}</td>
+      <td>${esc(ev?.codigo || '')} · ${esc(ev?.descricao || '')} <small>${ev?.tipo === 'desconto' ? 'desconto' : ev?.tipo === 'provento' ? 'provento' : ''}${ev?.natureza === 'nao_contabil' ? ' · não contábil' : ''}</small></td>
+      <td><span class="tag-t t-${d.tipo}">${TIPO[d.tipo]}</span></td>
+      <td class="num">${d.tipo === 'novo' ? '—' : num2(d.valor_anterior)}</td><td class="num">${d.tipo === 'faltou' ? '—' : num2(d.valor_atual)}</td>
+      <td class="num">${dif >= 0 ? '+' : ''}${num2(dif)}</td><td class="num">${d.valor_anterior ? (dif / d.valor_anterior * 100).toFixed(1).replace('.', ',') + '%' : ''}</td>
+      <td>${d.confirmada ? `✓ ${esc(d.conferido_por || '')}<small>${dataHoraBR(d.conferido_em)}${d.observacao ? ' · ' + esc(d.observacao) : ''}</small>` : '<small>pendente</small>'}</td></tr>`;
+  });
+  document.getElementById('lista').innerHTML = html || `<tr><td colspan="8" class="vazio">${aba === 'pend' ? 'Nenhuma divergência pendente. ✓' : 'Nada aqui.'}</td></tr>`;
+  document.querySelectorAll('[data-k]').forEach(c => c.onchange = () => { c.checked ? marcados.add(c.dataset.k) : marcados.delete(c.dataset.k); desenharLote(); });
+  desenharLote();
+}
+
+function desenharLote() {
+  const el = document.getElementById('lote');
+  el.hidden = !PODE || !marcados.size;
+  if (el.hidden) return;
+  el.innerHTML = `<b>${marcados.size}</b> marcada(s)<input type="text" id="obs" placeholder="Observação (ex.: hora extra do inventário, reajuste de salário, desligado em 15/10…)">
+    <button class="btn primario fino" id="bConf">Confirmar divergências</button>`;
+  document.getElementById('bConf').onclick = confirmar;
+}
+
+async function confirmar() {
+  const obs = document.getElementById('obs').value.trim();
+  const sel = DIV.filter(d => marcados.has(chave(d)));
+  const variou = sel.filter(d => d.tipo !== 'novo' && Math.abs(d.valor_atual - d.valor_anterior) > Math.abs(d.valor_anterior) * 0.2);
+  if (variou.length && !obs) return aviso('Há divergência acima de 20% ou evento que não veio: escreva uma observação para confirmar', true);
+  if (!confirm(`Confirmar ${sel.length} divergência(s) de ${mesBR(COMP)}?\nFica registrado quem confirmou e quando.`)) return;
+  const linhas = sel.map(d => ({ empresa_id: funcionario(d.funcionario_id)?.empresa_id, competencia: COMP + '-01', funcionario_id: d.funcionario_id, evento_id: d.evento_id,
+    tipo: d.tipo, valor_anterior: d.valor_anterior, valor_atual: d.valor_atual, observacao: obs || null }));
+  const { error } = await db.from('rh_divergencias_ok').insert(linhas);
+  if (error) return aviso('Não confirmou: ' + error.message, true);
+  aviso(`${sel.length} divergência(s) confirmada(s)`); carregar();
+}
+</script>
+</body>
+</html>
