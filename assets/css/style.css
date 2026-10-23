@@ -127,8 +127,12 @@ td select { padding: 6px 8px; min-width: 160px; }
 .aba.ativa { background: var(--superficie); color: var(--texto); box-shadow: 0 1px 2px rgba(16,24,40,.06); }
 
 .modal-fundo { position: fixed; inset: 0; background: rgba(15,18,25,.35); display: grid; place-items: center; z-index: 50; padding: 16px; }
-.modal { background: var(--superficie); border-radius: 14px; padding: 24px; width: 100%; max-width: 440px; }
-.modal .acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.modal { background: var(--superficie); border-radius: 14px; padding: 24px; width: 100%; max-width: 440px;
+  max-height: calc(100vh - 32px); overflow: auto; overscroll-behavior: contain; }
+/* Botões da janela sempre à vista: ficam presos no rodapé enquanto o conteúdo rola */
+.modal .acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;
+  position: sticky; bottom: -24px; background: var(--superficie); padding: 12px 0 14px; margin-bottom: -10px; z-index: 2;
+  box-shadow: 0 -8px 12px -10px rgba(0,0,0,.25); }
 
 .aviso { position: fixed; bottom: 20px; right: 20px; background: var(--texto); color: #fff; padding: 12px 18px; border-radius: 10px; z-index: 60; box-shadow: 0 6px 20px rgba(0,0,0,.15); animation: subir .2s; }
 .aviso.erro { background: var(--erro); }
@@ -217,7 +221,7 @@ th.ord { cursor: pointer; user-select: none; } th.ord:hover { color: var(--texto
 td input[type=checkbox], th input[type=checkbox] { width: 16px; height: 16px; }
 .lote { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lote span { font-weight: 500; }
-.modal.form { max-width: 860px; max-height: 92vh; overflow: auto; }
+.modal.form { max-width: 860px; max-height: calc(100vh - 32px); overflow: auto; }
 .grade-campos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 14px; }
 .grade-campos .l2 { grid-column: span 2; } .grade-campos .l3 { grid-column: span 3; } .grade-campos .l4 { grid-column: span 4; }
 .secao { margin: 18px 0 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--texto-suave); border-top: 1px solid var(--linha); padding-top: 14px; }
