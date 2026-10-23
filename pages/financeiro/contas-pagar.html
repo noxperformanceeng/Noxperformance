@@ -41,7 +41,7 @@
    ===================================================================== */
 const SIT = [{ v: 'aberto', n: 'Aberto' }, { v: 'programado', n: 'Programado' }, { v: 'parcial', n: 'Pago parcial' }, { v: 'pago', n: 'Pago' }, { v: 'cancelado', n: 'Cancelado' }];
 const ORIGENS = [{ v: 'manual', n: 'Manual (despesa)' }, { v: 'recorrente', n: 'Recorrente' }, { v: 'nf_entrada', n: 'NF de entrada' },
-  { v: 'pedido_compra', n: 'Pedido de compra' }, { v: 'importacao', n: 'Importado do Tiny' }];
+  { v: 'pedido_compra', n: 'Pedido de compra' }, { v: 'importacao', n: 'Importado do Tiny' }, { v: 'rh', n: 'RH (folha)' }];
 const ABERTOS = ['aberto', 'programado', 'parcial'];
 const hoje = () => new Date().toLocaleDateString('sv-SE');
 const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('sv-SE'); };
@@ -356,7 +356,7 @@ const cfg = {
         });
       } }
   ],
-  tituloRegistro: r => [FORN.find(f => f.v === r.fornecedor_id)?.n, r.documento].filter(Boolean).join(' · ') || 'Título',
+  tituloRegistro: r => [FORN.find(f => f.v === r.fornecedor_id)?.n, r.documento].filter(Boolean).join(' · ') || r.descricao || 'Título',
   chaveHistorico: r => r.documento || r.id,
   msgDuplicado: 'Título duplicado'
 };

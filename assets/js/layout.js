@@ -59,7 +59,8 @@ const MENU = [
     { id: 'ponto',         nome: 'Ponto',             arquivo: 'pages/rh/ponto.html' },
     { id: 'faltas',        nome: 'Faltas',            arquivo: 'pages/rh/faltas.html' },
     { id: 'advertencias',  nome: 'Documentos e advertências', arquivo: 'pages/rh/documentos.html' },
-    { id: 'rh_eventos',    nome: 'Eventos da folha',  arquivo: 'pages/rh/eventos.html' }
+    { id: 'rh_eventos',    nome: 'Eventos da folha',  arquivo: 'pages/rh/eventos.html' },
+    { id: 'rh_relatorios', nome: 'Relatórios do RH',  arquivo: 'pages/rh/relatorios.html' }
   ]},
   { grupo: 'Integrações', itens: [
     { id: 'integracoes',   nome: 'Painel de integrações', arquivo: 'pages/config/integracoes.html' },

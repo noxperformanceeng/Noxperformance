@@ -34,13 +34,13 @@
    - Valor por dia: cadastro do funcionário (VT por dia) ou VT do mês ÷ dias.
    ===================================================================== */
 let CTX = null;
-const SIT = [{ v: 'previsto', n: 'Previsto' }, { v: 'entregue', n: 'Entregue / recarregado' }, { v: 'cancelado', n: 'Cancelado' }];
+const SIT = [{ v: 'previsto', n: 'Previsto (só no RH)' }, { v: 'confirmado', n: 'Confirmado (no financeiro)' }, { v: 'entregue', n: 'Pago / recarregado' }, { v: 'cancelado', n: 'Cancelado' }];
 const cfg = {
   textoNovo: '+ Novo VT',
   tabela: 'rh_vale_transporte', modulo: 'vale_transporte', titulo: 'Vale-transporte', singular: 'VT', plural: 'VTs',
-  subtitulo: 'Recarga do mês e desconto de 6% na folha. Na tela Lançamentos o VT fica travado.',
+  subtitulo: 'Recarga do mês. Ao confirmar: o valor do VT vai para o Contas a pagar e só o desconto (6%, acerto e reembolso) vai para os Lançamentos.',
   dicaBusca: 'funcionário…', ordem: 'competencia', revisao: false, porEmpresa: true,
-  abas: { campo: 'situacao', padrao: '', opcoes: [{ v: 'previsto', n: 'Previstos' }, { v: 'entregue', n: 'Entregues' }, { v: 'cancelado', n: 'Cancelados' }, { v: '', n: 'Todos' }] },
+  abas: { campo: 'situacao', padrao: '', opcoes: [{ v: 'previsto', n: 'Previstos' }, { v: 'confirmado', n: 'Confirmados' }, { v: 'entregue', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }, { v: '', n: 'Todos' }] },
   periodos: [{ campo: 'competencia', label: 'Competência' }],
   campos: [
     campoFuncionario(),
@@ -52,6 +52,7 @@ const cfg = {
     { id: 'desconto', label: 'Desconto 6% (R$)', tipo: 'moeda', lista: true, ajuda: 'Em branco = 6% do salário base, até o valor do VT.' },
     { id: 'reembolso', label: 'Reembolso (R$)', tipo: 'moeda', ajuda: 'Devolvido ao funcionário na folha (307).' },
     { id: 'desconto_anterior', label: 'Acerto mês anterior (R$)', tipo: 'moeda', ajuda: 'Desconto de VT do mês anterior (308).' },
+    { id: 'data_pagamento', label: 'Pagamento da recarga', tipo: 'data', lista: true, ajuda: 'Vencimento no financeiro. Em branco = dia 1º da competência.' },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, obrig: true, padrao: 'previsto', lista: true },
     { id: 'observacao', label: 'Observação', tipo: 'textarea', col: 4 }
   ],
@@ -71,7 +72,7 @@ const cfg = {
     q('#f_funcionario_id').addEventListener('change', () => { const f = funcionario(q('#f_funcionario_id').value);
       if (f?.vt_valor_dia && !q('#f_valor_dia').value) q('#f_valor_dia').value = num2(f.vt_valor_dia); total(); });
   },
-  acoesLote: [{ nome: 'Marcar como entregue', dados: { situacao: 'entregue' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
+  acoesLote: [{ nome: 'Confirmar (envia ao financeiro)', dados: { situacao: 'confirmado' } }, { nome: 'Voltar para previsto', dados: { situacao: 'previsto' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
   apagado: r => r.situacao === 'cancelado',
   msgDuplicado: 'Este funcionário já tem VT nesta competência'
 };

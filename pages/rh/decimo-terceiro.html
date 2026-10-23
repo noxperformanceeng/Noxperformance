@@ -34,7 +34,7 @@
    - Avos: meses do ano com 15 dias ou mais de contrato (até o mês da folha na 1ª; até dezembro na 2ª).
    ===================================================================== */
 let CTX = null;
-const SIT = [{ v: 'previsto', n: 'Previsto' }, { v: 'pago', n: 'Pago' }, { v: 'cancelado', n: 'Cancelado' }];
+const SIT = [{ v: 'previsto', n: 'Previsto (só no RH)' }, { v: 'confirmado', n: 'Confirmado (no financeiro)' }, { v: 'pago', n: 'Pago pelo financeiro' }, { v: 'cancelado', n: 'Cancelado' }];
 const PARC = [{ v: '1', n: '1ª parcela / adiantamento' }, { v: '2', n: '2ª parcela (final)' }];
 // Meses com 15+ dias de contrato no ano, até o mês "ate" (1–12)
 function avos(f, ano, ate) {
@@ -49,7 +49,7 @@ function avos(f, ano, ate) {
 const cfg = {
   textoNovo: '+ Nova parcela',
   tabela: 'rh_decimo_terceiro', modulo: 'decimo_terceiro', titulo: '13º salário', singular: 'parcela', plural: 'parcelas',
-  subtitulo: '1ª e 2ª parcelas do 13º. Entram na folha da competência escolhida.',
+  subtitulo: '1ª e 2ª parcelas do 13º. Ao confirmar: entram nos Lançamentos da competência e o valor a pagar (2ª parcela já descontada a 1ª) vai para o Contas a pagar.',
   dicaBusca: 'funcionário, ano…', ordem: 'competencia', revisao: false, porEmpresa: true,
   abas: { campo: 'parcela', padrao: '', opcoes: [{ v: '1', n: '1ª parcela' }, { v: '2', n: '2ª parcela' }, { v: '', n: 'Todas' }] },
   periodos: [{ campo: 'competencia', label: 'Competência' }, { campo: 'data_pagamento', label: 'Pagamento' }],
@@ -82,7 +82,7 @@ const cfg = {
     ['avos', 'base'].forEach(id => q('#f_' + id).addEventListener('change', () => calcular(false)));
   },
   validar: d => d.avos < 0 || d.avos > 12 ? 'Avos: de 0 a 12' : null,
-  acoesLote: [{ nome: 'Marcar como pago', dados: { situacao: 'pago' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
+  acoesLote: [{ nome: 'Confirmar (envia ao financeiro)', dados: { situacao: 'confirmado' } }, { nome: 'Voltar para previsto', dados: { situacao: 'previsto' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
   apagado: r => r.situacao === 'cancelado'
 };
 
