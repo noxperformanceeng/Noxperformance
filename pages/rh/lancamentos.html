@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lançamentos · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
+  .lanc-form { display: grid; grid-template-columns: 2.4fr .8fr 1fr 1.6fr auto; gap: 8px; align-items: end; margin: 6px 0 12px; }
+  .lanc-form label { font-size: 11px; margin-bottom: 2px; }
+  .lanc-form input, .lanc-form select { padding: 6px 8px; font-size: 13px; }
+  .modal.largo { max-width: 1000px; }
+  .tot-hol { display: flex; gap: 18px; justify-content: flex-end; font-size: 13px; margin-top: 8px; }
+  .tot-hol b { font-variant-numeric: tabular-nums; }
+  .acao-linha { background: none; border: 0; cursor: pointer; color: var(--texto-suave); font-size: 14px; padding: 2px 5px; }
+  .acao-linha:hover { color: var(--destaque); }
+  @media (max-width: 860px) { .lanc-form { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body data-modulo="lancamentos" data-titulo="Lançamentos" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Lançamentos do mês (competência)
+   - Cada funcionário: eventos contábeis (folha da contabilidade) e não contábeis (pagos por fora).
+   - Eventos de tela exclusiva (adiantamento, VT, férias, 13º, faltas) aparecem travados aqui:
+     são lançados pela tela deles. O ponto manda horas extras e atrasos pelo fechamento do ponto.
+   - "Gerar fixos do mês": salário (dias normais), insalubridade e cargo de confiança do cadastro,
+     e os eventos marcados como fixos (ex.: empréstimo consignado) copiados do mês anterior.
+   - Competência fechada: tudo travado (fechar/reabrir é ação liberada em Usuários e acessos).
+   ===================================================================== */
+let CTX, LANC = [], COMP = lerCompetencia(), FECHADAS = [], ACOES = new Set(), visao = 'func', PODE = false;
+const MULT_HORA = { '150': 1.5, '9161': 2, '8069': 1, 'N002': 1.5 };   // horas → valor (salário/hora × fator)
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  PODE = CTX.pode('lancamentos', 'editar');
+  const cont = document.getElementById('conteudo');
+  cont.innerHTML = `
+    <div class="cab-tela"><div><h1>Lançamentos</h1><p class="sub">Eventos do mês por funcionário. Base do holerite de conferência (contábil e não contábil).</p></div>
+      <div class="acoes-cab"><input type="month" id="comp" title="Competência">
+        ${PODE ? '<button class="btn fino" id="bFixos">Gerar fixos do mês</button>' : ''}
+        <a class="btn fino" id="bHol" href="#">Holerites →</a>
+        <button class="btn fino" id="bFechar" hidden></button></div></div>
+    <div class="barra-ferr">
+      <div class="abas" id="abas"><button class="aba ativa" data-v="func">Por funcionário</button><button class="aba" data-v="evento">Por evento</button></div>
+      <div class="ferr"><input id="busca" class="busca" type="search" placeholder="Buscar: nome, matrícula, evento…"><div id="rel"></div></div>
+    </div>
+    <div class="pendencias" id="pend"></div>
+    <div class="barra-lista"><span id="contagem"></span><span class="resumo" id="resumo"></span></div>
+    <div class="cartao tabela-rolagem"><table><thead><tr id="head"></tr></thead><tbody id="lista"><tr><td class="vazio">Carregando…</td></tr></tbody><tfoot id="totais"></tfoot></table></div>`;
+  const comp = document.getElementById('comp'); comp.value = COMP;
+  comp.onchange = () => { if (!comp.value) return; COMP = comp.value; gravarCompetencia(COMP); carregar(); };
+  document.getElementById('busca').addEventListener('input', desenhar);
+  document.querySelectorAll('#abas .aba').forEach(b => b.onclick = () => { visao = b.dataset.v; document.querySelectorAll('#abas .aba').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); });
+  if (PODE) document.getElementById('bFixos').onclick = gerarFixos;
+  document.getElementById('bFechar').onclick = fecharReabrir;
+  window.addEventListener('empresa', desenhar);
+  botoesRelatorio('rel', () => ({
+    arquivo: 'lancamentos_' + COMP,
+    colunas: ['Competência', 'Matrícula', 'Funcionário', 'Código', 'Evento', 'Natureza', 'Tipo', 'Referência', 'Valor', 'Lançado por (tela)', 'Observação'],
+    linhas: lancVisiveis().map(l => { const f = funcionario(l.funcionario_id), ev = evento(l.evento_id);
+      return [mesBR(COMP), f?.matricula || '', f?.nome || '', ev?.codigo, ev?.descricao, ev?.natureza === 'contabil' ? 'Contábil' : 'Não contábil', ev?.tipo,
+        refBR(ev, l.referencia), num2(l.valor), TELAS_RH[l.origem] || l.origem, l.observacao || '']; })
+  }));
+  try {
+    const [, , ac] = await Promise.all([carregarFuncionarios(), carregarEventos(), db.rpc('minhas_acoes')]);
+    (ac.data || []).forEach(a => ACOES.add(typeof a === 'string' ? a : a.minhas_acoes));
+    await carregar();
+  } catch (e) { aviso('Erro ao carregar: ' + (e.message || e), true); }
+})();
+
+async function carregar() {
+  document.getElementById('bHol').href = 'holerites.html?c=' + COMP;
+  const [l, c] = await Promise.all([
+    buscarTodos(() => db.from('rh_lancamentos').select('*').eq('competencia', COMP + '-01').order('id')),
+    db.from('rh_competencias').select('*').eq('competencia', COMP + '-01')
+  ]);
+  LANC = l; FECHADAS = (c.data || []).filter(x => x.situacao === 'fechada').map(x => x.empresa_id);
+  desenhar();
+}
+
+const fechada = empresa => FECHADAS.includes(empresa);
+const empresaOk = id => !CTX.empresa || id === CTX.empresa;
+function lancVisiveis() {
+  const busca = document.getElementById('busca').value;
+  return LANC.filter(l => empresaOk(l.empresa_id) && (!busca || combinaBusca(`${funcionario(l.funcionario_id)?.nome} ${funcionario(l.funcionario_id)?.matricula} ${evento(l.evento_id)?.codigo} ${evento(l.evento_id)?.descricao}`, busca)));
+}
+// Totais de uma lista de lançamentos → { pc, dc, pn, dn } (proventos/descontos contábeis e não contábeis)
+function totais(ls) {
+  const t = { pc: 0, dc: 0, pn: 0, dn: 0 };
+  ls.forEach(l => { const ev = evento(l.evento_id); if (!ev || ev.tipo === 'informativo') return;
+    t[(ev.tipo === 'provento' ? 'p' : 'd') + (ev.natureza === 'contabil' ? 'c' : 'n')] += Number(l.valor); });
+  return t;
+}
+
+function desenhar() {
+  const empresas = CTX.empresa ? [CTX.empresa] : CTX.empresas.map(e => e.id);
+  const todasFechadas = empresas.every(fechada), algumaFechada = empresas.some(fechada);
+  const bF = document.getElementById('bFechar');
+  bF.hidden = !ACOES.has('lancamentos.fechar') && !CTX.admin;
+  bF.textContent = todasFechadas ? '🔒 Reabrir competência' : 'Fechar competência';
+  const busca = document.getElementById('busca').value;
+  const vis = lancVisiveis();
+  const ativos = ativosNoMes(COMP, CTX.empresa);
+  const ids = new Set([...ativos.map(f => f.id), ...LANC.filter(l => empresaOk(l.empresa_id)).map(l => l.funcionario_id)]);
+  const salario = eventoCod('8781');
+  const semSalario = ativos.filter(f => f.situacao !== 'afastado' && !LANC.some(l => l.funcionario_id === f.id && l.evento_id === salario?.id));
+  document.getElementById('pend').innerHTML = (algumaFechada ? `<span class="tg ok">🔒 Competência ${mesBR(COMP)} fechada${todasFechadas ? '' : ' em parte das empresas'}</span>` : '') +
+    (semSalario.length ? `<span>Pendências</span><span class="tg alerta" title="${esc(semSalario.map(f => f.nome).join(', '))}">${semSalario.length} sem dias normais (use Gerar fixos do mês)</span>` : '');
+  const head = document.getElementById('head'), lista = document.getElementById('lista'), tf = document.getElementById('totais');
+
+  if (visao === 'func') {
+    head.innerHTML = '<th>Funcionário</th><th class="num">Proventos</th><th class="num">Descontos</th><th class="num">Líquido contábil</th><th class="num">Não contábil (líquido)</th><th class="num">Lançamentos</th>';
+    const linhas = [...ids].map(funcionario).filter(Boolean)
+      .filter(f => !busca || combinaBusca(`${f.nome} ${f.matricula} ${f.cargo}`, busca) || vis.some(l => l.funcionario_id === f.id))
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .map(f => ({ f, ls: LANC.filter(l => l.funcionario_id === f.id) }));
+    lista.innerHTML = linhas.length ? linhas.map(({ f, ls }) => { const t = totais(ls);
+      return `<tr data-f="${f.id}" style="cursor:pointer" class="${f.situacao === 'desligado' ? 'apagado' : ''}"><td class="forte">${esc(f.nome)}<small class="sub2">${esc([f.matricula && 'Matr. ' + f.matricula, f.cargo, f.situacao === 'afastado' && 'afastado'].filter(Boolean).join(' · '))}</small></td>
+        <td class="num">${num2(t.pc)}</td><td class="num">${num2(t.dc)}</td><td class="num"><b>${num2(t.pc - t.dc)}</b></td>
+        <td class="num">${t.pn || t.dn ? num2(t.pn - t.dn) : '—'}</td><td class="num">${ls.length}</td></tr>`; }).join('')
+      : '<tr><td colspan="6" class="vazio">Nenhum funcionário nesta competência.</td></tr>';
+    const T = totais(linhas.flatMap(x => x.ls));
+    tf.innerHTML = linhas.length ? `<tr><td>Total (${linhas.length})</td><td class="num">${num2(T.pc)}</td><td class="num">${num2(T.dc)}</td><td class="num">${num2(T.pc - T.dc)}</td><td class="num">${num2(T.pn - T.dn)}</td><td></td></tr>` : '';
+    document.getElementById('contagem').textContent = `${linhas.length} funcionário(s) · ${mesExtenso(COMP)}`;
+    lista.querySelectorAll('tr[data-f]').forEach(tr => tr.onclick = () => abrirFuncionario(+tr.dataset.f));
+  } else {
+    head.innerHTML = '<th>Código</th><th>Evento</th><th>Natureza</th><th class="num">Pessoas</th><th class="num">Referência</th><th class="num">Proventos</th><th class="num">Descontos</th>';
+    const grupos = {};
+    vis.forEach(l => { const g = grupos[l.evento_id] ||= { ev: evento(l.evento_id), pessoas: new Set(), ref: 0, valor: 0 }; g.pessoas.add(l.funcionario_id); g.ref += Number(l.referencia || 0); g.valor += Number(l.valor); });
+    const gs = Object.values(grupos).sort((a, b) => (a.ev.natureza > b.ev.natureza ? 1 : a.ev.natureza < b.ev.natureza ? -1 : a.ev.ordem - b.ev.ordem));
+    lista.innerHTML = gs.length ? gs.map(g => `<tr><td class="forte">${esc(g.ev.codigo)}</td><td>${esc(g.ev.descricao)}${g.ev.tela_exclusiva ? `<small class="sub2">🔒 ${esc(TELAS_RH[g.ev.tela_exclusiva])}</small>` : ''}</td>
+      <td>${g.ev.natureza === 'contabil' ? 'Contábil' : '<span class="tg alerta">Não contábil</span>'}</td><td class="num">${g.pessoas.size}</td><td class="num">${refBR(g.ev, g.ref)}</td>
+      <td class="num">${g.ev.tipo === 'provento' ? num2(g.valor) : ''}</td><td class="num">${g.ev.tipo === 'desconto' ? num2(g.valor) : ''}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="vazio">Nenhum lançamento nesta competência.</td></tr>';
+    const T = totais(vis);
+    tf.innerHTML = gs.length ? `<tr><td colspan="5">Total contábil · não contábil</td><td class="num">${num2(T.pc)} · ${num2(T.pn)}</td><td class="num">${num2(T.dc)} · ${num2(T.dn)}</td></tr>` : '';
+    document.getElementById('contagem').textContent = `${gs.length} evento(s) · ${mesExtenso(COMP)}`;
+  }
+  const T = totais(vis);
+  document.getElementById('resumo').innerHTML = `<span>Líquido contábil <b>${reais(T.pc - T.dc)}</b></span><span>Não contábil <b>${reais(T.pn - T.dn)}</b></span>`;
+}
+
+/* ---------- Lançamentos de um funcionário ---------- */
+function abrirFuncionario(fid) {
+  const f = funcionario(fid), trav = fechada(f.empresa_id), pode = PODE && !trav;
+  const livres = EVENTOS.filter(e => !e.tela_exclusiva && e.situacao === 'ativo');
+  const m = abrirModal(`<h2>${esc(f.nome)} · ${mesBR(COMP)}</h2>
+    <p class="sub" style="margin:-6px 0 10px">${esc([f.matricula && 'Matr. ' + f.matricula, f.cargo, f.salario_base && 'Salário ' + reais(f.salario_base)].filter(Boolean).join(' · '))}${trav ? ' · <b>competência fechada</b>' : ''}</p>
+    ${pode ? `<div class="lanc-form">
+      <div><label>Evento</label><select id="lEv"><option value="">— escolha —</option>
+        <optgroup label="Contábeis">${livres.filter(e => e.natureza === 'contabil').map(e => `<option value="${e.id}">${esc(e.codigo)} · ${esc(e.descricao)} (${e.tipo === 'provento' ? '+' : e.tipo === 'desconto' ? '−' : 'info'})</option>`).join('')}</optgroup>
+        <optgroup label="Não contábeis">${livres.filter(e => e.natureza !== 'contabil').map(e => `<option value="${e.id}">${esc(e.codigo)} · ${esc(e.descricao)} (${e.tipo === 'provento' ? '+' : e.tipo === 'desconto' ? '−' : 'info'})</option>`).join('')}</optgroup></select></div>
+      <div><label id="lRefL">Referência</label><input id="lRef" inputmode="decimal"></div>
+      <div><label>Valor (R$)</label><input id="lVal" inputmode="decimal"></div>
+      <div><label>Observação</label><input id="lObs"></div>
+      <div><button class="btn primario fino" id="lAdd">Adicionar</button></div></div>` : ''}
+    <div class="tabela-rolagem" style="max-height:52vh"><table class="lista-mini"><thead><tr><th>Código</th><th>Evento</th><th class="num">Ref.</th><th class="num">Vencimentos</th><th class="num">Descontos</th><th>Lançado por</th><th></th></tr></thead><tbody id="lLista"></tbody></table></div>
+    <div class="tot-hol" id="lTot"></div>
+    <div class="acoes" style="margin-top:14px"><a class="btn" href="holerites.html?c=${COMP}&f=${f.id}">Holerite de conferência</a><button class="btn" id="lFechar">Fechar</button></div>`);
+  m.querySelector('.modal').classList.add('form', 'largo');
+  m.querySelector('#lFechar').onclick = () => m.remove();
+  let editando = null;
+
+  const desenharLista = () => {
+    const ls = LANC.filter(l => l.funcionario_id === fid).sort((a, b) => { const ea = evento(a.evento_id), eb = evento(b.evento_id);
+      return (ea.natureza > eb.natureza ? 1 : ea.natureza < eb.natureza ? -1 : 0) || (ea.tipo === eb.tipo ? 0 : ea.tipo === 'provento' ? -1 : 1) || ea.ordem - eb.ordem; });
+    let nat = null;
+    m.querySelector('#lLista').innerHTML = ls.length ? ls.map(l => { const ev = evento(l.evento_id);
+      const sep = ev.natureza !== nat ? `<tr><td colspan="7" class="secao" style="padding-top:10px">${(nat = ev.natureza) === 'contabil' ? 'Contábil' : 'Não contábil'}</td></tr>` : '';
+      const manual = l.origem === 'lancamentos';
+      return sep + `<tr><td>${esc(ev.codigo)}</td><td>${esc(ev.descricao)}${l.observacao ? `<small class="sub2">${esc(l.observacao)}</small>` : ''}</td><td class="num">${refBR(ev, l.referencia)}</td>
+        <td class="num">${ev.tipo === 'provento' ? num2(l.valor) : ''}</td><td class="num">${ev.tipo === 'desconto' ? num2(l.valor) : ev.tipo === 'informativo' ? '(' + num2(l.valor) + ')' : ''}</td>
+        <td>${manual ? '<small>Lançamentos</small>' : `<span class="tg neutro">🔒 ${esc(TELAS_RH[l.origem] || l.origem)}</span>`}</td>
+        <td style="white-space:nowrap">${manual && pode ? `<button class="acao-linha" data-ed="${l.id}" title="Alterar">✎</button><button class="acao-linha" data-rm="${l.id}" title="Excluir">✕</button>` : ''}</td></tr>`; }).join('')
+      : '<tr><td colspan="7" class="vazio">Nenhum lançamento neste mês.</td></tr>';
+    const t = totais(ls);
+    m.querySelector('#lTot').innerHTML = `<span>Contábil: vencimentos <b>${num2(t.pc)}</b> · descontos <b>${num2(t.dc)}</b> · líquido <b>${reais(t.pc - t.dc)}</b></span>` +
+      (t.pn || t.dn ? `<span>Não contábil: líquido <b>${reais(t.pn - t.dn)}</b></span>` : '');
+    m.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+      if (!confirm('Excluir este lançamento?')) return;
+      const { error } = await db.from('rh_lancamentos').delete().eq('id', +b.dataset.rm);
+      if (error) return aviso('Não excluiu: ' + error.message, true);
+      LANC = LANC.filter(x => x.id !== +b.dataset.rm); desenharLista(); desenhar();
+    });
+    m.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => {
+      const l = LANC.find(x => x.id === +b.dataset.ed); editando = l.id;
+      m.querySelector('#lEv').value = l.evento_id; ajustarRef();
+      m.querySelector('#lRef').value = l.referencia == null ? '' : evento(l.evento_id).referencia_tipo === 'horas' ? horasBR(l.referencia) : num2(l.referencia);
+      m.querySelector('#lVal').value = num2(l.valor); m.querySelector('#lObs').value = l.observacao || '';
+      m.querySelector('#lAdd').textContent = 'Salvar';
+    });
+  };
+  desenharLista();
+  if (!pode) return;
+
+  // Valor sugerido pela referência: horas × salário/hora × fator; dias × salário/30; valor do cadastro
+  const ajustarRef = () => { const ev = evento(m.querySelector('#lEv').value);
+    m.querySelector('#lRefL').textContent = 'Referência' + (ev ? ` (${{ dias: 'dias', horas: 'h:mm', percentual: '%', valor: 'R$', quantidade: 'qtd.' }[ev.referencia_tipo]})` : ''); };
+  const sugerir = () => {
+    const ev = evento(m.querySelector('#lEv').value); if (!ev) return;
+    const ref = ev.referencia_tipo === 'horas' ? lerHoras(m.querySelector('#lRef').value) : lerNumero(m.querySelector('#lRef').value);
+    const sal = Number(f.salario_base || 0), hora = sal / Number(f.horas_mensais || 220);
+    let v = null;
+    if (ev.valor_cadastro && Number(f[ev.valor_cadastro])) v = ev.valor_cadastro === 'salario_base' && ref ? sal / 30 * ref : Number(f[ev.valor_cadastro]);
+    else if (ev.referencia_tipo === 'horas' && ref && MULT_HORA[ev.codigo]) v = hora * MULT_HORA[ev.codigo] * ref;
+    else if (ev.referencia_tipo === 'dias' && ref) v = sal / 30 * ref;
+    else if (ev.referencia_tipo === 'valor' && ref) v = ref;
+    if (v != null) m.querySelector('#lVal').value = num2(v);
+  };
+  m.querySelector('#lEv').onchange = () => { ajustarRef(); const ev = evento(m.querySelector('#lEv').value);
+    if (ev?.valor_cadastro === 'salario_base' && !m.querySelector('#lRef').value) m.querySelector('#lRef').value = '30,00'; sugerir(); };
+  m.querySelector('#lRef').onchange = sugerir;
+  m.querySelector('#lAdd').onclick = async () => {
+    const ev = evento(m.querySelector('#lEv').value);
+    if (!ev) return aviso('Escolha o evento', true);
+    const refTxt = m.querySelector('#lRef').value, valor = lerNumero(m.querySelector('#lVal').value);
+    const referencia = ev.referencia_tipo === 'horas' ? lerHoras(refTxt) : lerNumero(refTxt);
+    if (valor == null || isNaN(valor) || valor <= 0) return aviso('Informe o valor', true);
+    if (referencia != null && isNaN(referencia)) return aviso('Referência inválida', true);
+    const dados = { funcionario_id: fid, competencia: COMP + '-01', evento_id: ev.id, referencia, valor: Math.round(valor * 100) / 100, observacao: m.querySelector('#lObs').value.trim() || null, origem: 'lancamentos' };
+    const q = editando ? db.from('rh_lancamentos').update(dados).eq('id', editando) : db.from('rh_lancamentos').insert(dados);
+    const { data, error } = await q.select('*').single();
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    LANC = editando ? LANC.map(x => x.id === editando ? data : x) : [...LANC, data];
+    editando = null; m.querySelector('#lAdd').textContent = 'Adicionar';
+    ['#lEv', '#lRef', '#lVal', '#lObs'].forEach(s => m.querySelector(s).value = '');
+    desenharLista(); desenhar();
+  };
+}
+
+/* ---------- Gerar fixos do mês ---------- */
+async function gerarFixos() {
+  const ativos = ativosNoMes(COMP, CTX.empresa).filter(f => !fechada(f.empresa_id));
+  const doCadastro = EVENTOS.filter(e => e.valor_cadastro && e.situacao === 'ativo' && !e.tela_exclusiva);
+  const fixos = EVENTOS.filter(e => e.fixo && e.situacao === 'ativo' && !e.tela_exclusiva);
+  const anterior = fixos.length ? await buscarTodos(() => db.from('rh_lancamentos').select('*').eq('competencia', somaMes(COMP, -1) + '-01')
+    .eq('origem', 'lancamentos').in('evento_id', fixos.map(e => e.id))) : [];
+  const ja = (fid, eid) => LANC.some(l => l.funcionario_id === fid && l.evento_id === eid);
+  const novos = [];
+  ativos.forEach(f => {
+    doCadastro.forEach(ev => {
+      const base = Number(f[ev.valor_cadastro] || 0);
+      if (!base || ja(f.id, ev.id)) return;
+      if (ev.valor_cadastro === 'salario_base') {
+        if (f.situacao === 'afastado') return;                    // afastado pelo INSS: lançar os dias à mão
+        // Admitido ou desligado no mês: proporcional (mês comercial de 30 dias)
+        const ini = f.data_admissao && f.data_admissao.slice(0, 7) === COMP ? +f.data_admissao.slice(8, 10) : 1;
+        const fim = f.data_demissao && f.data_demissao.slice(0, 7) === COMP ? Math.min(+f.data_demissao.slice(8, 10), 30) : 30;
+        const dias = Math.max(Math.min(fim, 30) - ini + 1, 0); if (!dias) return;
+        novos.push({ funcionario_id: f.id, evento_id: ev.id, referencia: dias, valor: Math.round(base / 30 * dias * 100) / 100 });
+      } else {
+        if (f.situacao === 'afastado') return;
+        novos.push({ funcionario_id: f.id, evento_id: ev.id, referencia: ev.codigo === '16' ? 20 : null, valor: base });
+      }
+    });
+    fixos.forEach(ev => anterior.filter(l => l.funcionario_id === f.id && l.evento_id === ev.id && !ja(f.id, ev.id))
+      .forEach(l => novos.push({ funcionario_id: f.id, evento_id: ev.id, referencia: l.referencia, valor: l.valor, observacao: l.observacao })));
+  });
+  if (!novos.length) return aviso('Nada a gerar: os fixos deste mês já estão lançados.');
+  const porEv = {}; novos.forEach(n => porEv[evento(n.evento_id).descricao] = (porEv[evento(n.evento_id).descricao] || 0) + 1);
+  if (!confirm(`Gerar ${novos.length} lançamento(s) em ${mesBR(COMP)}?\n\n${Object.entries(porEv).map(([k, v]) => `${k}: ${v}`).join('\n')}\n\nAfastados ficam de fora (lance os dias de afastamento à mão). Quem já tem o evento no mês não é alterado.`)) return;
+  const { error } = await db.from('rh_lancamentos').insert(novos.map(n => ({ ...n, competencia: COMP + '-01', origem: 'lancamentos' })));
+  if (error) return aviso('Não gerou: ' + error.message, true);
+  aviso(`${novos.length} lançamento(s) gerado(s)`); carregar();
+}
+
+async function fecharReabrir() {
+  const empresas = CTX.empresa ? [CTX.empresa] : CTX.empresas.map(e => e.id);
+  const fechar = !empresas.every(fechada);
+  const nomes = empresas.map(id => CTX.empresas.find(e => e.id === id)?.nome).join(', ');
+  if (!confirm(fechar ? `Fechar a competência ${mesBR(COMP)} (${nomes})?\nOs lançamentos do mês ficam travados em todas as telas do RH.` : `Reabrir a competência ${mesBR(COMP)} (${nomes})?`)) return;
+  for (const id of empresas) {
+    const { error } = await db.rpc('rh_fechar_competencia', { p_empresa: id, p_competencia: COMP + '-01', p_fechar: fechar });
+    if (error) return aviso('Não salvou: ' + error.message, true);
+  }
+  aviso(fechar ? 'Competência fechada' : 'Competência reaberta'); carregar();
+}
+</script>
+</body>
+</html>

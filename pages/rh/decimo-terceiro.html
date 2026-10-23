@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>13º salário · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .modal.largo { max-width: 940px; }
+  .gerar-cab { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; margin: 8px 0 12px; align-items: end; }
+  .gerar-cab label { font-size: 11px; margin-bottom: 2px; }
+  .gerar-cab input, .gerar-cab select { padding: 6px 8px; }
+  td input.v { width: 90px; padding: 4px 6px; text-align: right; }
+</style>
+</head>
+<body data-modulo="decimo_terceiro" data-titulo="13º salário" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   13º salário
+   - 1ª parcela (adiantamento, até 30/11 — também serve para o adiantamento mensal): 50% × base × avos/12.
+     Na folha: 8833 13 ADIANTAMENTO.
+   - 2ª parcela (até 20/12): 13º integral (base × avos/12) e desconto do que já foi adiantado no ano
+     (9131 e 9132; INSS e IRRF do 13º vêm da contabilidade, lançados na tela Lançamentos).
+   - Avos: meses do ano com 15 dias ou mais de contrato (até o mês da folha na 1ª; até dezembro na 2ª).
+   ===================================================================== */
+let CTX = null;
+const SIT = [{ v: 'previsto', n: 'Previsto' }, { v: 'pago', n: 'Pago' }, { v: 'cancelado', n: 'Cancelado' }];
+const PARC = [{ v: '1', n: '1ª parcela / adiantamento' }, { v: '2', n: '2ª parcela (final)' }];
+// Meses com 15+ dias de contrato no ano, até o mês "ate" (1–12)
+function avos(f, ano, ate) {
+  let n = 0;
+  for (let mes = 1; mes <= ate; mes++) {
+    const m = `${ano}-${String(mes).padStart(2, '0')}`, ini = m + '-01', fim = m + '-' + diasNoMes(m);
+    const de = f.data_admissao && f.data_admissao > ini ? f.data_admissao : ini, ate_ = f.data_demissao && f.data_demissao < fim ? f.data_demissao : fim;
+    if (de <= ate_ && (new Date(ate_) - new Date(de)) / 864e5 + 1 >= 15) n++;
+  }
+  return n;
+}
+const cfg = {
+  textoNovo: '+ Nova parcela',
+  tabela: 'rh_decimo_terceiro', modulo: 'decimo_terceiro', titulo: '13º salário', singular: 'parcela', plural: 'parcelas',
+  subtitulo: '1ª e 2ª parcelas do 13º. Entram na folha da competência escolhida.',
+  dicaBusca: 'funcionário, ano…', ordem: 'competencia', revisao: false, porEmpresa: true,
+  abas: { campo: 'parcela', padrao: '', opcoes: [{ v: '1', n: '1ª parcela' }, { v: '2', n: '2ª parcela' }, { v: '', n: 'Todas' }] },
+  periodos: [{ campo: 'competencia', label: 'Competência' }, { campo: 'data_pagamento', label: 'Pagamento' }],
+  campos: [
+    campoFuncionario(),
+    { id: 'ano', label: 'Ano', tipo: 'numero', obrig: true, lista: true, filtro: true, padrao: () => new Date().getFullYear() },
+    { id: 'parcela', label: 'Parcela', tipo: 'select', opcoes: PARC, obrig: true, padrao: '1', lista: true },
+    { id: 'avos', label: 'Avos', tipo: 'numero', obrig: true, padrao: 12, lista: true },
+    { id: 'base', label: 'Base (salário + médias)', tipo: 'moeda', ajuda: 'Em branco = salário base do cadastro.' },
+    { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', lista: true, ajuda: '1ª: valor pago. 2ª: 13º integral (bruto).' },
+    { id: 'desconto_adiantado', label: 'Já adiantado no ano (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'competencia', label: 'Folha (competência)', tipo: 'mes', obrig: true, lista: true, padrao: () => lerCompetencia() + '-01' },
+    { id: 'data_pagamento', label: 'Pagamento', tipo: 'data' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, obrig: true, padrao: 'previsto', lista: true },
+    { id: 'observacao', label: 'Observação', tipo: 'textarea', col: 4 }
+  ],
+  ordenarPor: { competencia: r => r.competencia + (funcionario(r.funcionario_id)?.nome || '') },
+  totais: ['valor'],
+  async carregarExtra(linhas, ctx) { CTX = ctx; await carregarFuncionarios(); return {}; },
+  aoAbrir(m) {
+    const q = s => m.querySelector(s);
+    const calcular = (refazAvos) => {
+      const f = funcionario(q('#f_funcionario_id').value); if (!f) return;
+      const ano = lerNumero(q('#f_ano').value), parc = q('#f_parcela').value, comp = q('#f_competencia').value;
+      if (refazAvos && ano) q('#f_avos').value = avos(f, ano, parc === '2' ? 12 : (comp && +comp.slice(0, 4) === ano ? +comp.slice(5, 7) : 12));
+      const base = lerNumero(q('#f_base').value) || Number(f.salario_base || 0), a = lerNumero(q('#f_avos').value) || 0;
+      q('#f_valor').value = num2(base * a / 12 * (parc === '1' ? 0.5 : 1));
+    };
+    ['funcionario_id', 'ano', 'parcela', 'competencia'].forEach(id => q('#f_' + id).addEventListener('change', () => calcular(true)));
+    ['avos', 'base'].forEach(id => q('#f_' + id).addEventListener('change', () => calcular(false)));
+  },
+  validar: d => d.avos < 0 || d.avos > 12 ? 'Avos: de 0 a 12' : null,
+  acoesLote: [{ nome: 'Marcar como pago', dados: { situacao: 'pago' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
+  apagado: r => r.situacao === 'cancelado'
+};
+
+(async () => {
+  await montarCadastro(cfg);
+  if (!CTX?.pode('decimo_terceiro', 'editar')) return;
+  const b = document.createElement('button'); b.className = 'btn fino'; b.textContent = 'Gerar parcela para todos'; b.style.marginLeft = 'auto';
+  const cab = document.querySelector('.cab-tela'); cab.insertBefore(b, cab.lastElementChild); cab.lastElementChild.style.marginLeft = '6px';
+  b.onclick = gerar;
+})();
+
+async function gerar() {
+  const ano = new Date().getFullYear();
+  const m = abrirModal(`<h2>Gerar parcela do 13º</h2>
+    <div class="gerar-cab"><div><label>Ano</label><input id="gAno" inputmode="numeric" value="${ano}"></div>
+      <div><label>Parcela</label><select id="gParc">${PARC.map(p => `<option value="${p.v}">${p.n}</option>`).join('')}</select></div>
+      <div><label>Folha (competência)</label><input type="month" id="gComp" value="${ano}-11"></div>
+      <div><label>Pagamento</label><input type="date" id="gData" value="${ano}-11-30"></div></div>
+    <div class="tabela-rolagem" style="max-height:52vh"><table class="lista-mini"><thead><tr><th><input type="checkbox" id="gTodos" checked></th><th>Funcionário</th><th>Admissão</th><th class="num">Base</th><th class="num">Avos</th><th class="num">Valor</th></tr></thead><tbody id="gLista"></tbody></table></div>
+    <div id="gTot" style="text-align:right;margin-top:8px;font-size:13px"></div>
+    <div class="acoes" style="margin-top:14px"><button class="btn" id="gFechar">Cancelar</button><button class="btn primario" id="gOk">Gravar parcelas</button></div>`);
+  m.querySelector('.modal').classList.add('form', 'largo');
+  const q = s => m.querySelector(s);
+  q('#gFechar').onclick = () => m.remove();
+  let linhas = [];
+  const desenhar = () => {
+    q('#gLista').innerHTML = linhas.map((l, i) => `<tr class="${l.ja ? 'apagado' : ''}"><td><input type="checkbox" data-i="${i}" ${l.ok ? 'checked' : ''} ${l.ja ? 'disabled' : ''}></td>
+      <td>${esc(l.f.nome)}${l.ja ? '<small class="sub2">já tem esta parcela no ano</small>' : ''}</td><td>${dataCurta(l.f.data_admissao)}</td><td class="num">${num2(l.base)}</td>
+      <td class="num"><input class="v" data-a="${i}" value="${l.avos}" ${l.ja ? 'disabled' : ''}></td><td class="num">${num2(l.valor)}</td></tr>`).join('') || '<tr><td colspan="6" class="vazio">Ninguém ativo.</td></tr>';
+    m.querySelectorAll('[data-i]').forEach(c => c.onchange = () => { linhas[+c.dataset.i].ok = c.checked; tot(); });
+    m.querySelectorAll('[data-a]').forEach(c => c.onchange = () => { const l = linhas[+c.dataset.a]; l.avos = Math.max(0, Math.min(12, lerNumero(c.value) || 0)); valor(l); desenhar(); });
+    tot();
+  };
+  const tot = () => { const s = linhas.filter(l => l.ok && !l.ja); q('#gTot').innerHTML = `${s.length} marcado(s) · <b>${reais(s.reduce((a, l) => a + l.valor, 0))}</b>`; };
+  const valor = l => l.valor = Math.round(l.base * l.avos / 12 * (q('#gParc').value === '1' ? 0.5 : 1) * 100) / 100;
+  const montar = async () => {
+    const a = +q('#gAno').value, parc = q('#gParc').value, comp = q('#gComp').value; if (!a || !comp) return;
+    const { data: ja } = await db.from('rh_decimo_terceiro').select('funcionario_id').eq('ano', a).eq('parcela', parc).neq('situacao', 'cancelado');
+    const jaSet = new Set((ja || []).map(x => x.funcionario_id));
+    linhas = ativosNoMes(comp, CTX.empresa).filter(f => f.tipo_contrato === 'clt' || f.tipo_contrato === 'aprendiz' || f.tipo_contrato === 'temporario').map(f => {
+      const l = { f, base: Number(f.salario_base || 0), avos: avos(f, a, parc === '2' ? 12 : (+comp.slice(0, 4) === a ? +comp.slice(5, 7) : 12)), ja: jaSet.has(f.id) };
+      l.ok = !l.ja; valor(l); return l;
+    }).sort((x, y) => x.f.nome.localeCompare(y.f.nome));
+    desenhar();
+  };
+  q('#gParc').onchange = () => { const a = q('#gAno').value; if (q('#gParc').value === '2') { q('#gComp').value = a + '-12'; q('#gData').value = a + '-12-20'; } else { q('#gComp').value = a + '-11'; q('#gData').value = a + '-11-30'; } montar(); };
+  q('#gAno').onchange = montar; q('#gComp').onchange = montar;
+  q('#gTodos').onchange = e => { linhas.forEach(l => { if (!l.ja) l.ok = e.target.checked; }); desenhar(); };
+  q('#gOk').onclick = async () => {
+    const sel = linhas.filter(l => l.ok && !l.ja && l.avos > 0);
+    if (!sel.length) return aviso('Marque ao menos um funcionário', true);
+    q('#gOk').disabled = true;
+    const { error } = await db.from('rh_decimo_terceiro').insert(sel.map(l => ({ funcionario_id: l.f.id, ano: +q('#gAno').value, parcela: q('#gParc').value, avos: l.avos,
+      base: l.base, valor: l.valor, competencia: q('#gComp').value + '-01', data_pagamento: q('#gData').value || null, situacao: 'previsto' })));
+    if (error) { q('#gOk').disabled = false; return aviso('Não gravou: ' + error.message, true); }
+    m.remove(); aviso(`${sel.length} parcela(s) gravada(s)`); cfg.recarregar();
+  };
+  montar();
+}
+</script>
+</body>
+</html>

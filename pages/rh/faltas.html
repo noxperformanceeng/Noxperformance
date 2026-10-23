@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faltas · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="faltas" data-titulo="Faltas" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Controle de faltas
+   - Falta injustificada: desconta o dia (9151) e o DSR da semana (9152).
+   - Atraso / saída antecipada: desconta as horas (8069), salário ÷ horas mensais.
+   - Justificada / atestado: só registro (não desconta); atestado liga ao documento anexado.
+   - Suspensão: desconta o dia. Cancelar a falta tira o desconto da folha.
+   - O ponto pode registrar aqui as faltas que encontrar (dias de escala sem marcação).
+   ===================================================================== */
+let CTX = null, DOCS = [];
+const TIPOS = [{ v: 'injustificada', n: 'Injustificada' }, { v: 'justificada', n: 'Justificada (abonada)' }, { v: 'atestado', n: 'Atestado médico' },
+  { v: 'atraso', n: 'Atraso' }, { v: 'saida_antecipada', n: 'Saída antecipada' }, { v: 'suspensao', n: 'Suspensão' }];
+const PADRAO = { injustificada: [true, true], justificada: [false, false], atestado: [false, false], atraso: [true, false], saida_antecipada: [true, false], suspensao: [true, false] };
+const cfg = {
+  textoNovo: '+ Nova falta',
+  tabela: 'rh_faltas', modulo: 'faltas', titulo: 'Faltas', singular: 'falta', plural: 'faltas',
+  subtitulo: 'Faltas, atrasos e afastamentos curtos. O que desconta entra sozinho na folha do mês.',
+  dicaBusca: 'funcionário, motivo…', ordem: 'data', revisao: false, porEmpresa: true,
+  abas: { campo: 'tipo', padrao: '', opcoes: [{ v: 'injustificada', n: 'Injustificadas' }, { v: 'atestado', n: 'Atestados' }, { v: 'justificada', n: 'Justificadas' },
+    { v: 'atraso', n: 'Atrasos', teste: r => r.tipo === 'atraso' || r.tipo === 'saida_antecipada' }, { v: '', n: 'Todas' }] },
+  periodos: [{ campo: 'data', label: 'Data' }],
+  campos: [
+    campoFuncionario(),
+    { id: 'data', label: 'Data', tipo: 'data', obrig: true, lista: true, padrao: () => hoje() },
+    { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPOS, obrig: true, padrao: 'injustificada', lista: true, filtro: true },
+    { id: 'horas', label: 'Horas', tipo: 'horas', ajuda: 'Atraso/saída: ex. 1:30. Em branco = dia inteiro.', lista: true },
+    { id: 'desconta', label: 'Folha', tipo: 'bool', textoBool: 'Desconta na folha', padrao: true, lista: true },
+    { id: 'desconta_dsr', label: 'DSR', tipo: 'bool', textoBool: 'Perde o DSR da semana', padrao: true },
+    { id: 'documento_id', label: 'Atestado / documento', tipo: 'select', col: 2, opcoes: () => DOCS },
+    { id: 'competencia', label: 'Folha (competência)', tipo: 'mes', ajuda: 'Em branco = mês da falta.' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Válida' }, { v: 'cancelado', n: 'Cancelada' }], obrig: true, padrao: 'ativo' },
+    { id: 'observacao', label: 'Motivo / observação', tipo: 'textarea', col: 4 }
+  ],
+  ordenarPor: { data: r => r.data + (funcionario(r.funcionario_id)?.nome || '') },
+  async carregarExtra(linhas, ctx) {
+    CTX = ctx; await carregarFuncionarios();
+    const { data } = await db.from('rh_documentos').select('id, funcionario_id, tipo, data, descricao').eq('situacao', 'ativo').order('data', { ascending: false });
+    DOCS = (data || []).map(d => ({ v: d.id, n: `${dataCurta(d.data)} · ${funcionario(d.funcionario_id)?.nome?.split(' ')[0] || ''} · ${d.tipo}${d.descricao ? ' · ' + d.descricao : ''}` }));
+    return {};
+  },
+  resumo: v => { const n = t => v.filter(r => r.situacao !== 'cancelado' && t(r)).length;
+    return `<span>Dias descontados <b>${n(r => r.desconta && r.horas == null)}</b></span><span>Atrasos <b>${horasBR(v.filter(r => r.situacao !== 'cancelado' && r.desconta && r.horas != null).reduce((s, r) => s + Number(r.horas), 0))}</b></span><span>Atestados <b>${n(r => r.tipo === 'atestado')}</b></span>`; },
+  pendencias: [{ id: 'sem_doc', nome: 'Atestado sem documento', cor: 'alerta', teste: r => r.situacao !== 'cancelado' && r.tipo === 'atestado' && !r.documento_id }],
+  aoAbrir(m, r) {
+    const q = s => m.querySelector(s);
+    q('#f_tipo').addEventListener('change', () => { const [d, s] = PADRAO[q('#f_tipo').value]; q('#f_desconta').checked = d; q('#f_desconta_dsr').checked = s;
+      if (!['atraso', 'saida_antecipada'].includes(q('#f_tipo').value)) q('#f_horas').value = ''; });
+  },
+  validar: d => d.horas != null && (isNaN(d.horas) || d.horas <= 0 || d.horas > 24) ? 'Horas inválidas (ex.: 1:30)'
+    : ['atraso', 'saida_antecipada'].includes(d.tipo) && d.horas == null ? 'Informe as horas do atraso / saída' : null,
+  colunasExtras: [{ label: 'Folha', texto: r => r.situacao === 'cancelado' ? '' : mesBR(r.competencia || r.data.slice(0, 7) + '-01') }],
+  acoesLote: [{ nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
+  apagado: r => r.situacao === 'cancelado'
+};
+montarCadastro(cfg);
+</script>
+</body>
+</html>

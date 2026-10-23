@@ -32,6 +32,9 @@ function fmtDoc(v) {
   return v || '';
 }
 const fmtCEP = v => { const d = soDigitos(v); return d.length === 8 ? d.replace(/(\d{5})(\d{3})/, '$1-$2') : (v || ''); };
+// Horas decimais ↔ "h:mm": 1.5 → "1:30"; "1:30" ou "1,5" → 1.5
+const fmtHoras = v => { if (v === null || v === undefined || v === '') return ''; const t = Math.round(Math.abs(Number(v)) * 60); return (Number(v) < 0 ? '-' : '') + Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+const lerHorasTexto = v => { v = String(v ?? '').trim(); if (!v) return null; const m = v.match(/^(\d+):(\d{1,2})$/); return m ? +m[1] + +m[2] / 60 : lerNumero(v); };
 const dataCurta = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
 
 /* ---------- Motor ---------- */
@@ -61,6 +64,8 @@ async function montarCadastro(cfg) {
       case 'select': case 'empresa': return rotulo(c, v);
       case 'bool': return v ? 'Sim' : 'Não';
       case 'data': return dataCurta(v);
+      case 'mes': return String(v).slice(5, 7) + '/' + String(v).slice(0, 4);
+      case 'horas': return fmtHoras(v);
       case 'cpf': case 'cnpj': case 'cpfcnpj': return fmtDoc(v);
       case 'cep': return fmtCEP(v);
       case 'moeda': return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -290,6 +295,8 @@ async function montarCadastro(cfg) {
       case 'textarea': return `<textarea id="${id}" rows="2" ${dis}>${esc(val)}</textarea>`;
       case 'bool': return `<label class="chk"><input type="checkbox" id="${id}" ${val ? 'checked' : ''} ${dis}> ${esc(c.textoBool || 'Sim')}</label>`;
       case 'data': return `<input type="date" id="${id}" value="${esc(String(val).slice(0, 10))}" ${dis}>`;
+      case 'mes': return `<input type="month" id="${id}" value="${esc(String(val).slice(0, 7))}" ${dis}>`;
+      case 'horas': return `<input id="${id}" inputmode="numeric" placeholder="h:mm" value="${esc(fmtHoras(val))}" ${dis}>`;
       case 'numero': case 'moeda': return `<input id="${id}" inputmode="decimal" value="${val === '' ? '' : esc(c.tipo === 'moeda' ? Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(val).replace('.', ','))}" ${dis}>`;
       case 'cpf': case 'cnpj': case 'cpfcnpj': return `<input id="${id}" inputmode="numeric" value="${esc(fmtDoc(val))}" ${dis}>`;
       case 'cep': return `<input id="${id}" inputmode="numeric" value="${esc(fmtCEP(val))}" placeholder="00000-000" ${dis}>`;
@@ -356,6 +363,8 @@ async function montarCadastro(cfg) {
         if (['cpf', 'cnpj', 'cpfcnpj', 'cep'].includes(c.tipo)) v = soDigitos(v);
         if (['numero', 'moeda'].includes(c.tipo)) v = lerNumero(v);
         if (c.tipo === 'empresa' && v) v = Number(v);
+        if (c.tipo === 'mes' && v) v += '-01';                 // competência: sempre o dia 1º
+        if (c.tipo === 'horas') v = lerHorasTexto(v);
         if (c.maiusculo && typeof v === 'string') v = v.toUpperCase();
         if (v === '') v = null;
         dados[c.id] = v;
@@ -364,7 +373,7 @@ async function montarCadastro(cfg) {
         if (!(c.id in dados)) continue;
         const v = dados[c.id];
         if (c.obrig && (v === null || v === undefined)) return aviso(`Informe: ${c.label}`, true);
-        if (['numero', 'moeda'].includes(c.tipo) && v !== null && isNaN(v)) return aviso(`Número inválido em: ${c.label}`, true);
+        if (['numero', 'moeda', 'horas'].includes(c.tipo) && v !== null && isNaN(v)) return aviso(`Número inválido em: ${c.label}`, true);
         if (c.tipo === 'cpf' && v && !cpfValido(v)) return aviso(`CPF inválido em: ${c.label}`, true);
         if (c.tipo === 'cnpj' && v && !cnpjValido(v)) return aviso(`CNPJ inválido em: ${c.label}`, true);
         if (c.tipo === 'cpfcnpj' && v && !(v.length === 11 ? cpfValido(v) : cnpjValido(v))) return aviso(`CPF/CNPJ inválido em: ${c.label}`, true);

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Férias · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .modal.largo { max-width: 960px; }
+</style>
+</head>
+<body data-modulo="ferias" data-titulo="Férias" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Férias
+   - Programação por período aquisitivo (12 meses a partir da admissão); o sistema sugere o período em aberto.
+   - Valores: salário/30 × dias + 1/3; abono pecuniário (venda de até 10 dias) + 1/3. Dá para ajustar.
+   - Programada/confirmada entra na folha da competência (eventos 9101 a 9104: ajuste o código
+     da contabilidade na tela Eventos da folha). Cancelada → sai da folha.
+   - "Saldo por funcionário": períodos vencidos e a vencer.
+   ===================================================================== */
+let CTX = null, FERIAS = [];
+const SIT = [{ v: 'programada', n: 'Programada' }, { v: 'confirmada', n: 'Confirmada' }, { v: 'historico', n: 'Histórico (antes do sistema, sem folha)' }, { v: 'cancelada', n: 'Cancelada' }];
+const cfg = {
+  textoNovo: '+ Programar férias',
+  tabela: 'rh_ferias', modulo: 'ferias', titulo: 'Férias', singular: 'férias', plural: 'férias',
+  subtitulo: 'Programação e valores. Entram na folha da competência escolhida. Férias tiradas antes do sistema: situação Histórico.',
+  dicaBusca: 'funcionário…', ordem: 'gozo_inicio', revisao: false, porEmpresa: true,
+  abas: { campo: 'situacao', padrao: '', opcoes: [{ v: 'programada', n: 'Programadas' }, { v: 'confirmada', n: 'Confirmadas' }, { v: 'historico', n: 'Histórico' }, { v: 'cancelada', n: 'Canceladas' }, { v: '', n: 'Todas' }] },
+  periodos: [{ campo: 'gozo_inicio', label: 'Início do gozo' }, { campo: 'data_pagamento', label: 'Pagamento' }],
+  campos: [
+    campoFuncionario(),
+    { id: 'aquisitivo_inicio', label: 'Período aquisitivo: início', tipo: 'data', secao: 'Período' },
+    { id: 'aquisitivo_fim', label: 'Período aquisitivo: fim', tipo: 'data' },
+    { id: 'gozo_inicio', label: 'Início do gozo', tipo: 'data', obrig: true, lista: true },
+    { id: 'dias', label: 'Dias de gozo', tipo: 'numero', obrig: true, padrao: 30, lista: true },
+    { id: 'abono_dias', label: 'Dias vendidos (abono)', tipo: 'numero', padrao: 0, ajuda: 'Até 10 dias (1/3 do período).' },
+    { id: 'gozo_fim', label: 'Volta (último dia)', tipo: 'data', somenteLeitura: true, lista: true },
+    { id: 'data_pagamento', label: 'Pagamento', tipo: 'data', ajuda: 'Até 2 dias antes do início.' },
+    { id: 'competencia', label: 'Folha (competência)', tipo: 'mes', lista: true, ajuda: 'Em branco = mês do início.' },
+    { id: 'valor_ferias', label: 'Férias (R$)', tipo: 'moeda', secao: 'Valores (calculados pelo salário base; dá para ajustar)' },
+    { id: 'valor_terco', label: '1/3 férias (R$)', tipo: 'moeda' },
+    { id: 'valor_abono', label: 'Abono (R$)', tipo: 'moeda' },
+    { id: 'valor_terco_abono', label: '1/3 abono (R$)', tipo: 'moeda' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, obrig: true, padrao: 'programada', lista: true, secao: 'Situação' },
+    { id: 'observacao', label: 'Observação', tipo: 'textarea', col: 3 }
+  ],
+  colunasExtras: [
+    { label: 'Total (R$)', texto: r => num2(Number(r.valor_ferias || 0) + Number(r.valor_terco || 0) + Number(r.valor_abono || 0) + Number(r.valor_terco_abono || 0)) },
+    { label: 'Período aquisitivo', texto: r => r.aquisitivo_inicio ? `${dataCurta(r.aquisitivo_inicio)} a ${dataCurta(r.aquisitivo_fim)}` : '' }
+  ],
+  async carregarExtra(linhas, ctx) { CTX = ctx; FERIAS = linhas; await carregarFuncionarios(); return {}; },
+  pendencias: [
+    { id: 'sem_aq', nome: 'Sem período aquisitivo', cor: 'alerta', teste: r => !['cancelada', 'historico'].includes(r.situacao) && !r.aquisitivo_inicio },
+    { id: 'fora', nome: 'Fora do prazo de concessão', cor: 'erro', teste: r => !['cancelada', 'historico'].includes(r.situacao) && r.aquisitivo_fim && r.gozo_fim > somaAnos(r.aquisitivo_fim, 1) },
+    { id: 'pag', nome: 'Pagamento após o início', cor: 'alerta', teste: r => !['cancelada', 'historico'].includes(r.situacao) && r.data_pagamento && r.data_pagamento > somaDias(r.gozo_inicio, -2) }
+  ],
+  aoAbrir(m, r) {
+    const q = s => m.querySelector(s), val = id => q('#f_' + id)?.value;
+    const sugerirPeriodo = () => {
+      const f = funcionario(val('funcionario_id')); if (!f || (r.id && r.aquisitivo_inicio)) return;
+      const p = periodosFerias(f, FERIAS.filter(x => x.id !== r.id)).find(x => x.saldo > 0);
+      if (p) { q('#f_aquisitivo_inicio').value = p.ini; q('#f_aquisitivo_fim').value = p.fim; q('#f_dias').value = Math.min(30, p.saldo); }
+    };
+    const calcular = () => {
+      const f = funcionario(val('funcionario_id')), dia = Number(f?.salario_base || 0) / 30;
+      const dias = lerNumero(val('dias')) || 0, ab = lerNumero(val('abono_dias')) || 0;
+      const vf = dia * dias, va = dia * ab;
+      q('#f_valor_ferias').value = num2(vf); q('#f_valor_terco').value = num2(vf / 3); q('#f_valor_abono').value = num2(va); q('#f_valor_terco_abono').value = num2(va / 3);
+      if (val('gozo_inicio') && dias) q('#f_gozo_fim').value = somaDias(val('gozo_inicio'), dias - 1);
+    };
+    q('#f_funcionario_id').addEventListener('change', () => { sugerirPeriodo(); calcular(); });
+    q('#f_aquisitivo_inicio').addEventListener('change', () => { if (val('aquisitivo_inicio')) q('#f_aquisitivo_fim').value = somaDias(somaAnos(val('aquisitivo_inicio'), 1), -1); });
+    q('#f_gozo_inicio').addEventListener('change', () => { const g = val('gozo_inicio'); if (!g) return;
+      q('#f_data_pagamento').value = somaDias(g, -2); q('#f_competencia').value = g.slice(0, 7); calcular(); });
+    ['dias', 'abono_dias'].forEach(id => q('#f_' + id).addEventListener('change', calcular));
+    if (!r.id) { sugerirPeriodo(); calcular(); }
+  },
+  antesSalvar(d) { delete d.gozo_fim; },
+  validar: d => !Number.isInteger(d.dias) || d.dias < 1 || d.dias > 30 ? 'Dias de gozo: de 1 a 30'
+    : (d.abono_dias || 0) > 10 ? 'Abono: até 10 dias' : d.dias + (d.abono_dias || 0) > 30 ? 'Gozo + abono passa de 30 dias'
+    : d.dias < 5 ? 'Nenhum período de férias pode ter menos de 5 dias' : null,
+  acoesLote: [{ nome: 'Confirmar', dados: { situacao: 'confirmada' } }, { nome: 'Cancelar', dados: { situacao: 'cancelada' } }],
+  apagado: r => r.situacao === 'cancelada'
+};
+
+(async () => {
+  await montarCadastro(cfg);
+  if (!CTX) return;
+  const b = document.createElement('button'); b.className = 'btn fino'; b.textContent = 'Saldo por funcionário'; b.style.marginLeft = 'auto';
+  const cab = document.querySelector('.cab-tela'); cab.insertBefore(b, cab.children[1] || null);
+  if (cab.children[2]) cab.children[2].style.marginLeft = '6px';
+  b.onclick = saldo;
+})();
+
+function saldo() {
+  const h = hoje(), lim90 = somaDias(h, 90);
+  const linhas = FUNCS.filter(f => f.situacao !== 'desligado' && f.tipo_contrato === 'clt' && (!CTX.empresa || f.empresa_id === CTX.empresa)).map(f => {
+    const ps = periodosFerias(f, FERIAS), abertos = ps.filter(p => p.completo && p.saldo > 0), atual = ps.find(p => !p.completo);
+    const avos = atual ? Math.min(12, Math.floor((new Date(h) - new Date(atual.ini)) / (30.44 * 864e5))) : 0;
+    const prox = abertos[0];
+    const st = !prox ? { c: 'ok', t: 'Em dia' } : prox.limite < h ? { c: 'erro', t: 'Vencida' } : prox.limite <= lim90 ? { c: 'alerta', t: 'Vence em até 90 dias' } : { c: 'neutro', t: 'A tirar' };
+    return { f, abertos, atual, avos, prox, st };
+  }).sort((a, b) => ({ erro: 0, alerta: 1, neutro: 2, ok: 3 }[a.st.c] - { erro: 0, alerta: 1, neutro: 2, ok: 3 }[b.st.c]) || a.f.nome.localeCompare(b.f.nome));
+  const m = abrirModal(`<h2>Saldo de férias por funcionário</h2>
+    <p class="sub" style="margin:0 0 8px">Períodos aquisitivos completos com dias a tirar. "Tirar até" = fim do período concessivo (12 meses após o aquisitivo).
+      Para férias tiradas antes do sistema, marque as pessoas e use "Registrar vencidas como já tiradas" (entra como histórico, sem folha).</p>
+    <div class="tabela-rolagem" style="max-height:60vh"><table class="lista-mini"><thead><tr><th><input type="checkbox" id="sTodos"></th><th>Funcionário</th><th>Admissão</th><th>Período em aberto</th><th class="num">Saldo</th><th>Tirar até</th><th>Situação</th><th>Em aquisição</th></tr></thead>
+    <tbody>${linhas.map((x, i) => `<tr><td>${x.prox && x.prox.limite < h ? `<input type="checkbox" data-s="${i}">` : ''}</td><td>${esc(x.f.nome)}</td><td>${dataCurta(x.f.data_admissao) || '<span class="tg alerta">sem admissão</span>'}</td>
+      <td>${x.prox ? `${dataCurta(x.prox.ini)} a ${dataCurta(x.prox.fim)}${x.abertos.length > 1 ? ` <span class="tg erro">+${x.abertos.length - 1} período(s)</span>` : ''}` : '—'}</td>
+      <td class="num">${x.prox ? x.abertos.reduce((s, p) => s + p.saldo, 0) + ' dias' : ''}</td><td>${x.prox ? dataCurta(x.prox.limite) : ''}</td>
+      <td><span class="tg ${x.st.c}">${x.st.t}</span></td><td>${x.atual ? `${x.avos}/12 desde ${dataCurta(x.atual.ini)}` : ''}</td></tr>`).join('')}</tbody></table></div>
+    <div class="acoes" style="margin-top:14px">${CTX.pode('ferias', 'editar') ? '<button class="btn" id="sHist">Registrar vencidas como já tiradas</button>' : ''}<button class="btn" id="sExp">Exportar Excel</button><button class="btn" id="sFechar">Fechar</button></div>`);
+  m.querySelector('.modal').classList.add('form', 'largo');
+  m.querySelector('#sFechar').onclick = () => m.remove();
+  m.querySelector('#sTodos').onchange = e => m.querySelectorAll('[data-s]').forEach(c => c.checked = e.target.checked);
+  m.querySelector('#sHist')?.addEventListener('click', async () => {
+    // Para cada pessoa marcada: completa os períodos já vencidos (concessivo terminado) com um registro "histórico"
+    const sel = [...m.querySelectorAll('[data-s]:checked')].map(c => linhas[+c.dataset.s]);
+    const regs = sel.flatMap(x => x.abertos.filter(p => p.limite < h).map(p => ({ funcionario_id: x.f.id, aquisitivo_inicio: p.ini, aquisitivo_fim: p.fim,
+      gozo_inicio: somaDias(p.fim, 1), dias: Math.max(p.saldo, 1), abono_dias: 0, situacao: 'historico', valor_ferias: 0, valor_terco: 0, valor_abono: 0, valor_terco_abono: 0,
+      observacao: 'Férias anteriores ao sistema (registro de saldo)' })));
+    if (!regs.length) return aviso('Marque ao menos uma pessoa com férias vencidas', true);
+    if (!confirm(`Registrar ${regs.length} período(s) vencido(s) de ${sel.length} pessoa(s) como já tirados?\nNão vai para a folha. A data de gozo fica como o dia seguinte ao período; ajuste depois se quiser.`)) return;
+    const { error } = await db.from('rh_ferias').insert(regs);
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    m.remove(); aviso(`${regs.length} período(s) registrado(s)`); await cfg.recarregar(); saldo();
+  });
+  m.querySelector('#sExp').onclick = () => exportarExcel('saldo_ferias', ['Funcionário', 'Admissão', 'Período em aberto', 'Saldo (dias)', 'Tirar até', 'Situação', 'Em aquisição (avos)'],
+    linhas.map(x => [x.f.nome, dataCurta(x.f.data_admissao), x.prox ? `${dataCurta(x.prox.ini)} a ${dataCurta(x.prox.fim)}` : '', x.prox ? x.abertos.reduce((s, p) => s + p.saldo, 0) : '', x.prox ? dataCurta(x.prox.limite) : '', x.st.t, x.atual ? x.avos : '']));
+}
+</script>
+</body>
+</html>

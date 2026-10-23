@@ -22,7 +22,7 @@ const CONTRATO = [{ v: 'clt', n: 'CLT' }, { v: 'pj', n: 'PJ' }, { v: 'estagio', 
   { v: 'aprendiz', n: 'Aprendiz' }, { v: 'autonomo', n: 'Autônomo / freelancer' }];
 const SETORES = ['Corte', 'Dobra', 'Solda', 'Polimento / acabamento', 'Montagem', 'Usinagem', 'Pintura', 'Almoxarifado', 'Expedição',
   'Compras', 'Comercial', 'Financeiro', 'RH', 'Engenharia', 'Administração', 'Limpeza / manutenção'];
-let USUARIOS = [];
+let USUARIOS = [], ESCALAS_RH = [];
 
 montarCadastro({
   tabela: 'funcionarios', modulo: 'funcionarios', titulo: 'Funcionários', singular: 'funcionário', plural: 'funcionários',
@@ -72,7 +72,11 @@ montarCadastro({
     { id: 'horas_mensais', label: 'Horas mensais', tipo: 'numero', padrao: 220 },
     { id: 'eficiencia_pct', label: 'Eficiência (%)', tipo: 'numero', padrao: 85,
       ajuda: 'Parte das horas que é produtiva. Com o salário e os custos acima, forma o custo por hora usado na precificação.' },
-    { id: 'pis', label: 'PIS', secao: 'Documentos e pagamento' },
+    { id: 'escala_id', label: 'Escala', tipo: 'select', col: 2, opcoes: () => ESCALAS_RH, secao: 'RH (ponto e vale-transporte)',
+      ajuda: 'Dias e horários previstos. Sem escala: segunda a sexta, 8h.' },
+    { id: 'codigo_ponto', label: 'Código no relógio', ajuda: 'Só se o relógio não usar PIS nem CPF.' },
+    { id: 'vt_valor_dia', label: 'VT por dia (R$)', tipo: 'moeda', ajuda: 'Ida e volta. Base da tela Vale-transporte.' },
+    { id: 'pis', label: 'PIS', secao: 'Documentos e pagamento', ajuda: 'O relógio de ponto identifica a pessoa pelo PIS ou CPF.' },
     { id: 'ctps', label: 'CTPS' },
     { id: 'banco', label: 'Banco' },
     { id: 'agencia', label: 'Agência' },
@@ -85,8 +89,9 @@ montarCadastro({
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
   ],
   async carregarExtra(linhas, ctx) {
-    const { data } = await db.rpc('usuarios_nomes');
+    const [{ data }, esc_] = await Promise.all([db.rpc('usuarios_nomes'), db.from('rh_escalas').select('id, nome').eq('situacao', 'ativo').order('nome')]);
     USUARIOS = (data || []).map(u => ({ v: u.id, n: u.nome }));
+    ESCALAS_RH = (esc_.data || []).map(e => ({ v: e.id, n: e.nome }));
     // Acesso ao sistema (telas e ações) — só para quem cuida de usuários
     if (!ctx.pode('usuarios')) return { acesso: null };
     const r = await Promise.all([db.from('usuarios').select('id, perfil_id, ativo, perfis(nome)'), db.from('permissoes_usuario').select('usuario_id, modulo_id, nivel'),

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Holerites · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
+  .cab-tela select { width: auto; padding: 6px 8px; font-size: 13px; }
+  .holerite { background: #fff; border: 1px solid #c9cdd3; border-radius: 6px; padding: 14px 16px; margin-bottom: 18px; font-size: 12px; max-width: 900px; }
+  .holerite .h-topo { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid #c9cdd3; padding-bottom: 8px; }
+  .holerite .h-topo b { font-size: 13px; }
+  .holerite .h-tipo { text-align: right; }
+  .holerite .h-tipo .nc { color: var(--destaque); font-weight: 600; }
+  .holerite .h-func { display: grid; grid-template-columns: 70px 1fr 90px 120px; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid #c9cdd3; }
+  .holerite .h-func small { display: block; color: var(--texto-suave); font-size: 10px; }
+  .holerite table { margin-top: 4px; }
+  .holerite th { font-size: 10.5px; padding: 5px 6px; border-bottom: 1px solid #c9cdd3; }
+  .holerite td { padding: 3px 6px; border: 0; font-size: 12px; }
+  .holerite .h-tot { display: grid; grid-template-columns: 1fr 150px 150px; border-top: 1px solid #c9cdd3; margin-top: 6px; padding-top: 6px; }
+  .holerite .h-tot div { text-align: right; } .holerite .h-tot small { display: block; color: var(--texto-suave); font-size: 10px; }
+  .holerite .h-liq { font-size: 14px; font-weight: 700; }
+  .holerite .h-bases { display: flex; gap: 22px; border-top: 1px solid #c9cdd3; margin-top: 8px; padding-top: 6px; }
+  .holerite .h-bases small { display: block; color: var(--texto-suave); font-size: 10px; }
+  .holerite .h-ass { display: flex; justify-content: space-between; margin-top: 18px; font-size: 10.5px; color: var(--texto-suave); }
+  .holerite .h-ass span { border-top: 1px solid #9aa0a8; padding-top: 3px; min-width: 220px; text-align: center; }
+  td input.conf { width: 120px; padding: 4px 8px; text-align: right; }
+  @media print {
+    @page { size: A4 portrait; margin: 10mm; }
+    .cabecalho-impressao, .filtros-impressao, #painelConf { display: none !important; }
+    .holerite { border-color: #888; break-inside: avoid; max-width: none; }
+    .holerite.quebra { break-after: page; }
+    .cab-tela, .barra-ferr, .barra-lista { display: none !important; }
+  }
+</style>
+</head>
+<body data-modulo="holerites" data-titulo="Holerites" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Holerites de conferência
+   - Montados com os lançamentos do mês, no mesmo formato do recibo da contabilidade.
+   - Contábil: só eventos contábeis (bate com o PDF da contabilidade).
+     Não contábil: só o que é pago por fora. Consolidado: os dois juntos.
+   - Aba Conferência: líquido do sistema × líquido do PDF da contabilidade, por pessoa.
+   - Imprimir / PDF: um holerite por metade de folha A4.
+   ===================================================================== */
+let CTX, LANC = [], CONF = {}, COMP, NAT = 'contabil', FUNC = '', aba = 'hol';
+const prm = new URLSearchParams(location.search);
+COMP = prm.get('c') || lerCompetencia(); FUNC = prm.get('f') || '';
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  const cont = document.getElementById('conteudo');
+  cont.innerHTML = `
+    <div class="cab-tela"><div><h1>Holerites</h1><p class="sub">Holerite de conferência montado com os lançamentos do mês. Compare com o PDF da contabilidade.</p></div>
+      <div class="acoes-cab"><input type="month" id="comp" title="Competência">
+        <select id="nat" title="Natureza"><option value="contabil">Contábil</option><option value="nao_contabil">Não contábil</option><option value="todos">Contábil + não contábil</option></select>
+        <select id="func" title="Funcionário"><option value="">Todos os funcionários</option></select>
+        <a class="btn fino" id="bLanc" href="#">← Lançamentos</a></div></div>
+    <div class="barra-ferr">
+      <div class="abas" id="abas"><button class="aba ativa" data-v="hol">Holerites</button><button class="aba" data-v="conf">Conferência com a contabilidade</button></div>
+      <div class="ferr"><div id="rel"></div></div>
+    </div>
+    <div class="barra-lista"><span id="contagem"></span><span class="resumo" id="resumo"></span></div>
+    <div id="area"><p class="vazio">Carregando…</p></div>`;
+  const $ = s => document.querySelector(s);
+  $('#comp').value = COMP; $('#nat').value = NAT;
+  $('#comp').onchange = () => { if (!$('#comp').value) return; COMP = $('#comp').value; gravarCompetencia(COMP); carregar(); };
+  $('#nat').onchange = () => { NAT = $('#nat').value; desenhar(); };
+  $('#func').onchange = () => { FUNC = $('#func').value; desenhar(); };
+  document.querySelectorAll('#abas .aba').forEach(b => b.onclick = () => { aba = b.dataset.v; document.querySelectorAll('#abas .aba').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); });
+  window.addEventListener('empresa', desenhar);
+  botoesRelatorio('rel', () => {
+    const fs = pessoas();
+    if (aba === 'conf') return { arquivo: 'conferencia_holerites_' + COMP, colunas: ['Matrícula', 'Funcionário', 'Líquido sistema', 'Líquido contabilidade', 'Diferença', 'Conferido', 'Observação'],
+      linhas: fs.map(f => { const c = CONF[f.id] || {}, liq = calc(f.id, 'contabil').liquido;
+        return [f.matricula || '', f.nome, num2(liq), c.liquido_contabilidade == null ? '' : num2(c.liquido_contabilidade), c.liquido_contabilidade == null ? '' : num2(liq - c.liquido_contabilidade), c.conferido ? 'Sim' : 'Não', c.observacao || '']; }) };
+    return { arquivo: 'holerites_' + COMP, colunas: ['Matrícula', 'Funcionário', 'Código', 'Evento', 'Referência', 'Vencimentos', 'Descontos'],
+      linhas: fs.flatMap(f => calc(f.id, NAT).linhas.map(l => [f.matricula || '', f.nome, l.ev.codigo, l.ev.descricao, refBR(l.ev, l.ref), l.ev.tipo === 'provento' ? num2(l.valor) : '', l.ev.tipo === 'desconto' ? num2(l.valor) : ''])) };
+  });
+  try { await Promise.all([carregarFuncionarios(), carregarEventos()]); await carregar(); }
+  catch (e) { aviso('Erro ao carregar: ' + (e.message || e), true); }
+})();
+
+async function carregar() {
+  document.getElementById('bLanc').href = 'lancamentos.html';
+  const [l, c] = await Promise.all([
+    buscarTodos(() => db.from('rh_lancamentos').select('*').eq('competencia', COMP + '-01')),
+    db.from('rh_holerite_conferencia').select('*').eq('competencia', COMP + '-01')
+  ]);
+  LANC = l; CONF = Object.fromEntries((c.data || []).map(x => [x.funcionario_id, x]));
+  desenhar();
+}
+
+// Quem tem lançamento no mês (na empresa escolhida)
+function pessoas() {
+  const ids = new Set(LANC.filter(l => !CTX.empresa || l.empresa_id === CTX.empresa).map(l => l.funcionario_id));
+  return [...ids].map(funcionario).filter(Boolean).filter(f => !FUNC || f.id === +FUNC).sort((a, b) => a.nome.localeCompare(b.nome));
+}
+
+// Holerite de uma pessoa: linhas agrupadas por evento + totais e bases
+function calc(fid, nat) {
+  const ls = LANC.filter(l => l.funcionario_id === fid && (nat === 'todos' || evento(l.evento_id)?.natureza === nat));
+  const g = {};
+  ls.forEach(l => { const k = l.evento_id; const x = g[k] ||= { ev: evento(k), ref: null, valor: 0, obs: [] };
+    if (l.referencia != null) x.ref = (x.ref || 0) + Number(l.referencia); x.valor += Number(l.valor); if (l.observacao) x.obs.push(l.observacao); });
+  const linhas = Object.values(g).sort((a, b) => (a.ev.tipo === b.ev.tipo ? 0 : a.ev.tipo === 'provento' ? -1 : a.ev.tipo === 'desconto' && b.ev.tipo === 'informativo' ? -1 : 1) || a.ev.ordem - b.ev.ordem);
+  const soma = (tipo, inc) => linhas.filter(x => x.ev.tipo === tipo && (!inc || x.ev[inc])).reduce((s, x) => s + x.valor, 0);
+  const venc = soma('provento'), desc = soma('desconto');
+  return { linhas, venc, desc, liquido: venc - desc,
+    baseInss: soma('provento', 'incide_inss') - soma('desconto', 'incide_inss'),
+    baseFgts: soma('provento', 'incide_fgts') - soma('desconto', 'incide_fgts') };
+}
+
+function desenhar() {
+  const sel = document.getElementById('func'), fsTodos = [...new Set(LANC.map(l => l.funcionario_id))].map(funcionario).filter(Boolean).sort((a, b) => a.nome.localeCompare(b.nome));
+  sel.innerHTML = '<option value="">Todos os funcionários</option>' + fsTodos.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('');
+  sel.value = FUNC;
+  const fs = pessoas(), area = document.getElementById('area');
+  document.getElementById('contagem').textContent = `${fs.length} holerite(s) · ${mesExtenso(COMP)}`;
+  const tot = fs.reduce((s, f) => { const c = calc(f.id, aba === 'conf' ? 'contabil' : NAT); s.v += c.venc; s.d += c.desc; return s; }, { v: 0, d: 0 });
+  document.getElementById('resumo').innerHTML = `<span>Vencimentos <b>${reais(tot.v)}</b></span><span>Descontos <b>${reais(tot.d)}</b></span><span>Líquido <b>${reais(tot.v - tot.d)}</b></span>`;
+  if (!fs.length) { area.innerHTML = '<div class="cartao"><p class="vazio">Nenhum lançamento nesta competência. Lance os eventos na tela Lançamentos.</p></div>'; return; }
+  if (aba === 'conf') return desenharConferencia(fs, area);
+
+  area.innerHTML = fs.map((f, i) => holerite(f, calc(f.id, NAT), i % 2 === 1)).filter(Boolean).join('') || '<div class="cartao"><p class="vazio">Nenhum evento desta natureza no mês.</p></div>';
+}
+
+function holerite(f, c, quebra) {
+  if (!c.linhas.length) return '';
+  const emp = CTX.empresas.find(e => e.id === f.empresa_id) || {};
+  const tipo = NAT === 'contabil' ? 'Folha mensal · contábil' : NAT === 'nao_contabil' ? '<span class="nc">Não contábil</span>' : 'Contábil + <span class="nc">não contábil</span>';
+  return `<div class="holerite${quebra ? ' quebra' : ''}">
+    <div class="h-topo"><div><b>${esc(emp.nome || '')}</b><br>CNPJ: ${esc(fmtDoc(emp.cnpj || ''))}</div>
+      <div class="h-tipo">Holerite de conferência<br>${tipo}<br><b>${mesExtenso(COMP)}</b></div></div>
+    <div class="h-func"><div><small>Código</small>${esc(f.matricula || '—')}</div><div><small>Nome do funcionário</small><b>${esc(f.nome)}</b></div>
+      <div><small>CBO</small>${esc(f.cbo || '—')}</div><div><small>Admissão</small>${dataCurta(f.data_admissao)}</div>
+      <div></div><div><small>Cargo</small>${esc(f.cargo || '')}</div><div><small>Setor</small>${esc(f.setor || '')}</div><div></div></div>
+    <table><thead><tr><th style="width:60px">Código</th><th>Descrição</th><th class="num">Referência</th><th class="num">Vencimentos</th><th class="num">Descontos</th></tr></thead>
+      <tbody>${c.linhas.map(x => `<tr><td>${esc(x.ev.codigo)}</td><td>${esc(x.ev.descricao)}${x.obs.length ? `<small class="sub2">${esc([...new Set(x.obs)].join(' · '))}</small>` : ''}${NAT === 'todos' && x.ev.natureza !== 'contabil' ? ' <small class="tg alerta">não contábil</small>' : ''}</td>
+        <td class="num">${refBR(x.ev, x.ref)}</td><td class="num">${x.ev.tipo === 'provento' ? num2(x.valor) : ''}</td><td class="num">${x.ev.tipo === 'desconto' ? num2(x.valor) : x.ev.tipo === 'informativo' ? '(' + num2(x.valor) + ')' : ''}</td></tr>`).join('')}</tbody></table>
+    <div class="h-tot"><div></div><div><small>Total de vencimentos</small>${num2(c.venc)}</div><div><small>Total de descontos</small>${num2(c.desc)}</div>
+      <div></div><div></div><div><small>Valor líquido</small><span class="h-liq">${num2(c.liquido)}</span></div></div>
+    ${NAT !== 'nao_contabil' ? `<div class="h-bases"><div><small>Salário base</small>${num2(f.salario_base)}</div><div><small>Sal. contr. INSS</small>${num2(c.baseInss)}</div>
+      <div><small>Base cálc. FGTS</small>${num2(c.baseFgts)}</div><div><small>FGTS do mês (8%)</small>${num2(c.baseFgts * 0.08)}</div></div>` : ''}
+    <div class="h-ass"><span>Data ____/____/______</span><span>Assinatura do funcionário</span></div></div>`;
+}
+
+function desenharConferencia(fs, area) {
+  const pode = CTX.pode('holerites', 'editar');
+  area.innerHTML = `<div class="cartao tabela-rolagem" id="painelConf"><table><thead><tr><th>Funcionário</th><th class="num">Líquido no sistema (contábil)</th><th class="num">Líquido no PDF da contabilidade</th><th class="num">Diferença</th><th>Conferido</th><th>Observação</th></tr></thead>
+    <tbody>${fs.map(f => { const c = CONF[f.id] || {}, liq = calc(f.id, 'contabil').liquido, dif = c.liquido_contabilidade == null ? null : Math.round((liq - c.liquido_contabilidade) * 100) / 100;
+      return `<tr data-f="${f.id}"><td class="forte">${esc(f.nome)}<small class="sub2">${esc(f.matricula ? 'Matr. ' + f.matricula : '')}</small></td><td class="num">${num2(liq)}</td>
+        <td class="num"><input class="conf" data-c="liquido_contabilidade" inputmode="decimal" value="${c.liquido_contabilidade == null ? '' : num2(c.liquido_contabilidade)}" ${pode ? '' : 'disabled'}></td>
+        <td class="num">${dif == null ? '—' : dif === 0 ? '<span class="tg ok">bate</span>' : `<span class="tg erro">${num2(dif)}</span>`}</td>
+        <td><input type="checkbox" data-c="conferido" ${c.conferido ? 'checked' : ''} ${pode ? '' : 'disabled'}></td>
+        <td><input data-c="observacao" value="${esc(c.observacao || '')}" style="padding:4px 8px" ${pode ? '' : 'disabled'}></td></tr>`; }).join('')}</tbody></table></div>
+    <p class="sub" style="margin-top:8px">Digite o líquido de cada recibo da contabilidade. Diferença = sistema − contabilidade. Clique no nome para ver o holerite.</p>`;
+  area.querySelectorAll('tr[data-f] td.forte').forEach(td => { td.style.cursor = 'pointer'; td.onclick = () => { FUNC = td.parentElement.dataset.f; aba = 'hol';
+    document.querySelectorAll('#abas .aba').forEach(x => x.classList.toggle('ativa', x.dataset.v === 'hol')); desenhar(); }; });
+  area.querySelectorAll('[data-c]').forEach(inp => inp.onchange = async () => {
+    const fid = +inp.closest('tr').dataset.f, campo = inp.dataset.c;
+    const valor = campo === 'conferido' ? inp.checked : campo === 'liquido_contabilidade' ? lerNumero(inp.value) : (inp.value.trim() || null);
+    const { data, error } = await db.from('rh_holerite_conferencia').upsert({ funcionario_id: fid, competencia: COMP + '-01', [campo]: valor, atualizado_em: new Date().toISOString() }, { onConflict: 'funcionario_id,competencia' }).select('*').single();
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    CONF[fid] = data; desenhar();
+  });
+}
+</script>
+</body>
+</html>

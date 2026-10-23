@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adiantamento salarial · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<style>
+  .modal.largo { max-width: 920px; }
+  .gerar-cab { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; margin: 8px 0 12px; align-items: end; }
+  .gerar-cab label { font-size: 11px; margin-bottom: 2px; }
+  .gerar-cab input { padding: 6px 8px; }
+  td input.v { width: 110px; padding: 4px 8px; text-align: right; }
+</style>
+</head>
+<body data-modulo="adiantamento" data-titulo="Adiantamento salarial" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+/* =====================================================================
+   Adiantamento salarial (vale)
+   - Única tela que lança o evento 981 DESC.ADIANT.SALARIAL: na tela Lançamentos ele fica travado.
+   - "Gerar adiantamentos do mês" busca nos holerites (lançamentos dos meses anteriores) quem recebe
+     e quanto; dá para ajustar o valor ou aplicar um % do salário antes de gravar.
+   - Cada adiantamento vira o desconto 981 na folha do mês. Cancelado → o desconto sai.
+   ===================================================================== */
+let CTX = null;
+const SIT = [{ v: 'previsto', n: 'Previsto' }, { v: 'pago', n: 'Pago' }, { v: 'cancelado', n: 'Cancelado' }];
+const cfg = {
+  textoNovo: '+ Novo adiantamento',
+  tabela: 'rh_adiantamentos', modulo: 'adiantamento', titulo: 'Adiantamento salarial', singular: 'adiantamento', plural: 'adiantamentos',
+  subtitulo: 'Vale do mês. Vira o desconto 981 no holerite; na tela Lançamentos ele fica travado.',
+  dicaBusca: 'funcionário, mês…', ordem: 'competencia', revisao: false, porEmpresa: true,
+  abas: { campo: 'situacao', padrao: '', opcoes: [{ v: 'previsto', n: 'Previstos' }, { v: 'pago', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }, { v: '', n: 'Todos' }] },
+  periodos: [{ campo: 'competencia', label: 'Competência' }, { campo: 'data_pagamento', label: 'Pagamento' }],
+  campos: [
+    campoFuncionario(),
+    { id: 'competencia', label: 'Competência', tipo: 'mes', obrig: true, lista: true, filtro: true, padrao: () => lerCompetencia() + '-01', opcoes: [] },
+    { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true },
+    { id: 'percentual', label: '% do salário', tipo: 'numero', lista: true, ajuda: 'Informativo. Preenchido sozinho ao digitar o valor.' },
+    { id: 'data_pagamento', label: 'Pagamento', tipo: 'data', lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, obrig: true, padrao: 'previsto', lista: true },
+    { id: 'observacao', label: 'Observação', tipo: 'textarea', col: 4 }
+  ],
+  ordenarPor: { competencia: r => r.competencia + (funcionario(r.funcionario_id)?.nome || '') },
+  totais: ['valor'],
+  async carregarExtra(linhas, ctx) {
+    CTX = ctx; await Promise.all([carregarFuncionarios(), EVENTOS.length ? null : carregarEventos()]);
+    // filtro de competência: só os meses que existem
+    cfg.campos[1].opcoes = [...new Set(linhas.map(r => r.competencia))].sort().reverse().map(v => ({ v, n: mesBR(v) }));
+    return {};
+  },
+  subtituloLinha: r => funcionario(r.funcionario_id)?.cargo || '',
+  aoAbrir(m) {
+    const pct = () => { const f = funcionario(m.querySelector('#f_funcionario_id').value), v = lerNumero(m.querySelector('#f_valor').value);
+      if (f?.salario_base && v) m.querySelector('#f_percentual').value = num2(v / f.salario_base * 100); };
+    m.querySelector('#f_valor').addEventListener('change', pct); m.querySelector('#f_funcionario_id').addEventListener('change', pct);
+  },
+  acoesLote: [{ nome: 'Marcar como pago', dados: { situacao: 'pago' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
+  apagado: r => r.situacao === 'cancelado',
+  validar: d => d.valor <= 0 ? 'Informe o valor' : null,
+  msgDuplicado: 'Este funcionário já tem adiantamento nesta competência'
+};
+
+(async () => {
+  await montarCadastro(cfg);
+  if (!CTX?.pode('adiantamento', 'editar')) return;
+  const b = document.createElement('button'); b.className = 'btn fino'; b.textContent = 'Gerar adiantamentos do mês'; b.style.marginLeft = 'auto';
+  const cab = document.querySelector('.cab-tela'); cab.insertBefore(b, cab.lastElementChild); cab.lastElementChild.style.marginLeft = '6px';
+  b.onclick = gerarMes;
+})();
+
+async function gerarMes() {
+  const m = abrirModal(`<h2>Gerar adiantamentos do mês</h2>
+    <p class="sub" style="margin:0 0 6px">Quem recebe e o valor vêm do último holerite com desconto de adiantamento (981). Ajuste o que precisar antes de gravar.</p>
+    <div class="gerar-cab"><div><label>Competência</label><input type="month" id="gComp" value="${lerCompetencia()}"></div>
+      <div><label>Data do pagamento</label><input type="date" id="gData"></div>
+      <div><label>% do salário (para os marcados)</label><input id="gPct" inputmode="decimal" placeholder="ex.: 40"></div>
+      <div><button class="btn fino" id="gAplicar">Aplicar %</button></div></div>
+    <div class="tabela-rolagem" style="max-height:52vh"><table class="lista-mini"><thead><tr><th><input type="checkbox" id="gTodos"></th><th>Funcionário</th><th class="num">Salário</th><th>Último adiantamento</th><th class="num">%</th><th class="num">Valor</th></tr></thead><tbody id="gLista"><tr><td colspan="6" class="vazio">Buscando nos holerites…</td></tr></tbody></table></div>
+    <div class="tot-hol" id="gTot" style="text-align:right;margin-top:8px"></div>
+    <div class="acoes" style="margin-top:14px"><button class="btn" id="gFechar">Cancelar</button><button class="btn primario" id="gOk">Gravar adiantamentos</button></div>`);
+  m.querySelector('.modal').classList.add('form', 'largo');
+  const q = s => m.querySelector(s);
+  q('#gFechar').onclick = () => m.remove();
+  let linhas = [];
+  const total = () => { const sel = linhas.filter(l => l.ok && !l.ja); q('#gTot').innerHTML = `${sel.length} marcado(s) · <b>${reais(sel.reduce((s, l) => s + (l.valor || 0), 0))}</b>`; };
+  const desenhar = () => {
+    q('#gLista').innerHTML = linhas.length ? linhas.map((l, i) => `<tr class="${l.ja ? 'apagado' : ''}"><td><input type="checkbox" data-i="${i}" ${l.ok ? 'checked' : ''} ${l.ja ? 'disabled' : ''}></td>
+      <td>${esc(l.f.nome)}${l.ja ? '<small class="sub2">já tem adiantamento neste mês</small>' : ''}</td><td class="num">${num2(l.f.salario_base)}</td>
+      <td>${l.ult ? `${mesBR(l.ult.competencia)} · ${reais(l.ult.valor)}` : '<small>sem histórico</small>'}</td>
+      <td class="num">${l.f.salario_base && l.valor ? num2(l.valor / l.f.salario_base * 100) : ''}</td>
+      <td class="num"><input class="v" data-v="${i}" inputmode="decimal" value="${l.valor ? num2(l.valor) : ''}" ${l.ja ? 'disabled' : ''}></td></tr>`).join('')
+      : '<tr><td colspan="6" class="vazio">Nenhum funcionário ativo nesta competência.</td></tr>';
+    m.querySelectorAll('[data-i]').forEach(c => c.onchange = () => { linhas[+c.dataset.i].ok = c.checked; total(); });
+    m.querySelectorAll('[data-v]').forEach(c => c.onchange = () => { const l = linhas[+c.dataset.v]; l.valor = lerNumero(c.value); l.ok = !!l.valor; desenhar(); });
+    total();
+  };
+  const montar = async () => {
+    const comp = q('#gComp').value; if (!comp) return;
+    q('#gData').value = comp + '-20';
+    const [ult, ja] = await Promise.all([ultimosLancamentos('981', comp),
+      db.from('rh_adiantamentos').select('funcionario_id').eq('competencia', comp + '-01').neq('situacao', 'cancelado')]);
+    const jaSet = new Set((ja.data || []).map(x => x.funcionario_id));
+    linhas = ativosNoMes(comp, CTX.empresa).filter(f => f.situacao !== 'afastado')
+      .map(f => ({ f, ult: ult[f.id], valor: ult[f.id] ? Number(ult[f.id].valor) : null, ok: !!ult[f.id] && !jaSet.has(f.id), ja: jaSet.has(f.id) }))
+      .sort((a, b) => (b.ok - a.ok) || a.f.nome.localeCompare(b.f.nome));
+    desenhar();
+  };
+  q('#gComp').onchange = montar;
+  q('#gTodos').onchange = e => { linhas.forEach(l => { if (!l.ja) l.ok = e.target.checked; }); desenhar(); };
+  q('#gAplicar').onclick = () => { const p = lerNumero(q('#gPct').value); if (!p) return aviso('Informe o %', true);
+    linhas.forEach(l => { if (l.ok && !l.ja) l.valor = Math.round(Number(l.f.salario_base || 0) * p) / 100; }); desenhar(); };
+  q('#gOk').onclick = async () => {
+    const comp = q('#gComp').value, sel = linhas.filter(l => l.ok && !l.ja && l.valor > 0);
+    if (!sel.length) return aviso('Marque ao menos um funcionário com valor', true);
+    q('#gOk').disabled = true;
+    const { error } = await db.from('rh_adiantamentos').insert(sel.map(l => ({ funcionario_id: l.f.id, competencia: comp + '-01', valor: l.valor,
+      percentual: l.f.salario_base ? Math.round(l.valor / l.f.salario_base * 10000) / 100 : null, data_pagamento: q('#gData').value || null, situacao: 'previsto' })));
+    if (error) { q('#gOk').disabled = false; return aviso('Não gravou: ' + error.message, true); }
+    gravarCompetencia(comp); m.remove(); aviso(`${sel.length} adiantamento(s) gravado(s)`); cfg.recarregar();
+  };
+  montar();
+}
+</script>
+</body>
+</html>

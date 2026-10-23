@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eventos da folha · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-modulo="rh_eventos" data-titulo="Eventos da folha" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/cadastro.js"></script>
+<script src="../../assets/js/rh.js"></script>
+<script>
+const TIPO = [{ v: 'provento', n: 'Provento (vencimento)' }, { v: 'desconto', n: 'Desconto' }, { v: 'informativo', n: 'Informativo (não soma)' }];
+const NATUREZA = [{ v: 'contabil', n: 'Contábil' }, { v: 'nao_contabil', n: 'Não contábil' }];
+const REF = [{ v: 'dias', n: 'Dias' }, { v: 'horas', n: 'Horas (h:mm)' }, { v: 'percentual', n: 'Percentual' }, { v: 'valor', n: 'Valor' }, { v: 'quantidade', n: 'Quantidade / avos' }];
+const EXCLUSIVA = Object.entries(TELAS_RH).filter(([k]) => k !== 'lancamentos').map(([v, n]) => ({ v, n }));
+const CADASTRO = [{ v: 'salario_base', n: 'Salário base' }, { v: 'insalubridade', n: 'Insalubridade (R$/mês)' }, { v: 'gratificacao_confianca', n: 'Cargo de confiança (R$/mês)' }];
+
+montarCadastro({
+  textoNovo: '+ Novo evento',
+  tabela: 'rh_eventos', modulo: 'rh_eventos', titulo: 'Eventos da folha', singular: 'evento', plural: 'eventos',
+  subtitulo: 'Cada linha do holerite. Contábil vai para a folha da contabilidade; não contábil sai num holerite separado.',
+  dicaBusca: 'código, descrição…', ordem: 'codigo', revisao: false,
+  ordenarPor: { codigo: r => String(r.codigo).padStart(8, '0') },
+  abas: { campo: 'natureza', padrao: '', opcoes: [{ v: 'contabil', n: 'Contábeis' }, { v: 'nao_contabil', n: 'Não contábeis' }, { v: '', n: 'Todos' }] },
+  campos: [
+    { id: 'codigo', label: 'Código', obrig: true, lista: true, maiusculo: true, ajuda: 'O mesmo código do recibo da contabilidade (ex.: 8781). Não contábil: use N001, N002…' },
+    { id: 'descricao', label: 'Descrição', obrig: true, col: 3, lista: true, maiusculo: true },
+    { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPO, obrig: true, padrao: 'provento', lista: true, filtro: true },
+    { id: 'natureza', label: 'Natureza', tipo: 'select', opcoes: NATUREZA, obrig: true, padrao: 'contabil', lista: true },
+    { id: 'referencia_tipo', label: 'Referência em', tipo: 'select', opcoes: REF, obrig: true, padrao: 'valor' },
+    { id: 'ordem', label: 'Ordem no holerite', tipo: 'numero', padrao: 100 },
+    { id: 'incide_inss', label: 'INSS', tipo: 'bool', textoBool: 'Incide INSS', secao: 'Incidências (base do holerite de conferência)' },
+    { id: 'incide_fgts', label: 'FGTS', tipo: 'bool', textoBool: 'Incide FGTS' },
+    { id: 'incide_irrf', label: 'IRRF', tipo: 'bool', textoBool: 'Incide IRRF' },
+    { id: 'tela_exclusiva', label: 'Só lançado na tela', tipo: 'select', opcoes: EXCLUSIVA, col: 2, lista: true, filtro: true, secao: 'Como entra no mês',
+      ajuda: 'Travado na tela Lançamentos: entra só pela tela escolhida (ex.: desconto do adiantamento só pela tela Adiantamento salarial).' },
+    { id: 'valor_cadastro', label: 'Valor vem do cadastro', tipo: 'select', opcoes: CADASTRO, col: 2,
+      ajuda: '"Gerar fixos do mês" nos Lançamentos usa este valor do cadastro do funcionário.' },
+    { id: 'fixo', label: 'Fixo', tipo: 'bool', textoBool: 'Repete todo mês (copia do mês anterior)', col: 2, lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 }
+  ],
+  subtituloLinha: r => r.tela_exclusiva ? '🔒 só na tela ' + (TELAS_RH[r.tela_exclusiva] || r.tela_exclusiva) : '',
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  validar: d => d.tela_exclusiva && d.valor_cadastro ? 'Evento de tela exclusiva não pode vir do cadastro' : null,
+  msgDuplicado: 'Já existe evento com este código'
+});
+</script>
+</body>
+</html>
