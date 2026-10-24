@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610231631">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610232103">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610231631"></script>
-<script src="../../assets/js/ui.js?v=202610231631"></script>
-<script src="../../assets/js/auth.js?v=202610231631"></script>
-<script src="../../assets/js/layout.js?v=202610231631"></script>
-<script src="../../assets/js/cadastro.js?v=202610231631"></script>
+<script src="../../assets/js/supabase.js?v=202610232103"></script>
+<script src="../../assets/js/ui.js?v=202610232103"></script>
+<script src="../../assets/js/auth.js?v=202610232103"></script>
+<script src="../../assets/js/layout.js?v=202610232103"></script>
+<script src="../../assets/js/cadastro.js?v=202610232103"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -76,6 +76,10 @@ const prod = id => PRODS.find(p => p.id === id);
 const cat = id => CATS.find(c => c.id === id);
 const usu = id => USU.find(u => u.id === id)?.nome || '';
 const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
+const norm = t => String(t || '').trim().toLowerCase();
+// itens sem cadastro ainda não liberados pelo administrador (bloqueiam o envio para aprovação)
+const avulsosPendentes = r => (ex.itens?.[r.id] || []).filter(i => !i.produto_id && !((r.liberacao_avulso?.itens) || []).map(norm).includes(norm(i.descricao)));
+const possoLiberar = () => CTX.admin || ACOES.has('compras.liberar_avulso');
 
 /* ---------- Escala de aprovação ---------- */
 const nivelAtual = r => (r.niveis_exigidos || []).filter(n => !(r.niveis_aprovados || []).includes(n)).sort((a, b) => a - b)[0];
@@ -104,7 +108,7 @@ function ultimoPreco(produtoId, fornId) {
 const linhaItem = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
   <td style="min-width:220px"><select data-k="produto_id">${optProds(x.produto_id)}</select>
     <input data-k="descricao" placeholder="Descrição do item (sem cadastro)" value="${esc(x.produto_id ? '' : x.descricao || '')}" style="margin-top:3px;${x.produto_id ? 'display:none' : ''}">
-    <div class="ro" data-k="info">${!x.produto_id && x.id ? '<span class="tg alerta">sem cadastro · confirmar</span>' : ''}</div></td>
+    <div class="ro" data-k="info">${!x.produto_id && x.id ? '<span class="tg alerta">sem cadastro · precisa de liberação do administrador</span>' : ''}</div></td>
   <td style="width:58px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
@@ -139,7 +143,7 @@ function aoEscolherProduto(tr) {
   const pid = Number(tr.querySelector('[data-k=produto_id]').value) || null, p = prod(pid), fid = Number(modalAtual.querySelector('#f_fornecedor_id')?.value);
   tr.querySelector('[data-k=descricao]').style.display = pid ? 'none' : '';
   const info = tr.querySelector('[data-k=info]');
-  if (!p) { info.innerHTML = '<span class="tg alerta">sem cadastro · confirmar</span>'; return; }
+  if (!p) { info.innerHTML = '<span class="tg alerta">sem cadastro · precisa de liberação do administrador</span>'; return; }
   const un = tr.querySelector('[data-k=unidade]'); if (!un.value) un.value = p.unidade_compra || p.unidade || '';
   const c = tr.querySelector('[data-k=categoria_financeira_id]'); if (!c.value && p.categoria_financeira_id) c.value = p.categoria_financeira_id;
   const up = ultimoPreco(pid, fid), vu = tr.querySelector('[data-k=valor_unitario]');
@@ -165,7 +169,8 @@ function secaoPedido(r) {
   const podeAlt = CTX.pode('compras', 'alterar'), podeCriar = CTX.pode('compras', 'criar');
   const btn = (id, txt, cls = '') => `<button type="button" class="btn ${cls}" data-pc="${id}">${txt}</button>`;
   const acoes = [];
-  if (EDITAVEL.includes(s) && podeCriar) acoes.push(btn('enviar_aprovacao', 'Enviar para aprovação', 'primario'));
+  if (EDITAVEL.includes(s) && avulsosPendentes(r).length && possoLiberar()) acoes.push(btn('liberar_avulso', 'Liberar item sem cadastro…', 'primario'));
+  if (EDITAVEL.includes(s) && podeCriar) acoes.push(btn('enviar_aprovacao', 'Enviar para aprovação', avulsosPendentes(r).length ? '' : 'primario'));
   if (s === 'em_aprovacao' && possoAprovar(r)) { acoes.push(btn('aprovar', 'Aprovar' + (n ? ' · ' + esc(nomeNivel(r, n)) : ''), 'primario')); acoes.push(btn('recusar', 'Recusar…')); }
   if (pos.includes(s) && s !== 'recebido') {
     acoes.push(btn('pdf', 'Baixar PDF'));
@@ -181,7 +186,9 @@ function secaoPedido(r) {
   const avisos = [];
   if (s === 'recusado' && r.motivo_recusa) avisos.push(`<div class="aviso-box erro"><b>Recusado:</b> ${esc(r.motivo_recusa)} — ajuste o pedido, salve e envie de novo para aprovação.</div>`);
   if (s === 'em_aprovacao') avisos.push(`<div class="aviso-box">Aguardando <b>${esc(nomeNivel(r, n))}</b> · aprova: ${esc(quemAprova(r, n))}</div>`);
-  if ((ex.itens[r.id] || []).some(i => !i.produto_id)) avisos.push('<div class="aviso-box">Há item <b>sem cadastro</b>: confirme se precisa cadastrar o produto (matéria-prima/insumo) antes de aprovar.</div>');
+  const pend = avulsosPendentes(r);
+  if (pend.length && EDITAVEL.includes(s)) avisos.push(`<div class="aviso-box erro"><b>Item sem cadastro:</b> ${esc(pend.map(i => i.descricao).join(', '))}. Cadastre o produto e escolha-o no item, ou peça liberação ao administrador (compra ocasional, ex.: manutenção). Sem isso o pedido não vai para aprovação.</div>`);
+  else if (r.liberacao_avulso && (ex.itens[r.id] || []).some(i => !i.produto_id)) avisos.push(`<div class="aviso-box">Item sem cadastro <b>liberado</b> por ${esc(usu(r.liberacao_avulso.por) || 'administrador')} em ${dataHoraBR(r.liberacao_avulso.em)} · ${esc(r.liberacao_avulso.motivo || '')}</div>`);
   return `<div class="secao">Andamento</div>
     <div class="fluxo-pc">${etapas.join('<i>›</i>')}</div>${avisos.join('')}
     <div class="acoes-pc">${acoes.join('')}</div>
@@ -212,13 +219,14 @@ function pedirTexto(titulo, rotulo, obrig = true, botao = 'Confirmar') {
   });
 }
 async function executarAcao(r, a, m) {
-  if (sujo && ['enviar_aprovacao', 'aprovar', 'enviar_fornecedor', 'pdf', 'receber'].includes(a)) return aviso('Salve as alterações antes', true);
+  if (sujo && ['liberar_avulso', 'enviar_aprovacao', 'aprovar', 'enviar_fornecedor', 'pdf', 'receber'].includes(a)) return aviso('Salve as alterações antes', true);
   const fim = txt => { aviso(txt); m.remove(); cfg.recarregar(); };
   if (a === 'enviar_aprovacao') { if (await acao(r, a)) fim('Enviado para aprovação'); }
   else if (a === 'aprovar') { const c = await pedirTexto('Aprovar ' + r.numero, 'Comentário (opcional)', false, 'Aprovar'); if (c === null) return; const s = await acao(r, a, c); if (s) fim(s === 'aprovado' ? 'Pedido aprovado · previsão lançada no contas a pagar' : 'Aprovado neste nível · segue para o próximo'); }
   else if (a === 'recusar') { const c = await pedirTexto('Recusar ' + r.numero, 'Motivo (volta para o comprador ajustar; não cancela)', true, 'Recusar'); if (c && await acao(r, a, c)) fim('Pedido recusado'); }
   else if (a === 'reabrir') { const c = await pedirTexto('Voltar ' + r.numero + ' para rascunho', 'Motivo (a aprovação será refeita)', true, 'Reabrir'); if (c && await acao(r, a, c)) fim('Pedido voltou para rascunho'); }
   else if (a === 'cancelar') { const c = await pedirTexto('Cancelar ' + r.numero, 'Motivo do cancelamento', true, 'Cancelar pedido'); if (c && await acao(r, a, c)) fim('Pedido cancelado'); }
+  else if (a === 'liberar_avulso') { const c = await pedirTexto('Liberar item sem cadastro · ' + r.numero, 'Motivo (ex.: compra ocasional para manutenção, não precisa de SKU)', true, 'Liberar'); if (c && await acao(r, a, c)) fim('Item(ns) sem cadastro liberado(s)'); }
   else if (a === 'comentario') { const c = await pedirTexto('Comentário em ' + r.numero, 'Comentário', true, 'Salvar'); if (c && await acao(r, a, c)) fim('Comentário registrado'); }
   else if (a === 'encerrar') { const c = await pedirTexto('Encerrar saldo de ' + r.numero, 'Motivo (o restante não será entregue)', true, 'Encerrar'); if (!c) return;
     const { error } = await db.rpc('pedido_compra_encerrar', { p_id: r.id, p_motivo: c }); if (error) return aviso('Não deu: ' + error.message, true); fim('Saldo encerrado · projeção removida'); }
@@ -413,6 +421,7 @@ function desenharAlertas(linhas) {
   const ls = linhas.filter(r => !emp || r.empresa_id === emp);
   const a = [
     { aba: 'minha', n: ls.filter(possoAprovar).length, t: 'aguardando a sua aprovação', cls: 'erro' },
+    ...(possoLiberar() ? [{ aba: 'liberar', n: ls.filter(r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length).length, t: 'com item sem cadastro para liberar', cls: 'erro' }] : []),
     { aba: 'recusados', n: ls.filter(r => r.situacao === 'recusado').length, t: 'recusado(s) para ajustar', cls: 'erro' },
     { aba: 'aprovacao', n: ls.filter(r => r.situacao === 'em_aprovacao').length, t: 'em aprovação', cls: 'alerta' },
     { aba: 'enviar', n: ls.filter(r => r.situacao === 'aprovado').length, t: 'aprovado(s) sem envio ao fornecedor', cls: 'alerta' },
@@ -437,6 +446,7 @@ const cfg = {
     { v: 'andamento', n: 'Em andamento', teste: r => !FINAL.includes(r.situacao) },
     { v: 'minha', n: 'Minha aprovação', teste: r => possoAprovar(r) },
     { v: 'aprovacao', n: 'Em aprovação', teste: r => r.situacao === 'em_aprovacao' },
+    { v: 'liberar', n: 'Item sem cadastro', teste: r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length > 0 },
     { v: 'recusados', n: 'Recusados', teste: r => r.situacao === 'recusado' },
     { v: 'enviar', n: 'Para enviar', teste: r => r.situacao === 'aprovado' },
     { v: 'receber', n: 'Aguardando entrega', teste: r => ['enviado', 'recebido_parcial'].includes(r.situacao) },
@@ -504,7 +514,7 @@ const cfg = {
   colunasExtras: [
     { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${prod(i.produto_id)?.codigo || i.descricao}`).join(', '),
       html: (r, e) => { const l = e.itens[r.id] || [], t = l.map(i => `${num(i.quantidade)}× ${prod(i.produto_id)?.codigo || i.descricao}`).join(', ');
-        return `<span class="texto-curto" style="max-width:220px" title="${esc(t)}">${esc(t)}</span>${l.some(i => !i.produto_id) ? ' <span class="tg alerta">sem cadastro</span>' : ''}`; } },
+        return `<span class="texto-curto" style="max-width:220px" title="${esc(t)}">${esc(t)}</span>${avulsosPendentes(r).length && EDITAVEL.includes(r.situacao) ? ' <span class="tg erro">sem cadastro · liberar</span>' : l.some(i => !i.produto_id) ? ' <span class="tg neutro">avulso liberado</span>' : ''}`; } },
     { label: 'Comprador', texto: r => usu(r.comprador_id) },
     { label: 'Aprovação', texto: r => r.situacao === 'em_aprovacao' ? `${(r.niveis_aprovados || []).length}/${(r.niveis_exigidos || []).length} · ${nomeNivel(r, nivelAtual(r))}` : '' }
   ],
@@ -512,7 +522,7 @@ const cfg = {
     ...(e.recebimentos[r.id] || []).map(x => 'NF ' + x.nf_numero)].filter(Boolean).join(' '),
   subtituloLinha: r => [r.enviado_em ? `enviado ${dataCurta(r.enviado_em)} por ${r.enviado_via || ''}` : '', Number(r.valor_recebido) ? 'recebido ' + reais(r.valor_recebido) : ''].filter(Boolean).join(' · '),
   pendencias: [
-    { id: 'sem_cad', nome: 'Item sem cadastro (confirmar)', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => !i.produto_id) },
+    { id: 'sem_cad', nome: 'Item sem cadastro aguardando liberação', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length > 0 },
     { id: 'sem_cat', nome: 'Item sem categoria financeira', cor: 'erro', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => !i.categoria_financeira_id) },
     { id: 'sem_itens', nome: 'Sem itens', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !(e.itens[r.id] || []).length },
     { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
