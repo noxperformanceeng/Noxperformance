@@ -6,7 +6,7 @@
 <title>Produtos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610251747">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610251754">
 <style>
   td.foto { width: 64px; padding: 4px 8px; }
   td.foto img { display: block; width: 52px; height: 52px; object-fit: contain; background: #fff; border: 1px solid var(--linha); border-radius: 6px; cursor: zoom-in; }
@@ -94,10 +94,10 @@
 <datalist id="dlForn"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610251747"></script>
-<script src="../../assets/js/ui.js?v=202610251747"></script>
-<script src="../../assets/js/auth.js?v=202610251747"></script>
-<script src="../../assets/js/layout.js?v=202610251747"></script>
+<script src="../../assets/js/supabase.js?v=202610251754"></script>
+<script src="../../assets/js/ui.js?v=202610251754"></script>
+<script src="../../assets/js/auth.js?v=202610251754"></script>
+<script src="../../assets/js/layout.js?v=202610251754"></script>
 <script>
 /* ===================== CONFIGURAÇÃO ===================== */
 const TIPOS = [
@@ -182,6 +182,7 @@ async function carregar() {
     });
     produtos.forEach(p => p._pend = pendencias(p));
     await carregarFotosLista();
+    try { fichas = Object.fromEntries((await buscarTodos(() => db.from('produto_usinagem').select('*').order('produto_id'))).map(f => [f.produto_id, f])); } catch (e) { fichas = {}; }
     preencherFiltros();
     desenhar();
   } catch (e) {
@@ -190,7 +191,7 @@ async function carregar() {
 }
 
 /* ---------- Foto e desenho na lista ---------- */
-let fotosProd = {}, desenhosProd = {};
+let fotosProd = {}, desenhosProd = {}, fichas = {};
 async function carregarFotosLista() {
   try {
     const arq = await buscarTodos(() => db.from('produto_arquivos').select('id, produto_id, tipo, caminho, nome, principal').in('tipo', ['foto', 'desenho']).order('id'));
@@ -446,6 +447,18 @@ function abrirProduto(p) {
         <div class="campo"><label>Largura (cm)</label><input id="pLarg" inputmode="decimal" value="${num(p.largura_cm)}" ${ro}></div>
         <div class="campo"><label>Altura (cm)</label><input id="pAlt" inputmode="decimal" value="${num(p.altura_cm)}" ${ro}></div>
       </div>
+      <details id="blUsi" style="margin-top:10px"${fichas[p.id] || p.grupo === 'Usinagem' ? ' open' : ''}>
+        <summary style="cursor:pointer;font-weight:600;font-size:13px">Ficha de usinagem (serviço terceirizado)</summary>
+        <div class="grade-campos" style="margin-top:8px">
+          <div class="campo l2"><label>Fornecedor do serviço</label><select id="uFor" ${ro}><option value="">— escolher —</option>${fornecedores.filter(f => f.situacao !== 'inativo' || f.id === fichas[p.id]?.fornecedor_id).map(f => `<option value="${f.id}"${f.id === fichas[p.id]?.fornecedor_id ? ' selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
+          <div class="campo l2"><label>Material bruto (sai do nosso estoque)</label><input id="uMat" value="${esc(fichas[p.id]?.material || '')}" placeholder='ex.: ALUMINIO REDONDO 1/2"' ${ro}></div>
+          <div class="campo"><label>Comprimento da peça (mm)</label><input id="uComp" inputmode="decimal" value="${num(fichas[p.id]?.comprimento_mm)}" ${ro}></div>
+          <div class="campo"><label>Perda por corte (mm)</label><input id="uPerda" inputmode="decimal" value="${num(fichas[p.id] ? fichas[p.id].perda_mm : 4)}" ${ro}></div>
+          <div class="campo"><label>Comprimento p/ corte (mm)</label><input id="uTotal" disabled></div>
+          <div class="campo"><label>Preço do serviço por peça (R$)</label><input id="uPreco" inputmode="decimal" value="${num(fichas[p.id]?.preco_servico)}" ${ro}></div>
+          <div class="campo l4"><label>Observação da usinagem</label><input id="uObs" value="${esc(fichas[p.id]?.observacao || '')}" ${ro}></div>
+        </div>
+      </details>
     </div>
 
     ${novo ? '' : `<div id="blArq">
@@ -510,6 +523,9 @@ function abrirProduto(p) {
   ['#pUn', '#pUnC'].forEach(id => $(id).addEventListener('change', () => atualizarConv(true)));
   $('#pFator').addEventListener('input', () => atualizarConv(false));
   atualizarConv(false);
+
+  const calcTotalUsi = () => { const c = lerNumero($('#uComp').value), q = lerNumero($('#uPerda').value); $('#uTotal').value = c > 0 ? String((c + (q || 0))).replace('.', ',') : ''; };
+  ['#uComp', '#uPerda'].forEach(i => $(i).addEventListener('input', calcTotalUsi)); calcTotalUsi();
 
   const ajustarTipo = () => {
     const t = $('#pTipo').value;
@@ -695,6 +711,19 @@ function abrirProduto(p) {
           codigo_fornecedor: v.codigo_fornecedor || null, preferencial: !!v.preferencial,
           unidade_compra: v.unidade_compra || null, fator_compra: v.fator_compra || null })), { onConflict: 'produto_id,fornecedor_id' });
         if (error) throw error;
+      }
+      {   // ficha de usinagem
+        const f = { material: $('#uMat').value.trim() || null, comprimento_mm: lerNumero($('#uComp').value), perda_mm: lerNumero($('#uPerda').value),
+          preco_servico: lerNumero($('#uPreco').value), fornecedor_id: Number($('#uFor').value) || null, observacao: $('#uObs').value.trim() || null };
+        const tem = f.material || f.comprimento_mm || f.preco_servico || f.fornecedor_id || f.observacao;
+        if (tem && ![f.comprimento_mm, f.perda_mm, f.preco_servico].every(x => x === null || x === undefined || !isNaN(x))) throw new Error('Confira os números da ficha de usinagem');
+        if (tem && COM_ENGENHARIA.includes(dados.tipo)) {
+          const { error } = await db.from('produto_usinagem').upsert({ produto_id: id, ...f, perda_mm: f.perda_mm ?? 4, atualizado_em: new Date().toISOString() }, { onConflict: 'produto_id' });
+          if (error) throw error;
+        } else if (fichas[id] && !tem) {
+          const { error } = await db.from('produto_usinagem').delete().eq('produto_id', id);
+          if (error) throw error;
+        }
       }
       if (revisar) { const { error } = await db.rpc('produtos_marcar_revisado', { p_ids: [id] }); if (error) throw error; }
       m.remove(); aviso(revisar ? 'Salvo e revisado' : 'Salvo'); carregar();
