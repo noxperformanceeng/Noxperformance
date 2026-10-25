@@ -6,8 +6,12 @@
 <title>Produtos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610251658">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610251747">
 <style>
+  td.foto { width: 64px; padding: 4px 8px; }
+  td.foto img { display: block; width: 52px; height: 52px; object-fit: contain; background: #fff; border: 1px solid var(--linha); border-radius: 6px; cursor: zoom-in; }
+  td.foto .pdf { display: block; font-size: 10px; margin-top: 2px; color: var(--destaque); text-decoration: none; }
+  .lightbox { text-align: center; } .lightbox img { max-width: 100%; max-height: 62vh; background: #fff; border: 1px solid var(--linha); border-radius: 8px; }
   td.cod { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 500; }
   td.desc small { display: block; color: var(--texto-suave); font-size: 12px; margin-top: 2px; }
   tr.inativo td { color: #9aa0a8; }
@@ -71,6 +75,7 @@
     <table>
       <thead><tr>
         <th style="width:28px" class="nao-imprimir"><input type="checkbox" id="selTodos" title="Selecionar todos os listados"></th>
+        <th style="width:64px">Foto</th>
         <th class="ord" data-ord="codigo">Código</th>
         <th class="ord" data-ord="descricao">Descrição</th>
         <th id="thTipo">Tipo</th>
@@ -79,7 +84,7 @@
         <th class="ord" data-ord="revisao">Revisão</th>
         <th>Pendências</th>
       </tr></thead>
-      <tbody id="lista"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody>
+      <tbody id="lista"><tr><td colspan="9" class="vazio">Carregando…</td></tr></tbody>
     </table>
   </div>
   <p class="sub" id="rodape" style="margin-top:10px"></p>
@@ -89,10 +94,10 @@
 <datalist id="dlForn"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610251658"></script>
-<script src="../../assets/js/ui.js?v=202610251658"></script>
-<script src="../../assets/js/auth.js?v=202610251658"></script>
-<script src="../../assets/js/layout.js?v=202610251658"></script>
+<script src="../../assets/js/supabase.js?v=202610251747"></script>
+<script src="../../assets/js/ui.js?v=202610251747"></script>
+<script src="../../assets/js/auth.js?v=202610251747"></script>
+<script src="../../assets/js/layout.js?v=202610251747"></script>
 <script>
 /* ===================== CONFIGURAÇÃO ===================== */
 const TIPOS = [
@@ -176,11 +181,50 @@ async function carregar() {
       (dups[d.produto_b] ||= []).push({ outro: d.produto_a, nivel: d.nivel });
     });
     produtos.forEach(p => p._pend = pendencias(p));
+    await carregarFotosLista();
     preencherFiltros();
     desenhar();
   } catch (e) {
     aviso('Erro ao carregar: ' + (e.message || e), true);
   }
+}
+
+/* ---------- Foto e desenho na lista ---------- */
+let fotosProd = {}, desenhosProd = {};
+async function carregarFotosLista() {
+  try {
+    const arq = await buscarTodos(() => db.from('produto_arquivos').select('id, produto_id, tipo, caminho, nome, principal').in('tipo', ['foto', 'desenho']).order('id'));
+    fotosProd = {}; desenhosProd = {};
+    arq.forEach(a => {
+      if (a.tipo === 'foto' && (a.principal || !fotosProd[a.produto_id])) fotosProd[a.produto_id] = { caminho: a.caminho, nome: a.nome, url: '' };
+      if (a.tipo === 'desenho') desenhosProd[a.produto_id] = { caminho: a.caminho, nome: a.nome };   // o mais recente
+    });
+    const caminhos = Object.values(fotosProd).map(f => f.caminho);
+    if (!caminhos.length) return;
+    const { data } = await db.storage.from('produtos').createSignedUrls(caminhos, 3600);
+    const porCaminho = Object.fromEntries((data || []).map(x => [x.path, x.signedUrl]));
+    Object.values(fotosProd).forEach(f => f.url = porCaminho[f.caminho] || '');
+  } catch (e) { /* a lista segue sem fotos */ }
+}
+function fotoLista(id) {
+  const f = fotosProd[id], d = desenhosProd[id];
+  return (f && f.url ? `<img src="${f.url}" alt="" loading="lazy" data-foto="${id}" title="Ampliar">` : '')
+    + (d ? `<a href="#" class="pdf" data-pdf="${id}" title="Abrir o desenho técnico">desenho PDF</a>` : '');
+}
+async function abrirDesenho(id) {
+  const d = desenhosProd[id]; if (!d) return;
+  const { data, error } = await db.storage.from('produtos').createSignedUrl(d.caminho, 300);
+  if (error) return aviso('Não abriu o desenho: ' + error.message, true);
+  window.open(data.signedUrl, '_blank');
+}
+function ampliarFoto(id) {
+  const f = fotosProd[id], p = produtos.find(x => x.id === id); if (!f) return;
+  const m = abrirModal(`<h2>${esc(p.codigo || '')} · ${esc(p.descricao)}</h2>
+    <div class="lightbox"><img src="${f.url}" alt=""></div>
+    <div class="acoes" style="margin-top:14px">${desenhosProd[id] ? '<button class="btn" id="lbPdf">Abrir desenho técnico (PDF)</button>' : ''}<button class="btn" id="lbAbrir">Abrir cadastro</button><button class="btn primario" id="lbFechar">Fechar</button></div>`);
+  m.querySelector('#lbFechar').onclick = () => m.remove();
+  m.querySelector('#lbAbrir').onclick = () => { m.remove(); abrirProduto(p); };
+  const b = m.querySelector('#lbPdf'); if (b) b.onclick = () => abrirDesenho(id);
 }
 
 function fornDe(id) {
@@ -303,6 +347,7 @@ function desenhar() {
                     r.cls === 'alerta' ? `alterado ${dataBR(p.atualizado_em)} · ${esc(nomes[p.atualizado_por] || '')}` : '';
     return `<tr data-id="${p.id}" class="${p.situacao === 'inativo' ? 'inativo' : ''}" style="cursor:pointer">
       <td class="nao-imprimir"><input type="checkbox" class="sel" data-id="${p.id}" ${selecionados.has(p.id) ? 'checked' : ''}></td>
+      <td class="foto">${fotoLista(p.id)}</td>
       <td class="cod">${esc(p.codigo || '—')}</td>
       <td class="desc">${esc(p.descricao)}${p.grupo || p.categoria_financeira_id ? `<small>${esc([p.grupo, catDe(p.categoria_financeira_id)?.nome].filter(Boolean).join(' · '))}</small>` : ''}</td>
       ${tipoAtual ? '' : `<td>${NOME_TIPO[p.tipo] || p.tipo}</td>`}
@@ -310,12 +355,15 @@ function desenhar() {
       <td>${fs.length ? esc(fs[0].nome) + (fs.length > 1 ? ` <span class="tg neutro">+${fs.length - 1}</span>` : '') : ''}</td>
       <td class="rev"><span class="tg ${r.cls}">${r.texto}</span>${revInfo ? `<small>${revInfo}</small>` : ''}</td>
       <td>${pend}</td></tr>`;
-  }).join('') : '<tr><td colspan="8" class="vazio">Nenhum produto com esses filtros.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="vazio">Nenhum produto com esses filtros.</td></tr>';
 
   document.getElementById('contagem').textContent = `${visiveis.length} produto${visiveis.length === 1 ? '' : 's'}`;
   document.getElementById('rodape').textContent = visiveis.length > LIM ? `Mostrando os ${LIM} primeiros. Use os filtros para refinar (o Exportar Excel leva todos os ${visiveis.length}).` : '';
   document.querySelectorAll('#lista tr[data-id]').forEach(tr => tr.onclick = e => {
     if (e.target.classList.contains('sel')) return;
+    const f = e.target.closest('[data-foto]'), d = e.target.closest('[data-pdf]');
+    if (d) { e.preventDefault(); return abrirDesenho(+d.dataset.pdf); }
+    if (f) return ampliarFoto(+f.dataset.foto);
     abrirProduto(produtos.find(p => p.id === +tr.dataset.id));
   });
   document.querySelectorAll('#lista .sel').forEach(c => c.onchange = () => {
@@ -477,7 +525,7 @@ function abrirProduto(p) {
     const arqs = { lista: [] };
     const urlDe = async (a, seg = 3600) => { const { data } = await db.storage.from('produtos').createSignedUrl(a.caminho, seg); return data?.signedUrl; };
     const abrirArq = async a => { const u = await urlDe(a, 300); if (u) window.open(u, '_blank'); else aviso('Não abriu o arquivo', true); };
-    const carregarArq = async () => {
+    const carregarArq = async (mudou) => {
       const { data, error } = await db.from('produto_arquivos').select('*').eq('produto_id', p.id).order('criado_em');
       if (error) return aviso('Arquivos do produto: ' + error.message, true);
       arqs.lista = data || [];
@@ -487,6 +535,7 @@ function abrirProduto(p) {
       $('#arqFotos').innerHTML = fotos.map((a, i) => `<div class="arq-foto" data-abrir="${a.id}" title="${esc(a.nome)}"><img src="${urls[i] || ''}" alt="">
         ${a.principal ? '<span class="tg ok">principal</span>' : ''}
         ${podeEditar ? `<span class="acoes-foto">${a.principal ? '' : `<button class="btn discreto" data-princ="${a.id}">principal</button>`}<button class="btn discreto" data-rmarq="${a.id}">excluir</button></span>` : ''}</div>`).join('');
+      if (mudou) carregarFotosLista().then(desenhar);
       $('#arqDesenhos').innerHTML = outros.length ? outros.map(a => `<tr>
         <td><a href="#" data-abrir="${a.id}" style="color:var(--destaque)">${esc(a.nome)}</a>${a.tipo === 'desenho' ? ' <span class="tg neutro">desenho</span>' : ''}</td>
         <td style="color:var(--texto-suave)">${a.revisao_data ? 'revisão ' + a.revisao_data.split('-').reverse().join('/') : ''}</td>
@@ -498,12 +547,12 @@ function abrirProduto(p) {
       if (pr) { e.preventDefault(); e.stopPropagation();
         await db.from('produto_arquivos').update({ principal: false }).eq('produto_id', p.id).eq('tipo', 'foto');
         const { error } = await db.from('produto_arquivos').update({ principal: true }).eq('id', pr.dataset.princ);
-        if (error) aviso(error.message, true); return carregarArq(); }
+        if (error) aviso(error.message, true); return carregarArq(true); }
       if (rm) { e.preventDefault(); e.stopPropagation();
         const a = arqs.lista.find(x => x.id == rm.dataset.rmarq); if (!a || !confirm('Excluir "' + a.nome + '" deste produto?')) return;
         await db.storage.from('produtos').remove([a.caminho]);
         const { error } = await db.from('produto_arquivos').delete().eq('id', a.id);
-        if (error) aviso(error.message, true); return carregarArq(); }
+        if (error) aviso(error.message, true); return carregarArq(true); }
       if (ab) { e.preventDefault(); const a = arqs.lista.find(x => x.id == ab.dataset.abrir); if (a) abrirArq(a); }
     });
     if (podeEditar) $('#arqNovo').onchange = async ev => {
@@ -525,7 +574,7 @@ function abrirProduto(p) {
         if (error) { await db.storage.from('produtos').remove([caminho]); aviso(f.name + ': ' + error.message, true); continue; }
         if (linha.principal) temPrincipal = true;
       }
-      aviso('Arquivos anexados'); carregarArq();
+      aviso('Arquivos anexados'); carregarArq(true);
     };
     carregarArq();
   }
