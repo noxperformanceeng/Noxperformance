@@ -6,7 +6,7 @@
 <title>Produtos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610232103">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610251658">
 <style>
   td.cod { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 500; }
   td.desc small { display: block; color: var(--texto-suave); font-size: 12px; margin-top: 2px; }
@@ -20,6 +20,13 @@
   .linha-cod { display: flex; gap: 6px; } .linha-cod input { flex: 1; }
   .aviso-dup { background: #fff4e5; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
   .aviso-dup b { color: #b45309; }
+  .arq-fotos { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+  .arq-foto { position: relative; width: 150px; height: 120px; border: 1px solid var(--linha); border-radius: 8px; background: #fff; overflow: hidden; cursor: zoom-in; display: flex; align-items: center; justify-content: center; }
+  .arq-foto img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .arq-foto .tg { position: absolute; left: 4px; top: 4px; }
+  .arq-foto .acoes-foto { position: absolute; right: 2px; bottom: 2px; display: none; gap: 2px; }
+  .arq-foto:hover .acoes-foto { display: flex; }
+  .arq-foto .acoes-foto button { font-size: 11px; padding: 2px 6px; }
   .lista-mini { width: 100%; font-size: 13px; } .lista-mini td { padding: 6px 8px; }
   .info { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 16px; font-size: 12.5px; color: var(--texto-suave); }
   .info b { color: var(--texto); font-weight: 500; }
@@ -82,10 +89,10 @@
 <datalist id="dlForn"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610232103"></script>
-<script src="../../assets/js/ui.js?v=202610232103"></script>
-<script src="../../assets/js/auth.js?v=202610232103"></script>
-<script src="../../assets/js/layout.js?v=202610232103"></script>
+<script src="../../assets/js/supabase.js?v=202610251658"></script>
+<script src="../../assets/js/ui.js?v=202610251658"></script>
+<script src="../../assets/js/auth.js?v=202610251658"></script>
+<script src="../../assets/js/layout.js?v=202610251658"></script>
 <script>
 /* ===================== CONFIGURAÇÃO ===================== */
 const TIPOS = [
@@ -393,6 +400,15 @@ function abrirProduto(p) {
       </div>
     </div>
 
+    ${novo ? '' : `<div id="blArq">
+      <div class="secao">Desenho técnico e fotos</div>
+      <div id="arqFotos" class="arq-fotos"></div>
+      <table class="lista-mini"><tbody id="arqDesenhos"></tbody></table>
+      ${podeEditar ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="arqNovo" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.dxf,.step,.stp" style="font-size:12px">
+        <span class="sub">PDF = desenho técnico · imagem = foto (a primeira vira a principal)</span></div>` : ''}
+    </div>`}
+
     <div class="secao">Estoque</div>
     <div class="grade-campos">
       <div class="campo"><label>Unidade de compra</label><select id="pUnC" ${ro}><option value="">Igual à de estoque</option>${unidades.map(u => `<option${u === p.unidade_compra ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
@@ -454,6 +470,65 @@ function abrirProduto(p) {
   };
   ajustarTipo();
   $('#pTipo').onchange = () => { ajustarTipo(); checarParecidos(); };
+
+
+  /* ---------- Desenho técnico e fotos ---------- */
+  if (!novo) {
+    const arqs = { lista: [] };
+    const urlDe = async (a, seg = 3600) => { const { data } = await db.storage.from('produtos').createSignedUrl(a.caminho, seg); return data?.signedUrl; };
+    const abrirArq = async a => { const u = await urlDe(a, 300); if (u) window.open(u, '_blank'); else aviso('Não abriu o arquivo', true); };
+    const carregarArq = async () => {
+      const { data, error } = await db.from('produto_arquivos').select('*').eq('produto_id', p.id).order('criado_em');
+      if (error) return aviso('Arquivos do produto: ' + error.message, true);
+      arqs.lista = data || [];
+      const fotos = arqs.lista.filter(a => a.tipo === 'foto').sort((a, b) => (b.principal ? 1 : 0) - (a.principal ? 1 : 0));
+      const outros = arqs.lista.filter(a => a.tipo !== 'foto');
+      const urls = await Promise.all(fotos.map(a => urlDe(a)));
+      $('#arqFotos').innerHTML = fotos.map((a, i) => `<div class="arq-foto" data-abrir="${a.id}" title="${esc(a.nome)}"><img src="${urls[i] || ''}" alt="">
+        ${a.principal ? '<span class="tg ok">principal</span>' : ''}
+        ${podeEditar ? `<span class="acoes-foto">${a.principal ? '' : `<button class="btn discreto" data-princ="${a.id}">principal</button>`}<button class="btn discreto" data-rmarq="${a.id}">excluir</button></span>` : ''}</div>`).join('');
+      $('#arqDesenhos').innerHTML = outros.length ? outros.map(a => `<tr>
+        <td><a href="#" data-abrir="${a.id}" style="color:var(--destaque)">${esc(a.nome)}</a>${a.tipo === 'desenho' ? ' <span class="tg neutro">desenho</span>' : ''}</td>
+        <td style="color:var(--texto-suave)">${a.revisao_data ? 'revisão ' + a.revisao_data.split('-').reverse().join('/') : ''}</td>
+        <td style="text-align:right">${podeEditar ? `<button class="btn discreto" data-rmarq="${a.id}">excluir</button>` : ''}</td></tr>`).join('')
+        : `<tr><td class="sub" style="padding:6px 0">${fotos.length ? 'Nenhum desenho anexado.' : 'Nenhum desenho ou foto anexado.'}</td></tr>`;
+    };
+    m.querySelector('#blArq').addEventListener('click', async e => {
+      const ab = e.target.closest('[data-abrir]'), pr = e.target.closest('[data-princ]'), rm = e.target.closest('[data-rmarq]');
+      if (pr) { e.preventDefault(); e.stopPropagation();
+        await db.from('produto_arquivos').update({ principal: false }).eq('produto_id', p.id).eq('tipo', 'foto');
+        const { error } = await db.from('produto_arquivos').update({ principal: true }).eq('id', pr.dataset.princ);
+        if (error) aviso(error.message, true); return carregarArq(); }
+      if (rm) { e.preventDefault(); e.stopPropagation();
+        const a = arqs.lista.find(x => x.id == rm.dataset.rmarq); if (!a || !confirm('Excluir "' + a.nome + '" deste produto?')) return;
+        await db.storage.from('produtos').remove([a.caminho]);
+        const { error } = await db.from('produto_arquivos').delete().eq('id', a.id);
+        if (error) aviso(error.message, true); return carregarArq(); }
+      if (ab) { e.preventDefault(); const a = arqs.lista.find(x => x.id == ab.dataset.abrir); if (a) abrirArq(a); }
+    });
+    if (podeEditar) $('#arqNovo').onchange = async ev => {
+      const arquivos = [...ev.target.files]; ev.target.value = '';
+      let temPrincipal = arqs.lista.some(a => a.tipo === 'foto' && a.principal);
+      for (const f of arquivos) {
+        if (f.size > 15 * 1024 * 1024) { aviso(f.name + ': maior que 15 MB', true); continue; }
+        const img = f.type.startsWith('image/'), pdf = /\.pdf$/i.test(f.name);
+        const tipo = img ? 'foto' : pdf ? 'desenho' : 'outro';
+        const limpo = f.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9._-]+/gi, '_');
+        const caminho = `${p.id}/${Date.now()}_${limpo}`;
+        const up = await db.storage.from('produtos').upload(caminho, f, { contentType: f.type || undefined });
+        if (up.error) { aviso(f.name + ': ' + up.error.message, true); continue; }
+        const dm = f.name.match(/(\d{2})-(\d{2})-(\d{4})\.pdf$/i);
+        const linha = { produto_id: p.id, tipo, nome: f.name, caminho, mime: f.type || null, tamanho: f.size,
+          revisao_data: tipo === 'desenho' ? (dm ? `${dm[3]}-${dm[2]}-${dm[1]}` : new Date().toISOString().slice(0, 10)) : null,
+          principal: tipo === 'foto' && !temPrincipal };
+        const { error } = await db.from('produto_arquivos').insert(linha);
+        if (error) { await db.storage.from('produtos').remove([caminho]); aviso(f.name + ': ' + error.message, true); continue; }
+        if (linha.principal) temPrincipal = true;
+      }
+      aviso('Arquivos anexados'); carregarArq();
+    };
+    carregarArq();
+  }
 
   const desenharForn = () => {
     $('#pForn').innerHTML = vinc.length ? vinc.map((v, i) => `<tr>
