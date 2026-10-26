@@ -6,24 +6,25 @@
 <title>Vale-transporte · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610260957">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261012">
 <style>
   .modal.largo { max-width: 980px; }
   .gerar-cab { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; margin: 8px 0 12px; align-items: end; }
   .gerar-cab label { font-size: 11px; margin-bottom: 2px; }
   .gerar-cab input { padding: 6px 8px; }
   td input.v { width: 84px; padding: 4px 6px; text-align: right; }
+  .aviso-vt { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 0 0 8px; }
 </style>
 </head>
 <body data-modulo="vale_transporte" data-titulo="Vale-transporte" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610260957"></script>
-<script src="../../assets/js/ui.js?v=202610260957"></script>
-<script src="../../assets/js/auth.js?v=202610260957"></script>
-<script src="../../assets/js/layout.js?v=202610260957"></script>
-<script src="../../assets/js/cadastro.js?v=202610260957"></script>
-<script src="../../assets/js/rh.js?v=202610260957"></script>
+<script src="../../assets/js/supabase.js?v=202610261012"></script>
+<script src="../../assets/js/ui.js?v=202610261012"></script>
+<script src="../../assets/js/auth.js?v=202610261012"></script>
+<script src="../../assets/js/layout.js?v=202610261012"></script>
+<script src="../../assets/js/cadastro.js?v=202610261012"></script>
+<script src="../../assets/js/rh.js?v=202610261012"></script>
 <script>
 /* =====================================================================
    Vale-transporte
@@ -34,13 +35,13 @@
    - Valor por dia: cadastro do funcionário (VT por dia) ou VT do mês ÷ dias.
    ===================================================================== */
 let CTX = null;
-const SIT = [{ v: 'previsto', n: 'Previsto (só no RH)' }, { v: 'confirmado', n: 'Confirmado (no financeiro)' }, { v: 'entregue', n: 'Pago / recarregado' }, { v: 'cancelado', n: 'Cancelado' }];
+const SIT = [{ v: 'previsto', n: 'Previsto · aguardando aprovação' }, { v: 'confirmado', n: 'Aprovado · no contas a pagar' }, { v: 'entregue', n: 'Pago / recarregado' }, { v: 'cancelado', n: 'Cancelado' }];
 const cfg = {
   textoNovo: '+ Novo VT',
   tabela: 'rh_vale_transporte', modulo: 'vale_transporte', titulo: 'Vale-transporte', singular: 'VT', plural: 'VTs',
   subtitulo: 'Recarga do mês. Ao confirmar: o valor do VT vai para o Contas a pagar e só o desconto (6%, acerto e reembolso) vai para os Lançamentos.',
   dicaBusca: 'funcionário…', ordem: 'competencia', revisao: false, porEmpresa: true,
-  abas: { campo: 'situacao', padrao: '', opcoes: [{ v: 'previsto', n: 'Previstos' }, { v: 'confirmado', n: 'Confirmados' }, { v: 'entregue', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }, { v: '', n: 'Todos' }] },
+  abas: { campo: 'situacao', padrao: '', opcoes: [{ v: 'previsto', n: 'Aguardando aprovação' }, { v: 'confirmado', n: 'Aprovados (no financeiro)' }, { v: 'entregue', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }, { v: '', n: 'Todos' }] },
   periodos: [{ campo: 'competencia', label: 'Competência' }],
   campos: [
     campoFuncionario(),
@@ -59,7 +60,7 @@ const cfg = {
   ordenarPor: { competencia: r => r.competencia + (funcionario(r.funcionario_id)?.nome || '') },
   totais: ['valor_total', 'desconto'],
   async carregarExtra(linhas, ctx) {
-    CTX = ctx; await carregarFuncionarios();
+    CTX = ctx; await carregarFuncionarios(); window.__vtLinhas = linhas; window.__vtAtualizar?.();
     cfg.campos[1].opcoes = [...new Set(linhas.map(r => r.competencia))].sort().reverse().map(v => ({ v, n: mesBR(v) }));
     return {};
   },
@@ -72,17 +73,59 @@ const cfg = {
     q('#f_funcionario_id').addEventListener('change', () => { const f = funcionario(q('#f_funcionario_id').value);
       if (f?.vt_valor_dia && !q('#f_valor_dia').value) q('#f_valor_dia').value = num2(f.vt_valor_dia); total(); });
   },
-  acoesLote: [{ nome: 'Confirmar (envia ao financeiro)', dados: { situacao: 'confirmado' } }, { nome: 'Voltar para previsto', dados: { situacao: 'previsto' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
+  secaoExtra: r => !r.id ? '' : `<div class="secao">Aprovação e financeiro</div>
+    ${r.situacao === 'previsto' ? `<div class="aviso-vt">Este VT ainda <b>não está no contas a pagar</b>. Confira os valores e aprove para enviar ao financeiro (vencimento: ${dataCurta(r.data_pagamento || r.competencia)}).</div>
+      ${CTX?.pode('vale_transporte', 'editar') ? `<button type="button" class="btn primario" onclick="aprovarVT([${r.id}])">Aprovar e enviar ao contas a pagar</button>` : ''}`
+    : r.situacao === 'confirmado' ? `<p class="sub" style="margin:0 0 6px">Aprovado: o valor de ${reais(r.valor_total)} está no contas a pagar (empresa do funcionário). O desconto foi para os Lançamentos.</p>
+      <button type="button" class="btn fino" onclick="abrirTituloVT(${r.id})">Ver no contas a pagar / rastreio</button>`
+    : r.situacao === 'entregue' ? '<p class="sub" style="margin:0">Pago / recarregado.</p>' : '<p class="sub" style="margin:0">Cancelado.</p>'}`,
+  acoesLote: [{ nome: 'Aprovar e enviar ao contas a pagar', dados: { situacao: 'confirmado' } }, { nome: 'Voltar para previsto', dados: { situacao: 'previsto' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
   apagado: r => r.situacao === 'cancelado',
   msgDuplicado: 'Este funcionário já tem VT nesta competência'
 };
 
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+// Aprovação: previsto → aprovado (o banco cria o título no contas a pagar, na empresa do funcionário)
+async function aprovarVT(ids, pai) {
+  const ls = (window.__vtLinhas || []).filter(r => ids.includes(r.id) && r.situacao === 'previsto');
+  if (!ls.length) return aviso('Nenhum VT aguardando aprovação', true);
+  const tot = ls.reduce((s, r) => s + Number(r.valor_total || 0), 0);
+  const m = abrirModal(`<h2>Aprovar ${ls.length} VT(s)</h2>
+    <p class="sub" style="margin:0 0 8px">Ao aprovar, cada VT vira um título no <b>contas a pagar</b> da empresa do funcionário, e o desconto (6%, acerto e reembolso) vai para os Lançamentos.</p>
+    <table class="lista-mini"><thead><tr><th>Funcionário</th><th>Competência</th><th>Empresa</th><th class="num">VT</th><th class="num">Desconto</th></tr></thead><tbody>
+    ${ls.map(r => `<tr><td>${esc(funcionario(r.funcionario_id)?.nome || '')}</td><td>${mesBR(r.competencia)}</td><td>${esc(CTX.empresas.find(e => e.id === r.empresa_id)?.nome || '')}</td>
+      <td class="num">${reais(r.valor_total)}</td><td class="num">${reais(r.desconto)}</td></tr>`).join('')}</tbody></table>
+    <p style="margin:8px 0 0">Total a pagar: <b>${reais(tot)}</b></p>
+    <div class="acoes"><button class="btn" id="aN">Voltar</button><button class="btn primario" id="aS">Aprovar e enviar</button></div>`);
+  m.querySelector('#aN').onclick = () => m.remove();
+  m.querySelector('#aS').onclick = async () => {
+    m.querySelector('#aS').disabled = true;
+    const { error } = await db.from('rh_vale_transporte').update({ situacao: 'confirmado' }).in('id', ls.map(r => r.id));
+    if (error) { m.querySelector('#aS').disabled = false; return aviso('Não aprovou: ' + error.message, true); }
+    aviso(`${ls.length} VT(s) aprovado(s) · ${reais(tot)} no contas a pagar`); m.remove(); document.querySelector('.modal-fundo')?.remove(); cfg.recarregar();
+  };
+}
+async function abrirTituloVT(id) {
+  const r = (window.__vtLinhas || []).find(x => x.id === id); if (!r) return;
+  const { data } = await db.rpc('rh_titulos', { p_competencia: r.competencia, p_funcionario: r.funcionario_id });
+  const t = (data || []).find(x => x.origem === 'vale_transporte' && Number(x.origem_id) === id);
+  if (!t) return aviso('Título não encontrado no contas a pagar', true);
+  if (CTX.pode('pagar') || CTX.pode('fluxo')) abrirRastreio('pagar', t.titulo_id);
+  else aviso(`No contas a pagar: ${reais(t.valor)} · vence ${dataCurta(t.data_vencimento)} · ${t.situacao}`);
+}
+
 (async () => {
   await montarCadastro(cfg);
   if (!CTX?.pode('vale_transporte', 'editar')) return;
+  const ap = document.createElement('button'); ap.className = 'btn primario fino'; ap.id = 'btnAprovarVT';
+  const atualizarBtn = () => { const n = (window.__vtLinhas || []).filter(r => r.situacao === 'previsto' && (!CTX.empresa || r.empresa_id === CTX.empresa)).length;
+    ap.textContent = n ? `Aprovar e enviar ao financeiro (${n})` : 'Nada aguardando aprovação'; ap.disabled = !n; };
+  ap.onclick = () => aprovarVT((window.__vtLinhas || []).filter(r => r.situacao === 'previsto' && (!CTX.empresa || r.empresa_id === CTX.empresa)).map(r => r.id));
+  window.__vtAtualizar = atualizarBtn;
   const b = document.createElement('button'); b.className = 'btn fino'; b.textContent = 'Gerar VT do mês'; b.style.marginLeft = 'auto';
   const cab = document.querySelector('.cab-tela'); cab.insertBefore(b, cab.lastElementChild); cab.lastElementChild.style.marginLeft = '6px';
   b.onclick = gerarMes;
+  cab.insertBefore(ap, b); ap.style.marginLeft = 'auto'; b.style.marginLeft = '6px'; atualizarBtn();
 })();
 
 async function gerarMes() {
