@@ -18,6 +18,7 @@ const RECURSOS: Record<string, { pesquisa: string; lista: string; item: string; 
   notas_entrada:  { pesquisa: 'notas.fiscais.pesquisa.php',  lista: 'notas_fiscais', item: 'nota_fiscal', obter: 'nota.fiscal.obter.php', extra: { tipoNota: 'E' } },
   notas_saida:    { pesquisa: 'notas.fiscais.pesquisa.php',  lista: 'notas_fiscais', item: 'nota_fiscal', obter: 'nota.fiscal.obter.php', extra: { tipoNota: 'S' } },
   contatos:       { pesquisa: 'contatos.pesquisa.php',       lista: 'contatos', item: 'contato', obter: 'contato.obter.php' },
+  ordens_compra:  { pesquisa: 'ordens.compra.pesquisa.php',  lista: 'ordens_compra', item: 'ordem_compra', obter: 'ordem.compra.obter.php' },
 };
 
 let pausa = 300;   // ms entre chamadas; aumenta sozinho se o Tiny reclamar de excesso de acessos
@@ -160,6 +161,11 @@ Deno.serve(async req => {
     // @ts-ignore
     EdgeRuntime.waitUntil(rodar(job.id, chave));
     return resp({ ok: true, job: job.id });
+  }
+  // diagnóstico: chama um método da API v2 do Tiny e devolve a resposta (só pela chave interna ou por quem edita integrações)
+  if (corpo.acao === 'metodo' && /^[a-z.]+\.php$/.test(String(corpo.metodo ?? ''))) {
+    const s = String(corpo.empresa ?? '30'), token = Deno.env.get('TINY_TOKEN_' + s) ?? '';
+    try { return resp(await tiny(token, corpo.metodo, corpo.params ?? {})); } catch (e) { return resp({ erro: String((e as Error).message ?? e) }); }
   }
   if (corpo.acao === 'teste') {
     const out: Record<string, unknown> = {};

@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261118">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261131">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261118"></script>
-<script src="../../assets/js/ui.js?v=202610261118"></script>
-<script src="../../assets/js/auth.js?v=202610261118"></script>
-<script src="../../assets/js/layout.js?v=202610261118"></script>
-<script src="../../assets/js/cadastro.js?v=202610261118"></script>
+<script src="../../assets/js/supabase.js?v=202610261131"></script>
+<script src="../../assets/js/ui.js?v=202610261131"></script>
+<script src="../../assets/js/auth.js?v=202610261131"></script>
+<script src="../../assets/js/layout.js?v=202610261131"></script>
+<script src="../../assets/js/cadastro.js?v=202610261131"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -552,7 +552,7 @@ function desenharAlertas(linhas) {
   let box = document.getElementById('pcAlertas');
   if (!box) { const alvo = document.querySelector('#cAbas')?.closest('div')?.parentElement || document.querySelector('#conteudo'); box = document.createElement('div'); box.id = 'pcAlertas'; box.className = 'pc-alertas'; alvo.parentElement.insertBefore(box, alvo); }
   const hoje = hojeISO(), emp = CTX.empresa;
-  const ls = linhas.filter(r => !emp || r.empresa_id === emp);
+  const ls = linhas.filter(r => (!emp || r.empresa_id === emp) && r.origem !== 'tiny');   // ordens do Tiny ficam fora dos alertas
   const a = [
     { aba: 'minha', n: ls.filter(possoAprovar).length, t: 'aguardando a sua aprovação', cls: 'erro' },
     { acao: 'sugestao', n: SUG.length, t: 'produto(s) abaixo do estoque mínimo · sugestão de compra', cls: 'alerta' },
@@ -584,7 +584,7 @@ const cfg = {
   subtitulo: 'Pedido → aprovação (escala por valor) → envio ao fornecedor → recebimento da NF. Aprovado já entra no contas a pagar e no fluxo como previsão.',
   dicaBusca: 'nº do pedido, fornecedor, item, NF…', ordem: 'data_pedido', revisao: false, porEmpresa: true,
   abas: { campo: 'situacao', padrao: 'andamento', opcoes: [
-    { v: 'andamento', n: 'Em andamento', teste: r => !FINAL.includes(r.situacao) },
+    { v: 'andamento', n: 'Em andamento', teste: r => !FINAL.includes(r.situacao) && r.origem !== 'tiny' },
     { v: 'minha', n: 'Minha aprovação', teste: r => possoAprovar(r) },
     { v: 'aprovacao', n: 'Em aprovação', teste: r => r.situacao === 'em_aprovacao' },
     { v: 'liberar', n: 'Item sem cadastro', teste: r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length > 0 },
@@ -593,13 +593,15 @@ const cfg = {
     { v: 'receber', n: 'Aguardando entrega', teste: r => ['enviado', 'recebido_parcial'].includes(r.situacao) },
     { v: 'atrasados', n: 'Atrasados', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
     { v: 'historico', n: 'Histórico (recebidos e cancelados)', teste: r => FINAL.includes(r.situacao) },
+    { v: 'tiny', n: 'Do Tiny', teste: r => r.origem === 'tiny' },
     { v: '', n: 'Todos' }] },
   totais: ['valor_total'],
   valorTotal: (r, c) => r.situacao === 'cancelado' ? 0 : r[c],
   ordenarPor: { data_pedido: r => String(9e15 - Date.parse(r.data_pedido)) + String(1e12 - r.id).padStart(13, '0') },
   periodos: [{ campo: 'data_pedido', label: 'Data do pedido' }, { campo: 'data_entrega_prevista', label: 'Entrega prevista' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
   campos: [
-    { id: 'numero', label: 'Nº', somenteLeitura: true, lista: true },
+    { id: 'numero', label: 'Nº', somenteLeitura: true, lista: true,
+      listaHtml: r => r.origem === 'tiny' ? `<span class="tg alerta" title="Ordem de compra feita no Tiny (${esc(r.numero)} no sistema)">TINY ${esc(r.numero_tiny || '')}</span>` : esc(r.numero || '') },
     { id: 'data_pedido', label: 'Data', tipo: 'data', obrig: true, lista: true, padrao: () => hojeISO() },
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'rascunho',
@@ -734,7 +736,7 @@ const cfg = {
   aoRecarregarListas(m) {
     m.querySelectorAll('[data-k=produto_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optProds(Number(v) || null); sel.value = v; });
   },
-  tituloRegistro: r => `${r.numero} · ${forn(r.fornecedor_id)?.nome || ''}`,
+  tituloRegistro: r => `${r.origem === 'tiny' ? 'TINY ' + r.numero_tiny + ' (' + r.numero + ')' : r.numero} · ${forn(r.fornecedor_id)?.nome || ''}`,
   chaveHistorico: r => r.numero
 };
 montarCadastro(cfg);

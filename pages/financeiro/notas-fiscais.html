@@ -6,7 +6,7 @@
 <title>Notas fiscais · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261118">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261131">
 <style>
   .nf-cnpjs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 12px; }
   .nf-cnpj { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
@@ -30,11 +30,11 @@
 <body data-modulo="notas" data-titulo="Notas fiscais" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261118"></script>
-<script src="../../assets/js/ui.js?v=202610261118"></script>
-<script src="../../assets/js/auth.js?v=202610261118"></script>
-<script src="../../assets/js/layout.js?v=202610261118"></script>
-<script src="../../assets/js/cadastro.js?v=202610261118"></script>
+<script src="../../assets/js/supabase.js?v=202610261131"></script>
+<script src="../../assets/js/ui.js?v=202610261131"></script>
+<script src="../../assets/js/auth.js?v=202610261131"></script>
+<script src="../../assets/js/layout.js?v=202610261131"></script>
+<script src="../../assets/js/cadastro.js?v=202610261131"></script>
 <script>
 /* =====================================================================
    Notas fiscais de entrada (NF-e emitidas contra a NOX), separadas por CNPJ
@@ -51,9 +51,10 @@ const SEFAZ = [{ v: 'autorizada', n: 'Autorizada' }, { v: 'cancelada', n: 'Cance
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtCnpj = d => (d || '').replace(/\D/g, '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
-let CTX = null, FORN = [], PEDS = [], CATS = [], CONTAS = [], EMPRESAS = [], CTRL = [], USU = {}, modalAtual = null;
+let NO_TINY = {}, CTX = null, FORN = [], PEDS = [], CATS = [], CONTAS = [], EMPRESAS = [], CTRL = [], USU = {}, modalAtual = null;
 const forn = id => FORN.find(f => f.id === id);
 const ped = id => PEDS.find(p => p.id === id);
+const nomePed = p => p ? (p.origem === 'tiny' ? `TINY ${p.numero_tiny}` : p.numero) : '';
 const PORTAL_SEFAZ = 'https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx?tipoConsulta=resumo&tipoConteudo=7PhJ+gAVw2g=';
 
 /* ---------- Checagens antifraude (mostradas na nota) ---------- */
@@ -71,6 +72,7 @@ function checagens(r) {
       : [Math.abs(dif) > saldo * 0.05 ? 'erro' : 'alerta', `Valor da NF ${dif > 0 ? 'acima' : 'abaixo'} do saldo do pedido em ${reais(Math.abs(dif))} (saldo ${reais(saldo)})`]);
     if (!['aprovado', 'enviado', 'recebido_parcial'].includes(p.situacao)) c.push(['erro', `Pedido ${p.numero} não está aprovado (${p.situacao})`]);
   } else c.push(['erro', 'Sem pedido de compra vinculado']);
+  if (NO_TINY[r.id]) c.push(['alerta', `Esta NF já está no Tiny (${NO_TINY[r.id].situacao_tiny || 'registrada'}): o contas a pagar dela vem da leitura do Tiny — não lançar de novo`]);
   if (r.documento === 'resumo') c.push(['alerta', 'Só o resumo da SEFAZ: importe o XML para ver itens e duplicatas']);
   return c;
 }
@@ -82,7 +84,7 @@ function secaoNF(r) {
   const btn = (a, t, cls = '') => `<button type="button" class="btn ${cls}" data-nf="${a}">${t}</button>`, ac = [];
   if (podeAlt && r.situacao === 'nova') { if (r.pedido_compra_id) ac.push(btn('conferida', 'Conferi · NF bate com o pedido', 'primario')); else ac.push(btn('pedir_aprovacao', 'NF sem pedido · pedir aprovação do master…')); }
   if (r.situacao === 'aguardando_aprovacao' && CTX.admin) { ac.push(btn('aprovar', 'Aprovar (master)…', 'primario')); ac.push(btn('recusar', 'Recusar…')); }
-  if (r.situacao === 'conferida' && r.pedido_compra_id) ac.push(`<a class="btn primario" href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}">Registrar recebimento no pedido ${esc(ped(r.pedido_compra_id)?.numero || '')} ›</a>`);
+  if (r.situacao === 'conferida' && r.pedido_compra_id) ac.push(`<a class="btn primario" href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}">Registrar recebimento no pedido ${esc(nomePed(ped(r.pedido_compra_id)))} ›</a>`);
   if (r.situacao === 'aprovada' && CTX.pode('pagar', 'criar')) ac.push(btn('lancar', 'Lançar no contas a pagar e estoque…', 'primario'));
   if (podeAlt && ['conferida', 'ignorada'].includes(r.situacao)) ac.push(btn('nova', 'Voltar para conferir', 'discreto'));
   if (podeAlt && !['lancada', 'ignorada'].includes(r.situacao)) ac.push(btn('ignorada', 'Ignorar (não é compra)…', 'discreto'));
@@ -98,8 +100,9 @@ function secaoNF(r) {
       ${!r.fornecedor_id ? `<div class="linha-vinc"><label class="sub">Fornecedor:</label><select id="nfForn"><option value="">— escolher —</option>${FORN.filter(f => f.situacao === 'ativo').map(f => `<option value="${f.id}">${esc(f.nome)}${f.cnpj ? ' · ' + esc(f.cnpj) : ''}</option>`).join('')}</select>
         <button type="button" class="btn fino" data-nf="fornecedor">Vincular</button> <a class="sub" href="${RAIZ}pages/cadastros/fornecedores.html" style="color:var(--destaque)">cadastrar fornecedor ›</a></div>` : ''}
       <div class="linha-vinc"><label class="sub">Pedido de compra:</label><select id="nfPed"><option value="">— sem pedido —</option>${pedsForn.concat(r.pedido_compra_id && !pedsForn.some(p => p.id === r.pedido_compra_id) ? [ped(r.pedido_compra_id)].filter(Boolean) : [])
-        .map(p => `<option value="${p.id}"${p.id === r.pedido_compra_id ? ' selected' : ''}>${esc(p.numero)} · ${dataCurta(p.data_pedido)} · saldo ${reais(Number(p.valor_total) - Number(p.valor_recebido))} · ${esc(forn(p.fornecedor_id)?.nome || '')}</option>`).join('')}</select>
-        <button type="button" class="btn fino" data-nf="pedido">Vincular</button>${!pedsForn.length && !r.pedido_compra_id ? ' <span class="sub">nenhum pedido aprovado deste fornecedor nesta empresa</span>' : ''}</div>` : ''}
+        .map(p => `<option value="${p.id}"${p.id === r.pedido_compra_id ? ' selected' : ''}>${esc(nomePed(p))} · ${dataCurta(p.data_pedido)} · saldo ${reais(Number(p.valor_total) - Number(p.valor_recebido))} · ${esc(forn(p.fornecedor_id)?.nome || '')}</option>`).join('')}</select>
+        <button type="button" class="btn fino" data-nf="pedido">Vincular</button>${!pedsForn.length && !r.pedido_compra_id ? ' <span class="sub">nenhum pedido aprovado deste fornecedor nesta empresa</span>' : ''}
+        ${['nova', 'conferida'].includes(r.situacao) && r.fornecedor_id ? ' <button type="button" class="btn fino" data-nf="tiny">Ordem de compra do Tiny…</button>' : ''}</div>` : ''}
     <div class="acoes-nf">${ac.join('')}</div>
     <div class="secao">Itens da NF</div>
     ${itens.length ? `<table class="lista-mini"><thead><tr><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead><tbody>
@@ -108,6 +111,30 @@ function secaoNF(r) {
       : '<p class="sub" style="margin:0">Sem itens (só o resumo). Importe o XML da nota.</p>'}
     ${dups.length ? `<div class="secao">Duplicatas (parcelas)</div><table class="lista-mini"><thead><tr><th>Nº</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>
       ${dups.map(d => `<tr><td>${esc(d.numero || '')}</td><td>${dataCurta(d.vencimento)}</td><td class="num">${reais(d.valor)}</td></tr>`).join('')}</tbody></table>` : ''}`;
+}
+
+/* ---------- Ordem de compra feita no Tiny ----------
+   A API do Tiny não entrega as ordens de compra: informa-se o nº da ordem e o sistema cria o pedido "TINY nº"
+   (separado dos pedidos do sistema) com os itens da NF. Se a NF já foi lançada no Tiny, fica lançada aqui sem
+   gerar outro título (o contas a pagar dela vem da leitura do Tiny). */
+function abrirOcTiny(r, mNF) {
+  const noTiny = !!NO_TINY[r.id];
+  const m = abrirModal(`<h2>NF ${esc(r.numero)} · ordem de compra do Tiny</h2>
+    <p class="sub" style="margin:0 0 8px">Para compras feitas pelo Tiny, antes do sistema novo. O pedido fica com a etiqueta <b>TINY</b>, separado dos pedidos do sistema.</p>
+    <div class="campo" style="max-width:260px"><label>Nº da ordem de compra no Tiny *</label><input id="ocN" inputmode="numeric"></div>
+    <label class="chk" style="margin:8px 0"><input type="checkbox" id="ocL" ${noTiny ? 'checked' : ''}> A NF já foi lançada no Tiny (não gerar contas a pagar aqui)</label>
+    ${noTiny ? '<div class="aviso-box">Encontrei esta NF nas notas de entrada do Tiny: o título dela já vem da leitura do Tiny.</div>' : '<p class="sub">Desmarcado: a NF segue o caminho normal (conferir → recebimento no pedido → contas a pagar e estoque).</p>'}
+    <div class="acoes"><button class="btn" id="ocX">Voltar</button><button class="btn primario" id="ocS">Vincular</button></div>`);
+  m.querySelector('#ocN').focus();
+  m.querySelector('#ocX').onclick = () => m.remove();
+  m.querySelector('#ocS').onclick = async () => {
+    const n = m.querySelector('#ocN').value.trim(), lanc = m.querySelector('#ocL').checked;
+    if (!n) return aviso('Informe o nº da ordem de compra do Tiny', true);
+    const { error } = await db.rpc('nfe_vincular_oc_tiny', { p_nf: r.id, p_numero_tiny: n, p_ja_lancada: lanc });
+    if (error) return aviso('Não vinculou: ' + error.message, true);
+    aviso(lanc ? 'Vinculada à ordem do Tiny · NF marcada como já lançada no Tiny' : 'Vinculada à ordem do Tiny · confira e registre o recebimento');
+    m.remove(); mNF.remove(); cfg.recarregar();
+  };
 }
 
 /* ---------- Ações ---------- */
@@ -134,6 +161,7 @@ async function executar(r, a, m) {
   else if (a === 'ignorada') { const t = await pedirTexto('Ignorar NF ' + r.numero, 'Motivo (ex.: devolução, remessa, bonificação, nota de outra empresa)', true, 'Ignorar'); if (t && await nfAcao([r.id], a, t)) fim('NF ignorada'); }
   else if (a === 'nova') { if (await nfAcao([r.id], a)) fim('NF voltou para conferir'); }
   else if (a === 'pedido') { if (await nfAcao([r.id], a, m.querySelector('#nfPed').value)) fim('Pedido vinculado · confira e marque "Conferi"'); }
+  else if (a === 'tiny') abrirOcTiny(r, m);
   else if (a === 'fornecedor') { const v = m.querySelector('#nfForn').value; if (!v) return aviso('Escolha o fornecedor', true); if (await nfAcao([r.id], a, v)) fim('Fornecedor vinculado'); }
   else if (a === 'sefaz') { try { await navigator.clipboard.writeText(r.chave); aviso('Chave copiada · cole no portal da SEFAZ'); } catch { prompt('Copie a chave:', r.chave); } window.open(PORTAL_SEFAZ, '_blank'); }
   else if (a === 'xml') { const b = new Blob([r.xml], { type: 'application/xml' }), l = document.createElement('a'); l.href = URL.createObjectURL(b); l.download = `NFe${r.chave}.xml`; l.click(); }
@@ -235,23 +263,25 @@ const cfg = {
     CTX = ctx; linhas.forEach(r => r.emissao_dia = String(r.data_emissao || '').slice(0, 10));
     const [f, p, c, cb, em, ct, us] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj, situacao').order('nome')),
-      buscarTodos(() => db.from('pedidos_compra').select('id, numero, empresa_id, fornecedor_id, data_pedido, situacao, valor_total, valor_recebido').order('id', { ascending: false })),
+      buscarTodos(() => db.from('pedidos_compra').select('id, numero, numero_tiny, origem, empresa_id, fornecedor_id, data_pedido, situacao, valor_total, valor_recebido').order('id', { ascending: false })),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').eq('situacao', 'ativo').order('codigo')),
       ctx.pode('pagar') ? buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').eq('situacao', 'ativo').order('descricao')) : [],
       db.from('empresas').select('id, nome, cnpj').order('id'),
       db.from('sefaz_dfe_controle').select('*'),
       db.rpc('usuarios_nomes')]);
+    const nt = await db.rpc('nfe_no_tiny'); NO_TINY = Object.fromEntries((nt.data || []).map(x => [x.nfe_id, x]));
     FORN = f; PEDS = p; CATS = c; CONTAS = cb.filter(x => x.tipo !== 'historico'); EMPRESAS = em.data || []; CTRL = ct.data || [];
     USU = Object.fromEntries((us.data || []).map(u => [u.id, u.nome]));
     return {};
   },
   depoisCarregar: linhas => desenharCnpjs(linhas),
   colunasExtras: [
-    { label: 'Pedido de compra', texto: r => ped(r.pedido_compra_id)?.numero || '',
-      html: r => r.pedido_compra_id ? `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}" onclick="event.stopPropagation()" style="color:var(--destaque)">${esc(ped(r.pedido_compra_id)?.numero || '#' + r.pedido_compra_id)}</a>` : '<span class="tg erro">sem pedido</span>' }
+    { label: 'Pedido de compra', texto: r => nomePed(ped(r.pedido_compra_id)),
+      html: r => r.pedido_compra_id ? `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}" onclick="event.stopPropagation()" style="color:var(--destaque)">${esc(nomePed(ped(r.pedido_compra_id)) || '#' + r.pedido_compra_id)}</a>` : '<span class="tg erro">sem pedido</span>' }
   ],
   textoBuscaExtra: r => [r.chave, r.emitente_cnpj, ped(r.pedido_compra_id)?.numero, ...(r.itens || []).flatMap(i => [i.codigo, i.descricao])].filter(Boolean).join(' '),
   pendencias: [
+    { id: 'no_tiny', nome: 'Já está no Tiny (não lançar de novo)', cor: 'alerta', teste: r => !!NO_TINY[r.id] && !['lancada', 'ignorada'].includes(r.situacao) },
     { id: 'sem_pedido', nome: 'Sem pedido de compra', cor: 'erro', teste: r => !r.pedido_compra_id && ['nova', 'conferida'].includes(r.situacao) },
     { id: 'sem_forn', nome: 'Emitente sem cadastro', cor: 'erro', teste: r => !r.fornecedor_id && r.situacao !== 'ignorada' },
     { id: 'cancelada', nome: 'Cancelada na SEFAZ', cor: 'erro', teste: r => r.situacao_sefaz !== 'autorizada' && !['ignorada'].includes(r.situacao) },
