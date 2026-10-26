@@ -6,7 +6,7 @@
 <title>Extratos e conciliação · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261143">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261147">
 <style>
   .map-grade { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; margin: 10px 0; }
   .map-grade label { font-size: 11px; }
@@ -18,11 +18,11 @@
 <body data-modulo="conciliacao" data-titulo="Extratos e conciliação" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261143"></script>
-<script src="../../assets/js/ui.js?v=202610261143"></script>
-<script src="../../assets/js/auth.js?v=202610261143"></script>
-<script src="../../assets/js/layout.js?v=202610261143"></script>
-<script src="../../assets/js/cadastro.js?v=202610261143"></script>
+<script src="../../assets/js/supabase.js?v=202610261147"></script>
+<script src="../../assets/js/ui.js?v=202610261147"></script>
+<script src="../../assets/js/auth.js?v=202610261147"></script>
+<script src="../../assets/js/layout.js?v=202610261147"></script>
+<script src="../../assets/js/cadastro.js?v=202610261147"></script>
 <script>
 /* =====================================================================
    Extratos e conciliação (Mercado Pago e bancos)
@@ -220,6 +220,51 @@ const GUIA_MP = {
   reserve_for_payout: { o: 'Bloqueio do valor que vai ser sacado', f: () => 'Anula com o desbloqueio do saque (sem efeito)' },
   reserve_for_payment: { o: 'Bloqueio temporário de pagamento', f: () => 'Anula com o desbloqueio (sem efeito)' }
 };
+// Categoria sugerida por tipo de movimento (o usuário pode trocar)
+const CAT_SUGERIDA = { 'fee-release_in_advance': '7.03.001', mediation: '2.03.001', reserve_for_debt_payment: '10.03.001', shipping: '4.01.003', cashback: '1.02.001',
+  payout: '10.01.001', refund: '2.03.001' };
+const DESC_SUGERIDA = { payout: 'TRANSFERÊNCIA DO MERCADO PAGO PARA O BANCO', 'fee-release_in_advance': 'TAXA DE ANTECIPAÇÃO MERCADO PAGO', mediation: 'DEVOLUÇÃO AO COMPRADOR (RECLAMAÇÃO ML)',
+  reserve_for_debt_payment: 'PAGAMENTO DE DÍVIDA NO MERCADO PAGO', shipping: 'CRÉDITO DE FRETE MERCADO LIVRE', cashback: 'RESSARCIMENTO MERCADO LIVRE' };
+let PESSOAS = null;
+// Atalho: cria o título (contas a pagar se é saída; a receber se é entrada) já baixado e conciliado com a(s) linha(s)
+async function lancarTitulo(linhas, pronto) {
+  const ls = linhas.filter(r => r.conciliacao === 'pendente');
+  if (!ls.length) return aviso('Selecione linhas pendentes', true);
+  const saida = ls[0].valor < 0;
+  if (ls.some(r => (r.valor < 0) !== saida)) return aviso('Selecione só saídas (contas a pagar) ou só entradas (contas a receber)', true);
+  if (!CTX.pode(saida ? 'pagar' : 'receber', 'criar')) return aviso('Sem permissão no contas a ' + (saida ? 'pagar' : 'receber'), true);
+  if (!PESSOAS) {
+    const [f, c] = await Promise.all([buscarTodos(() => db.from('fornecedores').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
+      CTX.pode('clientes') ? buscarTodos(() => db.from('clientes').select('id, nome, situacao').neq('situacao', 'inativo').order('nome')) : []]);
+    PESSOAS = { f, c };
+  }
+  const pessoas = saida ? PESSOAS.f : PESSOAS.c, tipos = [...new Set(ls.map(r => r.tipo))], total = ls.reduce((s, r) => s + Math.abs(Number(r.valor)), 0);
+  const sug = tipos.length === 1 ? CATS.find(c => c.codigo === CAT_SUGERIDA[tipos[0]])?.id : null;
+  const m = abrirModal(`<h2>Lançar no contas a ${saida ? 'pagar' : 'receber'} · ${ls.length} linha(s) · ${reais(total)}</h2>
+    <p class="sub" style="margin:0 0 8px">Cria ${ls.length > 1 ? 'um título por linha' : 'o título'} já ${saida ? 'pago' : 'recebido'} na data do extrato e concilia a linha. Ex.: transferência do Mercado Pago para outro banco, tarifa, antecipação.</p>
+    <div class="grade-campos">
+      <div class="campo l2"><label>${saida ? 'Fornecedor *' : 'Cliente (opcional)'} <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/${saida ? 'fornecedores' : 'clientes'}.html?novo=1">+ cadastrar</a></label>
+        <select id="ltP"><option value="">— ${saida ? 'escolher fornecedor' : 'sem cliente'} —</option>${pessoas.map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></div>
+      <div class="campo l2"><label>Categoria financeira *</label><select id="ltC"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}"${c.id === sug ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></div>
+      <div class="campo l2"><label>Documento</label><input id="ltD" placeholder="em branco: EXTRATO + ID da operação"></div>
+      <div class="campo l2"><label>Descrição / histórico</label><input id="ltH" value="${esc(tipos.length === 1 ? DESC_SUGERIDA[tipos[0]] || '' : '')}" placeholder="em branco: tipo e descrição da linha"></div>
+    </div>
+    <div style="max-height:30vh;overflow:auto;margin-top:6px"><table class="lista-mini"><tbody>${ls.map(r => `<tr><td>${dataCurta(r.data)}</td><td>${esc(r.tipo || '')}</td><td>${esc(r.id_operacao || '')}</td><td class="num">${reais(r.valor)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="acoes"><button class="btn" id="ltN">Voltar</button><button class="btn primario" id="ltS">Lançar e conciliar</button></div>`);
+  m.querySelector('.modal').style.maxWidth = '820px';
+  m.querySelector('#ltN').onclick = () => m.remove();
+  m.querySelector('[data-link-cad]').addEventListener('click', () => { PESSOAS = null; aviso('Cadastre na outra aba e depois abra este atalho de novo'); });
+  m.querySelector('#ltS').onclick = async () => {
+    const pessoa = Number(m.querySelector('#ltP').value) || null, categ = Number(m.querySelector('#ltC').value) || null;
+    if (saida && !pessoa) return aviso('Escolha o fornecedor', true);
+    if (!categ) return aviso('Escolha a categoria financeira', true);
+    m.querySelector('#ltS').disabled = true;
+    const { data, error } = await db.rpc('extrato_lancar_titulo', { p_ids: ls.map(r => r.id), p_pessoa: pessoa, p_categoria: categ,
+      p_documento: m.querySelector('#ltD').value.trim() || null, p_descricao: m.querySelector('#ltH').value.trim() || null });
+    if (error) { m.querySelector('#ltS').disabled = false; return aviso('Não lançou: ' + error.message, true); }
+    aviso(`${data} título(s) lançado(s) no contas a ${saida ? 'pagar' : 'receber'} e conciliado(s)`); m.remove(); document.querySelector('.modal-fundo')?.remove(); pronto();
+  };
+}
 const guiaDe = r => GUIA_MP[r.tipo] || { o: 'Movimento ' + (r.tipo || ''), f: () => 'Classificar manualmente na categoria certa' };
 
 const cfg = {
@@ -284,7 +329,12 @@ const cfg = {
     { id: 'ligado_aberto', nome: 'Ligado à venda e não baixado', cor: 'erro', teste: r => r.conciliacao === 'pendente' && !!r.pedido_venda_id }
   ],
   apagado: r => ['compensado', 'ignorado'].includes(r.conciliacao),
-  secaoExtra: r => `<div class="secao">Conciliação</div><div class="info">
+  aoAbrir(m, r) {
+    m.querySelector('#btnLancarTit')?.addEventListener('click', () => lancarTitulo([r], () => cfg.recarregar ? cfg.recarregar() : location.reload()));
+  },
+  secaoExtra: r => `<div class="secao">Conciliação</div>
+    ${r.conciliacao === 'pendente' ? `<p style="margin:0 0 8px"><button type="button" class="btn primario" id="btnLancarTit">${r.valor < 0 ? 'Lançar no contas a pagar (fornecedor e categoria)…' : 'Lançar no contas a receber…'}</button>
+      <span class="sub"> cria o título já ${r.valor < 0 ? 'pago' : 'recebido'} e concilia esta linha</span></p>` : ''}<div class="info">
       <div style="background:#e8f0fe;border-radius:8px;padding:8px 10px;margin-bottom:6px"><b>O que é:</b> ${esc(guiaDe(r).o)}<br><b>${r.conciliacao === 'pendente' ? 'O que falta' : 'Destino'}:</b> ${esc(guiaDe(r).f(r))}</div>
       <div>Situação: <b>${esc(r.conciliacao)}</b>${r.conciliado_em ? ' em ' + dataHoraBR(r.conciliado_em) : ''}</div>
       ${r.pedido_venda_id ? `<div>Venda: <b>${esc(PEDS[r.pedido_venda_id]?.numero_externo || '#' + r.pedido_venda_id)}</b> ${linkVenda(PEDS[r.pedido_venda_id]) ? `<a class="ext" href="${esc(linkVenda(PEDS[r.pedido_venda_id]))}" target="_blank" rel="noopener">abrir na plataforma</a>` : ''}</div>` : ''}
@@ -295,6 +345,7 @@ const cfg = {
       ${r.tarifas ? `<div>Tarifas na linha: ${esc(Object.entries(r.tarifas).map(([k, v]) => `${k} ${reais(v)}`).join(' · '))}</div>` : ''}</div>
       ${r.linha_original ? `<details style="margin-top:8px"><summary class="sub">Linha original do arquivo</summary><pre style="font-size:11px;white-space:pre-wrap">${esc(JSON.stringify(r.linha_original, null, 1))}</pre></details>` : ''}`,
   acoesLote: [
+    { nome: 'Lançar título (pagar/receber)…', executar: (sel, pronto) => lancarTitulo(sel, pronto) },
     { nome: 'Classificar em categoria', executar: (sel, pronto) => ACOES.has('receber.conciliar') ? janelaCategoria(sel, pronto) : aviso('Sem permissão para conciliar', true) },
     { nome: 'Ligar à venda…', executar: async (sel, pronto) => {
         const ok = sel.filter(r => r.conciliacao === 'pendente'); if (!ok.length) return aviso('Selecione linhas pendentes', true);
