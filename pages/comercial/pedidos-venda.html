@@ -6,7 +6,7 @@
 <title>Pedidos de venda · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261045">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261110">
 <style>
   .tot-ped { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 8px; }
   .tot-ped b { font-variant-numeric: tabular-nums; }
@@ -17,11 +17,11 @@
 <body data-modulo="pedidos" data-titulo="Pedidos de venda" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261045"></script>
-<script src="../../assets/js/ui.js?v=202610261045"></script>
-<script src="../../assets/js/auth.js?v=202610261045"></script>
-<script src="../../assets/js/layout.js?v=202610261045"></script>
-<script src="../../assets/js/cadastro.js?v=202610261045"></script>
+<script src="../../assets/js/supabase.js?v=202610261110"></script>
+<script src="../../assets/js/ui.js?v=202610261110"></script>
+<script src="../../assets/js/auth.js?v=202610261110"></script>
+<script src="../../assets/js/layout.js?v=202610261110"></script>
+<script src="../../assets/js/cadastro.js?v=202610261110"></script>
 <script>
 /* =====================================================================
    Pedidos de venda — uma lista só para marketplace e distribuidores
@@ -55,9 +55,9 @@ const recebStatus = (r, e) => { const ts = (e.titulos[r.id] || []).filter(t => t
   return ts.some(t => Number(t.valor_recebido) > 0) ? 'parcial' : 'a receber'; };
 
 /* ---------- Itens ---------- */
-const optProds = sel => '<option value="">— produto —</option>' + PRODS.filter(p => p.situacao === 'ativo' || p.id === sel)
+const optProds = sel => '<option value="">— produto —</option>' + PRODS.filter(p => p.situacao === 'ativo' && (p.aprovacao || 'aprovado') === 'aprovado' || p.id === sel)
   .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo || '—') + ' · ' + p.descricao)}</option>`).join('');
-const linhaItem = (x = {}) => `<tr data-anuncio-ref="${x.anuncio_ref || ''}" data-anuncio="${esc(x.anuncio_id || '')}" data-variacao="${esc(x.variacao_id || '')}" data-sku="${esc(x.sku || '')}" data-desc="${esc(x.descricao || '')}">
+const linhaItem = (x = {}) => `<tr data-id="${x.id || ''}" data-anuncio-ref="${x.anuncio_ref || ''}" data-anuncio="${esc(x.anuncio_id || '')}" data-variacao="${esc(x.variacao_id || '')}" data-sku="${esc(x.sku || '')}" data-desc="${esc(x.descricao || '')}">
   <td><select data-k="produto_id">${optProds(x.produto_id)}</select>${x.anuncio_id || x.sku ? `<div class="ro">${esc([x.anuncio_id, x.variacao_id, x.sku && 'SKU ' + x.sku, x.descricao].filter(Boolean).join(' · '))}</div>` : ''}</td>
   <td style="width:80px"><input data-k="quantidade" inputmode="decimal" value="${num2(x.quantidade ?? 1)}"></td>
   <td style="width:110px"><input data-k="valor_unitario" inputmode="decimal" value="${num2(x.valor_unitario)}"></td>
@@ -66,7 +66,7 @@ const linhaItem = (x = {}) => `<tr data-anuncio-ref="${x.anuncio_ref || ''}" dat
   <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 function lerItens() {
   return [...(modalAtual?.querySelectorAll('#itens tbody tr') || [])].map(tr => ({
-    produto_id: Number(tr.querySelector('[data-k=produto_id]').value) || null, anuncio_ref: Number(tr.dataset.anuncioRef) || null,
+    id: Number(tr.dataset.id) || null, produto_id: Number(tr.querySelector('[data-k=produto_id]').value) || null, anuncio_ref: Number(tr.dataset.anuncioRef) || null,
     anuncio_id: tr.dataset.anuncio || null, variacao_id: tr.dataset.variacao || null, sku: tr.dataset.sku || null, descricao: tr.dataset.desc || null,
     quantidade: lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, valor_unitario: lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0,
     desconto: lerNumero(tr.querySelector('[data-k=desconto]').value) || 0 })).filter(x => x.produto_id || x.quantidade && x.valor_unitario || x.anuncio_id || x.sku);
@@ -106,7 +106,7 @@ function secaoPedido(r) {
   const ts = (ex.titulos[r.id] || []), lv = linkVenda(r), le = linkEnvio(r);
   const etapa = (ok, t) => `<span class="${ok ? 'ok' : ''}">${esc(t)}</span>`;
   const ativos = ts.filter(t => t.situacao !== 'cancelado');
-  return `<div class="secao">Rastreio</div>
+  return secaoEntregas(r) + `<div class="secao">Rastreio</div>
     <div class="rastreio">${etapa(true, (canal(r.canal_id)?.nome || 'Pedido') + (r.numero_externo ? ' · ' + r.numero_externo : ''))}<i>›</i>${etapa(r.nf_numero, r.nf_numero ? 'NF ' + r.nf_numero : 'NF (Tiny)')}<i>›</i>
       ${etapa(r.data_envio || ['enviado', 'entregue'].includes(r.situacao) || ['enviado', 'entregue'].includes(r.etapa), r.data_envio ? 'Enviado ' + dataCurta(r.data_envio) : 'Envio')}<i>›</i>${etapa(r.data_entrega || r.etapa === 'entregue', r.data_entrega ? 'Entregue ' + dataCurta(r.data_entrega) : r.etapa === 'devolvido' ? 'Devolvido' : 'Entrega')}<i>›</i>${etapa(ativos.length, 'Título a receber')}<i>›</i>
       ${etapa(ativos.length && ativos.every(t => t.situacao === 'recebido'), 'Recebido')}<i>›</i>${etapa(ativos.length && ativos.every(t => ex.conciliados.has(t.id)), 'Conciliado')}</div>
@@ -117,9 +117,129 @@ function secaoPedido(r) {
         <td class="num">${reais(t.valor)}</td><td class="num">${reais(t.valor_recebido)}</td><td>${esc(t.situacao)}</td></tr>`).join('')}</tbody></table>`
       : '<p class="sub" style="margin:0">Ainda sem título a receber.</p>'}
     <div class="acoes-ped">
-      ${!ativos.length && !['orcamento', 'cancelado'].includes(r.situacao) && ex.podeReceber ? '<button type="button" class="btn" id="btnGerar">Gerar títulos a receber</button>' : ''}
+      ${!ativos.length && !temEntregas(r) && !['orcamento', 'cancelado'].includes(r.situacao) && ex.podeReceber ? '<button type="button" class="btn" id="btnGerar">Gerar títulos a receber</button>' : ''}
       ${r.situacao !== 'cancelado' && ACOES.has('pedidos.cancelar') ? '<button type="button" class="btn discreto" id="btnCancelarPed">Cancelar pedido…</button>' : ''}
     </div>`;
+}
+
+/* ---------- Entregas parciais (expedição + faturamento por entrega) ---------- */
+const SIT_ENT = { separar: ['Para separar', 'alerta'], separado: ['Separado', 'info'], expedido: ['Expedido', 'ok'], entregue: ['Entregue', 'ok'], cancelada: ['Cancelada', 'neutro'] };
+const FAT_ENT = { pendente: ['A faturar', 'alerta'], com_nf: ['NF', 'ok'], sem_nf: ['Sem NF · NF pendente', 'erro'] };
+const temEntregas = r => (ex.entregas?.[r.id] || []).some(e => e.situacao !== 'cancelada');
+const unitLiq = i => Number(i.quantidade) ? Number(i.valor_total) / Number(i.quantidade) : 0;
+function saldosItens(r) {
+  const es = (ex.entregas[r.id] || []).filter(e => e.situacao !== 'cancelada'), usado = {}, saiu = {};
+  es.forEach(e => e.itens.forEach(x => { usado[x.pedido_item_id] = (usado[x.pedido_item_id] || 0) + Number(x.quantidade);
+    if (['expedido', 'entregue'].includes(e.situacao)) saiu[x.pedido_item_id] = (saiu[x.pedido_item_id] || 0) + Number(x.quantidade); }));
+  return (ex.itens[r.id] || []).map(i => ({ i, emEntregas: usado[i.id] || 0, entregue: saiu[i.id] || 0, pendente: Number(i.quantidade) - (usado[i.id] || 0) }));
+}
+// mesma conta do banco: itens da entrega × (líquido do pedido ÷ produtos), arredondado
+const valorEntrega = (r, e) => { const f = Number(r.valor_produtos) > 0 ? Number(r.valor_liquido) / Number(r.valor_produtos) : 1;
+  return Math.round(e.itens.reduce((s, x) => { const i = (ex.itens[r.id] || []).find(y => y.id === x.pedido_item_id); return s + (i ? unitLiq(i) * Number(x.quantidade) : 0); }, 0) * f * 100) / 100; };
+const nomeItem = i => prod(i.produto_id) ? `${prod(i.produto_id).codigo || ''} · ${prod(i.produto_id).descricao}` : (i.sku || i.descricao || '?');
+function secaoEntregas(r) {
+  if (r.tipo === 'marketplace') return '';
+  const es = ex.entregas[r.id] || [], sd = saldosItens(r), pend = sd.reduce((s, x) => s + Math.max(0, x.pendente), 0);
+  const faturadoInteiro = (ex.titulos[r.id] || []).some(t => t.situacao !== 'cancelado' && !t.pedido_venda_entrega_id && !es.some(e => e.faturamento !== 'pendente'));
+  const podeNova = ex.podeEntrega && pend > 0 && !['orcamento', 'cancelado'].includes(r.situacao) && !faturadoInteiro;
+  const qt = v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+  return `<div class="secao">Entregas ${r.entrega_parcial ? '<span class="tg info">entrega parcial habilitada</span>' : ''}</div>
+    ${sd.length ? `<table class="lista-mini"><thead><tr><th>Item</th><th class="num">Pedido</th><th class="num">Em entregas</th><th class="num">Saiu</th><th class="num">Falta entregar</th></tr></thead><tbody>
+      ${sd.map(x => `<tr><td>${esc(nomeItem(x.i))}</td><td class="num">${qt(x.i.quantidade)}</td><td class="num">${qt(x.emEntregas)}</td><td class="num">${qt(x.entregue)}</td>
+        <td class="num">${x.pendente > 0 ? `<b>${qt(x.pendente)}</b>` : '✓'}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${es.length ? `<table class="lista-mini" style="margin-top:8px"><thead><tr><th>Entrega</th><th>Itens</th><th>Expedição</th><th>Faturamento</th><th class="num">Valor</th><th></th></tr></thead><tbody>
+      ${es.map(e => `<tr${e.situacao === 'cancelada' ? ' class="estornado"' : ''}><td><b>${e.numero}</b> · ${e.tipo === 'envio' ? 'envio' : 'retirada'}${e.previsao ? '<br><small class="sub">prev. ' + dataCurta(e.previsao) + '</small>' : ''}</td>
+        <td>${e.itens.map(x => { const i = (ex.itens[r.id] || []).find(y => y.id === x.pedido_item_id); return `${qt(x.quantidade)}× ${esc(prod(i?.produto_id)?.codigo || i?.sku || '?')}`; }).join(', ')}</td>
+        <td><span class="tg ${SIT_ENT[e.situacao][1]}">${SIT_ENT[e.situacao][0]}</span>${e.recebido_por ? '<br><small class="sub">' + esc(e.recebido_por) + (e.expedido_em ? ' · ' + dataCurta(e.expedido_em) : '') + '</small>' : ''}</td>
+        <td>${e.situacao === 'cancelada' ? '' : `<span class="tg ${FAT_ENT[e.faturamento][1]}">${FAT_ENT[e.faturamento][0]}${e.nf_numero ? ' ' + esc(e.nf_numero) : ''}</span>`}</td>
+        <td class="num">${reais(valorEntrega(r, e))}</td>
+        <td style="white-space:nowrap">${e.situacao !== 'cancelada' && ex.podeFaturar && e.faturamento === 'pendente' ? `<button type="button" class="btn fino" data-ent-fat="${e.id}">Faturar…</button>` : ''}
+          ${e.faturamento === 'sem_nf' && ex.podeFaturar ? `<button type="button" class="btn fino" data-ent-nf="${e.id}">Registrar NF…</button>` : ''}
+          ${['separar', 'separado'].includes(e.situacao) && e.faturamento === 'pendente' && ex.podeEntrega ? `<button type="button" class="btn fino discreto" data-ent-canc="${e.id}">Cancelar…</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+      : `<p class="sub" style="margin:4px 0 0">Sem entregas. ${r.entrega_parcial ? 'Crie uma entrega com os itens que vão sair agora.' : 'Para entregar parte dos itens, marque "Habilitar entrega parcial" (Envio e rastreio) e salve.'}</p>`}
+    <div class="acoes-ped">${podeNova ? `<button type="button" class="btn" id="btnNovaEntrega">${r.entrega_parcial ? 'Nova entrega…' : 'Entregar tudo o que falta…'}</button>` : ''}</div>`;
+}
+function ligarEntregas(m, r) {
+  m.querySelector('#btnNovaEntrega')?.addEventListener('click', () => abrirNovaEntrega(r, m));
+  m.querySelectorAll('[data-ent-fat]').forEach(b => b.onclick = () => abrirFaturar([Number(b.dataset.entFat)], `Entrega ${(ex.entregas[r.id] || []).find(e => e.id === Number(b.dataset.entFat))?.numero} · pedido ${r.numero_externo || r.id}`,
+    valorEntrega(r, ex.entregas[r.id].find(e => e.id === Number(b.dataset.entFat))), r.condicao_pagamento_id, false, m));
+  m.querySelectorAll('[data-ent-nf]').forEach(b => b.onclick = () => abrirFaturar([Number(b.dataset.entNf)], 'Registrar a NF da entrega', null, null, true, m));
+  m.querySelectorAll('[data-ent-canc]').forEach(b => b.onclick = async () => {
+    const motivo = prompt('Motivo do cancelamento da entrega:'); if (!motivo) return;
+    const { error } = await db.rpc('entrega_acao', { p_id: Number(b.dataset.entCanc), p_acao: 'cancelar', p_dados: { motivo } });
+    if (error) return aviso('Não cancelou: ' + error.message, true);
+    aviso('Entrega cancelada'); m.remove(); cfg.recarregar();
+  });
+}
+function abrirNovaEntrega(r, mPed) {
+  const sd = saldosItens(r).filter(x => x.pendente > 0), livre = r.entrega_parcial;
+  const qt = v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+  const m = abrirModal(`<h2>${livre ? 'Nova entrega' : 'Entregar tudo o que falta'} · pedido ${esc(r.numero_externo || String(r.id))}</h2>
+    <p class="sub" style="margin:0 0 6px">${livre ? 'Informe quanto de cada item sai nesta entrega.' : 'Sem entrega parcial: a entrega leva tudo o que falta.'} A entrega vai para a <b>Expedição</b> (sem valores) para separar e dar saída.</p>
+    <div class="sub-ed"><table><thead><tr><th>Item</th><th class="num">Falta</th><th>Nesta entrega</th></tr></thead><tbody>
+      ${sd.map(x => `<tr data-i="${x.i.id}"><td>${esc(nomeItem(x.i))}</td><td class="num">${qt(x.pendente)}</td><td style="width:120px"><input data-q inputmode="decimal" value="${livre ? '' : qt(x.pendente)}" placeholder="0" ${livre ? '' : 'disabled'}></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="grade-campos" style="margin-top:8px">
+      <div class="campo l1"><label>Tipo</label><select id="neTipo" data-simples><option value="retirada">Retirada pelo cliente</option><option value="envio">Envio / transportadora</option></select></div>
+      <div class="campo l1"><label>Previsão</label><input type="date" id="nePrev"></div>
+      <div class="campo l2"><label>Observação para a expedição</label><input id="neObs"></div>
+    </div>
+    <div class="acoes"><button class="btn" id="neN">Cancelar</button><button class="btn primario" id="neS">Criar entrega</button></div>`);
+  m.querySelector('#neN').onclick = () => m.remove();
+  m.querySelector('#neS').onclick = async () => {
+    const itens = [...m.querySelectorAll('tr[data-i]')].map(tr => ({ pedido_item_id: Number(tr.dataset.i), quantidade: lerNumero(tr.querySelector('[data-q]').value) || 0 })).filter(x => x.quantidade > 0);
+    if (!itens.length) return aviso('Informe a quantidade de pelo menos um item', true);
+    m.querySelector('#neS').disabled = true;
+    const { error } = await db.rpc('entrega_criar', { p_pedido: r.id, p_itens: itens, p_tipo: m.querySelector('#neTipo').value,
+      p_obs: m.querySelector('#neObs').value || null, p_previsao: m.querySelector('#nePrev').value || null });
+    if (error) { m.querySelector('#neS').disabled = false; return aviso('Não criou: ' + error.message, true); }
+    aviso('Entrega criada e enviada para a Expedição'); m.remove(); mPed?.remove(); cfg.recarregar();
+  };
+}
+// Faturar uma ou várias entregas (mesmo cliente e empresa), com ou sem NF; ou só registrar a NF de entrega faturada sem NF
+function abrirFaturar(ids, titulo, valor, condicao, soNF, mAnterior) {
+  const m = abrirModal(`<h2>${esc(titulo)}</h2>
+    ${valor != null ? `<p style="margin:0 0 8px">Valor a faturar: <b>${reais(valor)}</b> <small class="sub">(${ids.length} entrega${ids.length > 1 ? 's' : ''}, proporcional ao pedido)</small></p>` : ''}
+    ${soNF ? '' : `<div class="campo"><label>Como faturar</label><label class="chk"><input type="radio" name="fComo" value="nf" checked> Com NF (já emitida no Tiny)</label>
+      <label class="chk"><input type="radio" name="fComo" value="sem"> Sem NF agora — gera a cobrança e fica a pendência "NF pendente"</label></div>`}
+    <div class="grade-campos" id="fNF">
+      <div class="campo l1"><label>NF nº *</label><input id="fNum" inputmode="numeric"></div>
+      <div class="campo l1"><label>Série</label><input id="fSerie"></div>
+      <div class="campo l1"><label>Emissão</label><input type="date" id="fData" value="${new Date().toLocaleDateString('sv-SE')}"></div>
+      <div class="campo l4"><label>Chave de acesso</label><input id="fChave" inputmode="numeric" data-livre></div>
+    </div>
+    ${soNF ? '' : `<div class="campo" style="max-width:320px"><label>Condição de pagamento</label><select id="fCond" data-simples>${CONDS.map(c => `<option value="${c.id}"${c.id === condicao ? ' selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></div>`}
+    <div class="acoes"><button class="btn" id="fN">Cancelar</button><button class="btn primario" id="fS">${soNF ? 'Registrar NF' : 'Faturar'}</button></div>`);
+  const nfBox = m.querySelector('#fNF');
+  m.querySelectorAll('[name=fComo]').forEach(x => x.onchange = () => nfBox.hidden = m.querySelector('[name=fComo]:checked').value === 'sem');
+  m.querySelector('#fN').onclick = () => m.remove();
+  m.querySelector('#fS').onclick = async () => {
+    const comNF = soNF || m.querySelector('[name=fComo]:checked').value === 'nf';
+    const nf = { numero: m.querySelector('#fNum').value.trim(), serie: m.querySelector('#fSerie').value.trim(), data: m.querySelector('#fData').value, chave: m.querySelector('#fChave').value.replace(/\D/g, '') };
+    if (comNF && !nf.numero) return aviso('Informe o número da NF', true);
+    m.querySelector('#fS').disabled = true;
+    const { data, error } = await db.rpc('entregas_faturar', { p_ids: ids, p_com_nf: comNF, p_nf: comNF ? nf : {}, p_condicao: soNF ? null : Number(m.querySelector('#fCond').value) || null });
+    if (error) { m.querySelector('#fS').disabled = false; return aviso('Não faturou: ' + error.message, true); }
+    aviso(soNF ? 'NF registrada no título' : `${data} título(s) a receber gerado(s)${comNF ? '' : ' · NF pendente'}`);
+    m.remove(); mAnterior?.remove(); cfg.recarregar();
+  };
+}
+// Retiradas já feitas e ainda sem cobrança, por cliente: fatura várias de uma vez quando chegar no valor
+async function abrirRetiradas() {
+  const { data, error } = await db.rpc('entregas_a_faturar');
+  if (error) return aviso('Não carregou: ' + error.message, true);
+  const ls = data || [], emp = id => (window.__ctxNox?.empresas || []).find(e => e.id === id)?.nome || '';
+  const m = abrirModal(`<h2>Retiradas a faturar</h2>
+    <p class="sub" style="margin:0 0 8px">Entregas que já saíram e ainda não têm cobrança, somadas por cliente. Fature quando quiser (por exemplo, ao chegar num valor): sai uma cobrança só, com ou sem NF.</p>
+    ${ls.length ? `<table class="lista-mini"><thead><tr><th>Cliente</th><th>Empresa</th><th class="num">Entregas</th><th>Desde</th><th class="num">Acumulado</th><th></th></tr></thead><tbody>
+      ${ls.map((x, k) => `<tr><td>${esc(x.cliente || '—')}</td><td>${esc(emp(x.empresa_id))}</td><td class="num">${x.entregas}</td><td>${dataCurta(x.desde)}</td><td class="num"><b>${reais(x.valor)}</b></td>
+        <td><button type="button" class="btn fino primario" data-k="${k}">Faturar…</button></td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub">Nenhuma retirada pendente de faturamento.</p>'}
+    <div class="acoes"><button class="btn" id="rtN">Fechar</button></div>`);
+  m.querySelector('.modal').style.maxWidth = '860px';
+  m.querySelector('#rtN').onclick = () => m.remove();
+  m.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const x = ls[+b.dataset.k];
+    abrirFaturar(x.ids, `Faturar retiradas · ${x.cliente || ''}`, Number(x.valor), cli(x.cliente_id)?.condicao_pagamento_id || null, false, m); });
 }
 
 const cfg = {
@@ -159,7 +279,9 @@ const cfg = {
     { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Distribuidor: gera as parcelas.' },
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
     { id: 'data_prev_recebimento', label: 'Previsão de liberação', tipo: 'data', ajuda: 'Marketplace: data prevista do repasse.' },
-    { id: 'pack_id', label: 'Pacote / carrinho', secao: 'Envio e rastreio' },
+    { id: 'entrega_parcial', label: 'Entrega parcial', tipo: 'bool', textoBool: 'Habilitar entrega parcial', col: 2, secao: 'Envio e rastreio',
+      ajuda: 'Permite entregar parte dos itens (ex.: 1 sai na hora, os outros 50 depois). Cada entrega vai para a Expedição e é faturada à parte, com ou sem NF.' },
+    { id: 'pack_id', label: 'Pacote / carrinho' },
     { id: 'envio_id', label: 'Nº do envio' },
     { id: 'codigo_rastreio', label: 'Código de rastreio' },
     { id: 'logistica', label: 'Logística', tipo: 'select', opcoes: LOG, filtro: true },
@@ -177,18 +299,20 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx;
-    const [c, cl, p, ca, te, co, fo, it, en, ti, rc] = await Promise.all([
+    const [c, cl, p, ca, te, co, fo, it, en, ti, rc, pe, pei] = await Promise.all([
       buscarTodos(() => db.from('canais_venda').select('*').order('nome')),
       buscarTodos(() => db.from('clientes').select('id, nome, tipo_cliente, situacao, representante_id').order('nome')),
-      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao').in('tipo', ['acabado', 'kit', 'semiacabado']).order('descricao')),
-      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').order('codigo')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao, aprovacao, unidade').in('tipo', ['acabado', 'kit', 'semiacabado']).order('descricao')),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('encargos_tipos').select('*').order('nome')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('pedidos_venda_itens').select('*').order('id')),
       buscarTodos(() => db.from('pedidos_venda_encargos').select('*').order('id')),
-      ctx.pode('receber') ? buscarTodos(() => db.from('titulos_receber').select('id, pedido_venda_id, documento, valor, valor_recebido, situacao, data_vencimento').not('pedido_venda_id', 'is', null)) : [],
-      ctx.pode('receber') ? buscarTodos(() => db.from('recebimentos').select('titulo_id, conciliado, estornado')) : []
+      ctx.pode('receber') ? buscarTodos(() => db.from('titulos_receber').select('id, pedido_venda_id, pedido_venda_entrega_id, documento, valor, valor_recebido, situacao, data_vencimento').not('pedido_venda_id', 'is', null)) : [],
+      ctx.pode('receber') ? buscarTodos(() => db.from('recebimentos').select('titulo_id, conciliado, estornado')) : [],
+      buscarTodos(() => db.from('pedidos_venda_entregas').select('*').order('id')),
+      buscarTodos(() => db.from('pedidos_venda_entregas_itens').select('*').order('id'))
     ]);
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
     CANAIS = c; CLIENTES = cl; PRODS = p; CATS = ca; TIPOS_ENC = te; CONDS = co; FORMAS = fo;
@@ -198,7 +322,11 @@ const cfg = {
     ti.forEach(x => (titulos[x.pedido_venda_id] ||= []).push(x));
     const recPorTit = {}; rc.filter(x => !x.estornado).forEach(x => (recPorTit[x.titulo_id] ||= []).push(x));
     const conciliados = new Set(Object.entries(recPorTit).filter(([, l]) => l.every(x => x.conciliado)).map(([k]) => Number(k)));
-    ex = { itens, encargos, titulos, conciliados, podeReceber: ctx.pode('receber', 'editar'), veReceber: ctx.pode('receber') };
+    const entregas = {}, eiPor = {}; pei.forEach(x => (eiPor[x.entrega_id] ||= []).push(x));
+    pe.forEach(x => { x.itens = eiPor[x.id] || []; (entregas[x.pedido_id] ||= []).push(x); });
+    ex = { itens, encargos, titulos, conciliados, entregas, podeReceber: ctx.pode('receber', 'editar'), veReceber: ctx.pode('receber'),
+      podeEntrega: ctx.pode('pedidos', 'alterar'), podeFaturar: ctx.pode('pedidos', 'alterar') || ctx.pode('receber', 'criar') };
+    window.__ctxPV = ctx;
     return ex;
   },
   colunasExtras: [
@@ -209,9 +337,11 @@ const cfg = {
   ],
   textoBuscaExtra: (r, e) => [r.pack_id, r.envio_id, r.codigo_rastreio, r.nf_numero, r.nf_chave, cli(r.cliente_id)?.nome,
     ...(e.itens[r.id] || []).flatMap(i => [i.sku, i.anuncio_id, i.descricao, prod(i.produto_id)?.codigo, prod(i.produto_id)?.descricao])].filter(Boolean).join(' '),
-  subtituloLinha: r => [TIPOS.find(t => t.v === r.tipo)?.n, r.pack_id && r.pack_id !== r.numero_externo ? 'pacote ' + r.pack_id : '', r.nf_numero ? 'NF ' + r.nf_numero : ''].filter(Boolean).join(' · '),
+  subtituloLinha: r => [TIPOS.find(t => t.v === r.tipo)?.n, r.entrega_parcial ? 'entrega parcial' : '', r.pack_id && r.pack_id !== r.numero_externo ? 'pacote ' + r.pack_id : '', r.nf_numero ? 'NF ' + r.nf_numero : ''].filter(Boolean).join(' · '),
   pendencias: [
     { id: 'sem_prod', nome: 'Item sem produto vinculado', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && (e.itens[r.id] || []).some(i => !i.produto_id) },
+    { id: 'a_faturar', nome: 'Entrega sem faturamento', cor: 'alerta', teste: (r, e) => (e.entregas[r.id] || []).some(x => ['expedido', 'entregue'].includes(x.situacao) && x.faturamento === 'pendente') },
+    { id: 'nf_pend', nome: 'Faturado sem NF (NF pendente)', cor: 'alerta', teste: (r, e) => (e.entregas[r.id] || []).some(x => x.faturamento === 'sem_nf') },
     { id: 'sem_itens', nome: 'Sem itens', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !(e.itens[r.id] || []).length },
     { id: 'sem_titulo', nome: 'Faturado sem título a receber', cor: 'alerta', teste: (r, e) => e.veReceber && ['faturado', 'enviado', 'entregue'].includes(r.situacao) && !recebStatus(r, e) },
     { id: 'sem_nf', nome: 'Enviado sem NF', cor: 'alerta', teste: r => ['enviado', 'entregue'].includes(r.situacao) && !r.nf_numero },
@@ -225,6 +355,7 @@ const cfg = {
     const fSit = m.querySelector('#f_situacao');
     if (fSit && r.situacao !== 'cancelado') fSit.querySelector('option[value=cancelado]')?.remove();
     if (fSit && r.situacao === 'cancelado') fSit.disabled = true;
+    if (r.id) ligarEntregas(m, r);
     const fCanal = m.querySelector('#f_canal_id'), fTipo = m.querySelector('#f_tipo'), fEmp = m.querySelector('#f_empresa_id');
     // Canal define tipo e empresa (conta de marketplace é de um CNPJ)
     const aplicarCanal = () => {
@@ -237,7 +368,7 @@ const cfg = {
     const box = document.createElement('div');
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Produto</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th class="num">Total</th><th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(linhaItem).join('') || (r.id ? '' : linhaItem())}</tbody></table>
-        ${pode ? '<button type="button" class="btn fino" id="addItem" style="margin-top:6px">+ Item</button>' : ''}</div>
+        ${pode ? '<button type="button" class="btn fino" id="addItem" style="margin-top:6px">+ Item</button>' + (ctx.pode('produtos', 'criar') ? ` <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : '') : ''}</div>
       <div class="sub-ed" id="encargos"><div class="secao">Tarifas e encargos da venda</div><table><thead><tr><th>Tipo</th><th>Categoria</th><th>Valor (R$)</th><th></th></tr></thead>
         <tbody>${((r.id && ex.encargos[r.id]) || []).map(x => linhaEnc(x, r.canal_id)).join('')}</tbody></table>
         ${pode ? '<button type="button" class="btn fino" id="addEnc" style="margin-top:6px">+ Tarifa / encargo</button>' : ''}
@@ -311,6 +442,17 @@ const cfg = {
         if (error) return aviso('Não salvou: ' + error.message, true); aviso('Atualizado'); pronto();
       } }
   ],
+  depoisCarregar() {
+    const novo = document.getElementById('cNovo');
+    if (ex.podeFaturar && !document.getElementById('btnRetiradas') && novo) {
+      const b = document.createElement('button'); b.className = 'btn'; b.id = 'btnRetiradas'; b.textContent = 'Retiradas a faturar'; b.onclick = abrirRetiradas;
+      novo.parentElement.insertBefore(b, novo);
+    }
+  },
+  // Voltou do "+ cadastrar": refaz a lista de produtos de cada item sem perder o que foi escolhido
+  aoRecarregarListas(m) {
+    m.querySelectorAll('[data-k=produto_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optProds(Number(v) || null); sel.value = v; });
+  },
   tituloRegistro: r => [canal(r.canal_id)?.nome, r.numero_externo ? 'venda ' + r.numero_externo : 'pedido ' + r.id].filter(Boolean).join(' · '),
   chaveHistorico: r => r.numero_externo || r.id,
   msgDuplicado: 'Esta venda já está lançada neste canal'

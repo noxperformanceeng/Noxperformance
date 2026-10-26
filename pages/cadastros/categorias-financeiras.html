@@ -6,7 +6,7 @@
 <title>Categorias financeiras · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261045">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261110">
 <style>
   .arvore { white-space: nowrap; }
   .arvore.n1 { font-weight: 700; }
@@ -18,11 +18,11 @@
 <body data-modulo="categorias_fin" data-titulo="Categorias financeiras">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261045"></script>
-<script src="../../assets/js/ui.js?v=202610261045"></script>
-<script src="../../assets/js/auth.js?v=202610261045"></script>
-<script src="../../assets/js/layout.js?v=202610261045"></script>
-<script src="../../assets/js/cadastro.js?v=202610261045"></script>
+<script src="../../assets/js/supabase.js?v=202610261110"></script>
+<script src="../../assets/js/ui.js?v=202610261110"></script>
+<script src="../../assets/js/auth.js?v=202610261110"></script>
+<script src="../../assets/js/layout.js?v=202610261110"></script>
+<script src="../../assets/js/cadastro.js?v=202610261110"></script>
 <script>
 const TIPOS = [{ v: 'receita', n: 'Receita' }, { v: 'deducao', n: 'Dedução da receita (impostos, taxas de marketplace, devoluções)' },
   { v: 'custo', n: 'Custo de produção / mercadoria' }, { v: 'despesa', n: 'Despesa operacional' }, { v: 'investimento', n: 'Investimento (máquinas, obras)' },
@@ -37,14 +37,14 @@ const paiDe = r => TODAS.find(x => x.id === r.pai_id);
 montarCadastro({
   textoNovo: '+ Nova categoria',
   tabela: 'categorias_financeiras', modulo: 'categorias_fin', titulo: 'Categorias financeiras', singular: 'categoria', plural: 'categorias',
-  subtitulo: 'Plano gerencial único para as duas empresas. Produtos, notas de compra e contas a pagar/receber usam estas categorias; os relatórios separam por CNPJ ou consolidam.',
+  subtitulo: 'Código automático e em sequência. Categoria nova criada por quem não é master vai para aprovação. Plano gerencial único para as duas empresas. Produtos, notas de compra e contas a pagar/receber usam estas categorias; os relatórios separam por CNPJ ou consolidam.',
   dicaBusca: 'código, nome, linha do relatório, ID Tiny…', ordem: 'codigo', revisao: true,
   abas: { campo: 'tipo', padrao: '', opcoes: [{ v: '', n: 'Todas' }, ...TIPOS.map(t => ({ v: t.v, n: t.n.split(' (')[0].split(' /')[0] }))] },
   periodos: [{ campo: 'atualizado_em', label: 'Última alteração' }, { campo: 'criado_em', label: 'Cadastro' }],
   campos: [
-    { id: 'codigo', label: 'Código', obrig: true, lista: true, placeholder: '2.01.003', ajuda: 'Números separados por ponto. O código do pai vem na frente (2 › 2.01 › 2.01.003).' },
+    { id: 'codigo', label: 'Código', lista: true, somenteLeitura: true, ajuda: 'Gerado automaticamente, em sequência dentro do grupo pai (2 › 2.01 › 2.01.008). Ninguém digita.' },
     { id: 'nome', label: 'Nome', obrig: true, col: 3 },
-    { id: 'pai_id', label: 'Categoria pai (grupo)', tipo: 'select', col: 2, opcoes: () => TODAS.filter(c => !c.aceita_lancamento).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })) },
+    { id: 'pai_id', label: 'Categoria pai (grupo)', tipo: 'select', col: 2, cadastro: false, opcoes: () => TODAS.filter(c => !c.aceita_lancamento).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })) },
     { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPOS, obrig: true, col: 2 },
     { id: 'grupo_dre', label: 'Linha no relatório de gestão', tipo: 'select', opcoes: DRE, col: 2, filtro: true, filtroVazio: true },
     { id: 'natureza', label: 'Natureza', tipo: 'select', opcoes: [{ v: 'fixa', n: 'Fixa' }, { v: 'variavel', n: 'Variável' }], filtro: true, filtroVazio: true },
@@ -72,22 +72,36 @@ montarCadastro({
   textoBuscaExtra: r => `${r.nome} ${paiDe(r)?.nome || ''}`,
   antesSalvar: d => {
     if (d.pai_id) d.pai_id = Number(d.pai_id);
-    if (d.codigo) d.codigo = d.codigo.replace(/\s/g, '');
     if (!d.aceita_lancamento) d.aplica_produtos = false;
   },
   validar: (d, r) => {
-    if (!/^\d+(\.\d+)*$/.test(d.codigo)) return 'Código só com números separados por ponto (ex.: 2.01.003)';
     const pai = TODAS.find(x => x.id === d.pai_id);
     if (pai && pai.id === r?.id) return 'A categoria não pode ser pai dela mesma';
-    if (pai && !d.codigo.startsWith(pai.codigo + '.')) return `O código deve começar com o do grupo pai (${pai.codigo}.)`;
-    if (!pai && nivel(d.codigo) > 1) {
-      const sugerido = TODAS.find(x => x.codigo === d.codigo.split('.').slice(0, -1).join('.'));
-      if (sugerido) return `Escolha o grupo pai: ${sugerido.codigo} ${sugerido.nome}`;
-    }
+    if (pai && pai.tipo !== d.tipo) return `O tipo precisa ser o mesmo do grupo pai (${TIPOS.find(t => t.v === pai.tipo)?.n || pai.tipo})`;
     if (r?.id && d.aceita_lancamento && TODAS.some(x => x.pai_id === r.id)) return 'Esta categoria tem subcategorias: ela precisa ser um grupo (sem lançamento)';
     return null;
   },
+  // Código: mostra a prévia do próximo número ao escolher o grupo pai (o banco grava o definitivo)
+  aoAbrir(m, r) {
+    const fPai = m.querySelector('#f_pai_id'), fCod = m.querySelector('#f_codigo'), fTipo = m.querySelector('#f_tipo');
+    const previa = async () => {
+      if (r.id && String(r.pai_id || '') === fPai.value) { fCod.value = r.codigo; return; }
+      const { data } = await db.rpc('categoria_proximo_codigo', { p_pai: Number(fPai.value) || null });
+      fCod.value = data || ''; fCod.placeholder = 'automático';
+      const pai = TODAS.find(x => x.id === Number(fPai.value)); if (pai && fTipo && !r.id) fTipo.value = pai.tipo;
+    };
+    if (fPai && fCod) { fPai.addEventListener('change', previa); if (!r.id) previa(); }
+    if (r.aprovacao && r.aprovacao !== 'aprovado') {
+      const b = document.createElement('div');
+      b.style.cssText = 'background:#fdeceb;color:var(--erro);border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px';
+      b.innerHTML = r.aprovacao === 'pendente' ? '<b>Aguardando aprovação do master.</b> Enquanto isso não pode ser usada em lançamentos.'
+        : `<b>Recusada pelo master:</b> ${esc(r.aprovacao_motivo || '')}`;
+      m.querySelector('.grade-campos')?.before(b);
+    }
+  },
   pendencias: [
+    { id: 'aprovacao', nome: 'Nova · aguardando master', cor: 'erro', teste: r => r.aprovacao === 'pendente' },
+    { id: 'recusada', nome: 'Recusada pelo master', cor: 'neutro', teste: r => r.aprovacao === 'recusado' },
     { id: 'sem_pai', nome: 'Fora da hierarquia', cor: 'erro', bloqueia: true, teste: r => nivel(r.codigo) > 1 && !r.pai_id },
     { id: 'cod_pai', nome: 'Código diferente do grupo', cor: 'erro', bloqueia: true, teste: r => paiDe(r) && !r.codigo.startsWith(paiDe(r).codigo + '.') },
     { id: 'tipo_pai', nome: 'Tipo diferente do grupo', cor: 'alerta', teste: r => paiDe(r) && paiDe(r).tipo !== r.tipo },
@@ -95,7 +109,19 @@ montarCadastro({
     { id: 'grupo_vazio', nome: 'Grupo sem subcategorias', cor: 'neutro', teste: r => !r.aceita_lancamento && !TODAS.some(x => x.pai_id === r.id) },
     { id: 'prod_em_grupo', nome: 'Produtos ligados a grupo', cor: 'erro', teste: (r, e) => !r.aceita_lancamento && e.prods[r.id] }
   ],
-  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } },
+  acoesLote: [
+    { nome: 'Aprovar (master)', executar: async (sel, pronto, ctx) => {
+        if (!ctx.admin) return aviso('Só o master aprova categoria nova', true);
+        const ids = sel.filter(r => r.aprovacao !== 'aprovado').map(r => r.id); if (!ids.length) return aviso('Nenhuma pendente na seleção', true);
+        const { error } = await db.rpc('categoria_aprovar', { p_ids: ids, p_aprovar: true }); if (error) return aviso('Não aprovou: ' + error.message, true);
+        aviso(`${ids.length} categoria(s) aprovada(s)`); pronto(); } },
+    { nome: 'Recusar (master)', executar: async (sel, pronto, ctx) => {
+        if (!ctx.admin) return aviso('Só o master recusa categoria nova', true);
+        const ids = sel.filter(r => r.aprovacao === 'pendente').map(r => r.id); if (!ids.length) return aviso('Nenhuma pendente na seleção', true);
+        const motivo = prompt('Motivo da recusa:'); if (!motivo) return;
+        const { error } = await db.rpc('categoria_aprovar', { p_ids: ids, p_aprovar: false, p_motivo: motivo }); if (error) return aviso('Não recusou: ' + error.message, true);
+        aviso('Recusada(s)'); pronto(); } },
+    { nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } },
     { nome: 'Usar em produtos', dados: { aplica_produtos: true } }, { nome: 'Tirar de produtos', dados: { aplica_produtos: false } }],
   apagado: r => r.situacao === 'inativo',
   tituloRegistro: r => `${r.codigo} ${r.nome}`,

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expedição · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261110">
+<style>
+  .exp-abas { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+  .exp-card { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; margin: 0 0 10px; padding: 10px 14px; }
+  .exp-card h3 { margin: 0 0 4px; font-size: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .exp-card .meta { color: var(--texto-suave); font-size: 12.5px; margin-bottom: 6px; }
+  .exp-card table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .exp-card td, .exp-card th { padding: 4px 6px; border-bottom: 1px solid var(--linha); text-align: left; }
+  .exp-card td.num, .exp-card th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .exp-card .bts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .exp-vazio { padding: 28px; text-align: center; color: var(--texto-suave); }
+  .exp-obs { background: #fff4e5; color: #92400e; border-radius: 6px; padding: 4px 8px; font-size: 12.5px; margin: 4px 0; }
+</style>
+</head>
+<body data-modulo="separacao" data-titulo="Expedição">
+<main id="conteudo"><div class="cab-tela"><div><h1>Expedição</h1>
+  <p class="sub">Entregas dos pedidos de venda para separar e dar saída. Só itens e quantidades — sem valores.</p></div>
+  <div style="display:flex;gap:8px"><input id="busca" class="busca" type="search" placeholder="Buscar: cliente, pedido, código…" data-livre><button class="btn" id="btnAtualizar">Atualizar</button></div></div>
+  <div class="exp-abas" id="abas"></div><div id="lista"><div class="exp-vazio">Carregando…</div></div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610261110"></script>
+<script src="../../assets/js/ui.js?v=202610261110"></script>
+<script src="../../assets/js/auth.js?v=202610261110"></script>
+<script src="../../assets/js/layout.js?v=202610261110"></script>
+<script>
+/* Fluxo: Para separar → Separado → Expedido (quem retirou / transportadora; dá baixa no estoque) → Entregue.
+   O comercial cria a entrega no pedido de venda; aqui ninguém vê preço. */
+const ABAS = [{ v: 'separar', n: 'Para separar' }, { v: 'separado', n: 'Separados' }, { v: 'expedido', n: 'Expedidos' }, { v: 'entregue', n: 'Entregues (30 dias)' }, { v: 'cancelada', n: 'Canceladas' }];
+const qt = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const dia = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
+let CTX = null, LISTA = [], aba = 'separar';
+async function carregar() {
+  const { data, error } = await db.rpc('expedicao_lista');
+  if (error) { document.getElementById('lista').innerHTML = `<div class="exp-vazio">Erro: ${esc(error.message)}</div>`; return; }
+  LISTA = data || []; desenhar();
+}
+function desenhar() {
+  const b = document.getElementById('busca').value;
+  document.getElementById('abas').innerHTML = ABAS.map(a => `<button class="aba${a.v === aba ? ' ativa' : ''}" data-v="${a.v}">${a.n}<span class="n">${LISTA.filter(e => e.situacao === a.v).length}</span></button>`).join('');
+  document.querySelectorAll('#abas [data-v]').forEach(x => x.onclick = () => { aba = x.dataset.v; desenhar(); });
+  const ls = LISTA.filter(e => e.situacao === aba && (!b || combinaBusca([e.cliente, e.pedido, e.recebido_por, ...(e.itens || []).flatMap(i => [i.codigo, i.descricao])].join(' '), b)));
+  const pode = CTX.pode('separacao', 'alterar') || CTX.pode('pedidos', 'alterar');
+  document.getElementById('lista').innerHTML = !ls.length ? '<div class="exp-vazio">Nada aqui agora.</div>' : ls.map(e => `
+    <div class="exp-card"><h3>Pedido ${esc(e.pedido)} · entrega ${e.numero} <span class="tg ${e.tipo === 'envio' ? 'info' : 'neutro'}">${e.tipo === 'envio' ? 'envio' : 'retirada'}</span>${e.parcial ? '<span class="tg alerta">parcial</span>' : ''}</h3>
+      <div class="meta">${esc(e.cliente || '—')}${e.previsao ? ' · previsão ' + dia(e.previsao) : ''} · criada ${dia(e.criado_em)}${e.separado_por ? ' · separado por ' + esc(e.separado_por) : ''}${e.expedido_em ? ' · saiu ' + dia(e.expedido_em) + (e.recebido_por ? ' com ' + esc(e.recebido_por) : '') : ''}${e.codigo_rastreio ? ' · rastreio ' + esc(e.codigo_rastreio) : ''}</div>
+      ${e.observacao ? `<div class="exp-obs">${esc(e.observacao)}</div>` : ''}
+      <table><thead><tr><th>Código</th><th>Descrição</th><th class="num">Quantidade</th><th>Un.</th></tr></thead><tbody>
+        ${(e.itens || []).map(i => `<tr><td>${esc(i.codigo || '')}</td><td>${esc(i.descricao || '')}</td><td class="num"><b>${qt(i.quantidade)}</b>${Number(i.pedido) !== Number(i.quantidade) ? ` <small class="sub">de ${qt(i.pedido)}</small>` : ''}</td><td>${esc(i.unidade || '')}</td></tr>`).join('')}</tbody></table>
+      <div class="bts">
+        <button class="btn fino" data-rom="${e.id}">Romaneio (imprimir)</button>
+        ${pode && e.situacao === 'separar' ? `<button class="btn fino" data-ac="separado" data-id="${e.id}">Marcar separado</button>` : ''}
+        ${pode && ['separar', 'separado'].includes(e.situacao) ? `<button class="btn fino primario" data-ac="expedido" data-id="${e.id}">Dar saída…</button>` : ''}
+        ${pode && e.situacao === 'separado' ? `<button class="btn fino discreto" data-ac="voltar" data-id="${e.id}">Voltar para separar</button>` : ''}
+        ${pode && e.situacao === 'expedido' ? `<button class="btn fino" data-ac="entregue" data-id="${e.id}">Confirmar entregue</button>` : ''}
+      </div></div>`).join('');
+  document.querySelectorAll('[data-rom]').forEach(x => x.onclick = () => romaneio(LISTA.find(e => e.id === Number(x.dataset.rom))));
+  document.querySelectorAll('[data-ac]').forEach(x => x.onclick = () => acao(Number(x.dataset.id), x.dataset.ac));
+}
+async function acao(id, ac) {
+  let dados = {};
+  if (ac === 'expedido') {
+    const e = LISTA.find(x => x.id === id);
+    const quem = prompt(e.tipo === 'envio' ? 'Transportadora / quem levou:' : 'Quem retirou (nome):'); if (!quem) return;
+    dados = { recebido_por: quem };
+    if (e.tipo === 'envio') { const r = prompt('Código de rastreio (opcional):'); if (r) dados.rastreio = r; }
+    if (!confirm('Confirmar a saída? Dá baixa no estoque dos itens.')) return;
+  }
+  const { error } = await db.rpc('entrega_acao', { p_id: id, p_acao: ac, p_dados: dados });
+  if (error) return aviso('Não salvou: ' + error.message, true);
+  aviso({ separado: 'Separado', expedido: 'Saída registrada', entregue: 'Entregue', voltar: 'Voltou para separar' }[ac]); carregar();
+}
+function romaneio(e) {
+  imprimirRelatorio({ arquivo: 'romaneio', titulo: `Romaneio · pedido ${e.pedido} · entrega ${e.numero} · ${e.cliente || ''}`,
+    colunas: ['Código', 'Descrição', 'Quantidade', 'Un.', 'Conferido'],
+    linhas: (e.itens || []).map(i => [i.codigo || '', i.descricao || '', qt(i.quantidade), i.unidade || '', '[   ]']) });
+}
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  document.getElementById('btnAtualizar').onclick = carregar;
+  document.getElementById('busca').addEventListener('input', desenhar);
+  window.addEventListener('aba-ativa', carregar);
+  carregar();
+})();
+</script>
+</body>
+</html>

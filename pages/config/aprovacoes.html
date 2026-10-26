@@ -6,7 +6,7 @@
 <title>Aprovações pendentes · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261045">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261110">
 <style>
   .apv-resumo { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
   .apv-resumo a { text-decoration: none; color: inherit; background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
@@ -30,13 +30,13 @@
   <button class="btn" id="btnAtualizar">Atualizar</button></div>
   <div class="apv-resumo" id="resumo"></div><div id="lista"><div class="apv-vazio">Carregando…</div></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261045"></script>
-<script src="../../assets/js/ui.js?v=202610261045"></script>
-<script src="../../assets/js/auth.js?v=202610261045"></script>
-<script src="../../assets/js/layout.js?v=202610261045"></script>
+<script src="../../assets/js/supabase.js?v=202610261110"></script>
+<script src="../../assets/js/ui.js?v=202610261110"></script>
+<script src="../../assets/js/auth.js?v=202610261110"></script>
+<script src="../../assets/js/layout.js?v=202610261110"></script>
 <script>
 /* Central do master: pedidos de compra na vez de quem está logado, itens sem cadastro para liberar,
-   NF sem pedido de compra, produtos novos e vale-transporte aguardando aprovação. */
+   NF sem pedido de compra, produtos e categorias financeiras novas e vale-transporte aguardando aprovação. */
 const reais = v => v == null ? '' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 let CTX = null;
 async function carregar() {
@@ -47,14 +47,15 @@ async function carregar() {
   document.getElementById('lista').innerHTML = !total ? '<div class="apv-vazio">Nada pendente para você agora. ✓</div>' : gs.filter(g => g.itens.length).map(g => `
     <div class="apv-grupo" id="g-${g.tipo}"><h3>${esc(g.titulo)} <span class="n">${g.itens.length}</span></h3>
       ${g.itens.map(i => `<div class="apv-linha"><div>${esc(i.texto)}</div><div class="data">${dataCurta(i.data)}</div><div class="valor">${reais(i.valor)}</div>
-        <div class="bts">${g.aprovar_aqui ? `<button class="btn fino primario" data-aprovar="${i.id}">Aprovar</button><button class="btn fino" data-recusar="${i.id}">Recusar…</button>` : ''}
+        <div class="bts">${g.aprovar_aqui ? `<button class="btn fino primario" data-tipo="${g.tipo}" data-aprovar="${i.id}">Aprovar</button><button class="btn fino" data-tipo="${g.tipo}" data-recusar="${i.id}">Recusar…</button>` : ''}
           <a class="btn fino${g.aprovar_aqui ? '' : ' primario'}" href="${RAIZ}${esc(i.link)}">Abrir ›</a></div></div>`).join('')}</div>`).join('');
   document.querySelectorAll('[data-aprovar],[data-recusar]').forEach(b => b.onclick = async () => {
     const aprovar = !!b.dataset.aprovar, id = Number(b.dataset.aprovar || b.dataset.recusar);
     let motivo = null; if (!aprovar) { motivo = prompt('Motivo da recusa:'); if (!motivo) return; }
-    const { error } = await db.rpc('produto_aprovar', { p_ids: [id], p_aprovar: aprovar, p_motivo: motivo });
+    const cat = b.dataset.tipo === 'categoria_nova';
+    const { error } = await db.rpc(cat ? 'categoria_aprovar' : 'produto_aprovar', { p_ids: [id], p_aprovar: aprovar, p_motivo: motivo });
     if (error) return aviso('Não salvou: ' + error.message, true);
-    aviso(aprovar ? 'Cadastro aprovado' : 'Cadastro recusado'); carregar();
+    aviso((cat ? 'Categoria ' : 'Cadastro ') + (aprovar ? 'aprovado' : 'recusado')); carregar();
   });
 }
 const dataCurta = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';

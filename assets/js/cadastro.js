@@ -37,6 +37,31 @@ const fmtHoras = v => { if (v === null || v === undefined || v === '') return ''
 const lerHorasTexto = v => { v = String(v ?? '').trim(); if (!v) return null; const m = v.match(/^(\d+):(\d{1,2})$/); return m ? +m[1] + +m[2] / 60 : lerNumero(v); };
 const dataCurta = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
 
+/* ---------- Campos que vêm de outro cadastro ----------
+   Pelo id do campo (cliente_id, fornecedor_id, produto_id…) o formulário mostra "+ cadastrar" ao lado do
+   rótulo: abre o cadastro em outra aba (já no formulário novo). Ao voltar, a lista do campo é recarregada
+   sem perder o que foi digitado. Um campo pode trocar o destino com { cadastro: { tela, modulo, nome } } ou
+   desligar com { cadastro: false }. */
+const CADASTROS_LIGADOS = {
+  cliente_id: { tela: 'pages/cadastros/clientes.html', modulo: 'clientes', nome: 'cliente' },
+  representante_id: { tela: 'pages/cadastros/clientes.html', modulo: 'clientes', nome: 'representante' },
+  fornecedor_id: { tela: 'pages/cadastros/fornecedores.html', modulo: 'fornecedores', nome: 'fornecedor' },
+  produto_id: { tela: 'pages/cadastros/produtos.html', modulo: 'produtos', nome: 'produto' },
+  categoria_financeira_id: { tela: 'pages/cadastros/categorias-financeiras.html', modulo: 'categorias_fin', nome: 'categoria' },
+  canal_id: { tela: 'pages/cadastros/canais-venda.html', modulo: 'canais_venda', nome: 'canal' },
+  condicao_pagamento_id: { tela: 'pages/financeiro/condicoes-pagamento.html', modulo: 'condicoes_pagamento', nome: 'condição' },
+  forma_pagamento_id: { tela: 'pages/financeiro/formas-pagamento.html', modulo: 'condicoes_pagamento', nome: 'forma' },
+  conta_bancaria_id: { tela: 'pages/financeiro/contas-bancarias.html', modulo: 'contas_bancarias', nome: 'conta' },
+  funcionario_id: { tela: 'pages/cadastros/funcionarios.html', modulo: 'funcionarios', nome: 'colaborador' },
+  local_id: { tela: 'pages/cadastros/locais.html', modulo: 'locais', nome: 'local' }
+};
+const cadastroDoCampo = c => c.cadastro === false ? null : c.cadastro || (['select'].includes(c.tipo) || !c.tipo ? CADASTROS_LIGADOS[c.id] : null);
+function linkCadastro(cad, ctx) {
+  if (!cad || !ctx.pode(cad.modulo, 'criar')) return '';
+  const raiz = typeof RAIZ !== 'undefined' ? RAIZ : '../../';
+  return ` <a class="link-cad" data-link-cad href="${raiz}${cad.tela}?novo=1" title="Abre o cadastro em outra aba; ao voltar, a lista é atualizada">+ cadastrar</a>`;
+}
+
 /* ---------- Motor ---------- */
 async function montarCadastro(cfg) {
   const ctx = await iniciarTela();
@@ -124,7 +149,11 @@ async function montarCadastro(cfg) {
   if (cfg.porEmpresa) window.addEventListener('empresa', desenhar);
   // Voltou para esta aba: atualiza os dados (sem mexer em filtros) se não houver formulário aberto
   let ultimaCarga = Date.now();
-  window.addEventListener('aba-ativa', () => {
+  let foiCadastrar = false;
+  document.addEventListener('click', e => { const a = e.target.closest('[data-link-cad]'); if (!a) return;
+    foiCadastrar = true; a.href = a.href.replace(/[?&]t=\d+/, '') + '&t=' + Date.now(); }, true);
+  window.addEventListener('aba-ativa', async () => {
+    if (foiCadastrar && document.querySelector('.modal-fundo')) { foiCadastrar = false; await recarregarListasDoFormulario(); return; }
     if (document.querySelector('.modal-fundo') || Date.now() - ultimaCarga < 15000) return;
     ultimaCarga = Date.now(); carregar();
   });
@@ -162,6 +191,22 @@ async function montarCadastro(cfg) {
       cfg.depoisCarregar?.(linhas, extra);
       desenhar();
     } catch (e) { aviso('Erro ao carregar: ' + (e.message || e), true); }
+  }
+
+  // Depois de cadastrar em outra aba: busca de novo as listas auxiliares e refaz os <select> do formulário aberto
+  async function recarregarListasDoFormulario() {
+    try {
+      extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas, ctx) : extra;
+      const m = document.querySelector('.modal-fundo'); if (!m) return;
+      campos.filter(c => ['select', 'empresa'].includes(c.tipo)).forEach(c => {
+        const el = m.querySelector('#f_' + c.id); if (!el || el.disabled) return;
+        const v = el.value, ops = opcoes(c);
+        el.innerHTML = (c.obrig && ops.length ? '' : '<option value="">—</option>') + ops.map(o => `<option value="${esc(o.v)}">${esc(o.n)}</option>`).join('');
+        el.value = v;
+      });
+      cfg.aoRecarregarListas?.(m);
+      aviso('Listas atualizadas com o cadastro novo');
+    } catch (e) { aviso('Não atualizou as listas: ' + (e.message || e), true); }
   }
 
   // Atualiza só o registro salvo na lista (resposta imediata)
@@ -315,7 +360,8 @@ async function montarCadastro(cfg) {
     switch (c.tipo) {
       case 'select': case 'empresa': {
         const ops = opcoes(c);
-        return `<select id="${id}" ${dis}>${c.obrig && ops.length ? '' : '<option value="">—</option>'}${ops.map(o => `<option value="${esc(o.v)}"${String(o.v) === String(val) ? ' selected' : ''}>${esc(o.n)}</option>`).join('')}</select>`;
+        const vazio = !ops.length && cadastroDoCampo(c) ? `<option value="">— nenhum ${esc(cadastroDoCampo(c).nome)} cadastrado: use "+ cadastrar" —</option>` : '';
+        return `<select id="${id}" ${dis}>${vazio || (c.obrig && ops.length ? '' : '<option value="">—</option>')}${ops.map(o => `<option value="${esc(o.v)}"${String(o.v) === String(val) ? ' selected' : ''}>${esc(o.n)}</option>`).join('')}</select>`;
       }
       case 'uf': return `<select id="${id}" ${dis}><option value="">—</option>${UFS.map(u => `<option${u === val ? ' selected' : ''}>${u}</option>`).join('')}</select>`;
       case 'textarea': return `<textarea id="${id}" rows="2" ${dis}>${esc(val)}</textarea>`;
@@ -341,7 +387,7 @@ async function montarCadastro(cfg) {
         html += `${aberto ? '</div>' : ''}<div class="secao${aberto ? '' : ' primeira'}">${esc(c.secao)}</div><div class="grade-campos">`;
         secao = c.secao; aberto = true;
       } else if (!aberto) { html += '<div class="grade-campos">'; aberto = true; }
-      html += `<div class="campo l${c.col || 1}" data-campo="${c.id}"><label for="f_${c.id}">${esc(c.label)}${c.obrig ? ' <span class="obrig">*</span>' : ''}${c.ajuda ? ` <span class="dica" title="${esc(c.ajuda)}" tabindex="0">?</span>` : ''}</label>${entrada(c, r[c.id], ro || (c.id === 'situacao' && !podeTotal && !novo))}</div>`;
+      html += `<div class="campo l${c.col || 1}" data-campo="${c.id}"><label for="f_${c.id}">${esc(c.label)}${c.obrig ? ' <span class="obrig">*</span>' : ''}${c.ajuda ? ` <span class="dica" title="${esc(c.ajuda)}" tabindex="0">?</span>` : ''}${ro ? '' : linkCadastro(cadastroDoCampo(c), ctx)}</label>${entrada(c, r[c.id], ro || (c.id === 'situacao' && !podeTotal && !novo))}</div>`;
     }
     html += '</div>';
     const dls = campos.filter(c => c.lista_sugestoes).map(c => `<datalist id="dl_${c.id}">${[...new Set([...(c.lista_sugestoes || []), ...linhas.map(x => x[c.id]).filter(Boolean)])].sort().map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
@@ -443,4 +489,6 @@ async function montarCadastro(cfg) {
   // Endereço com ?abrir=ID (vindo do fluxo de caixa, de outra tela…): abre o registro direto, mesmo fora da lista visível
   const abrirId = new URLSearchParams(location.search).get('abrir');
   if (abrirId) { const r = linhas.find(x => String(x.id) === abrirId); if (r) abrir(r); else aviso('Registro não encontrado nesta tela', true); }
+  // ?novo=1 (vindo do "+ cadastrar" de outra tela): já abre o formulário de inclusão
+  if (new URLSearchParams(location.search).get('novo') && podeCriar) abrir(null);
 }

@@ -33,7 +33,7 @@ const MENU = [
     { id: 'ordens',        nome: 'Ordens de produção', arquivo: null },
     { id: 'etapas',        nome: 'Etapas',             arquivo: null },
     { id: 'apontamento',   nome: 'Apontamento',        arquivo: null },
-    { id: 'separacao',     nome: 'Separação',          arquivo: null },
+    { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },
     { id: 'embalagem',     nome: 'Embalagem',          arquivo: null }
   ]},
   { grupo: 'Engenharia', itens: [

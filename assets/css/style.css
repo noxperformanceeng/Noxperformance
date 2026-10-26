@@ -380,3 +380,6 @@ body.menu-recolhido .btn-expandir { display: block; }
 /* Contador de aprovações pendentes no menu */
 .item-aprov { display: flex; align-items: center; justify-content: space-between; }
 .n-aprov { background: var(--erro); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 700; line-height: 18px; }
+.link-cad { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--destaque); text-decoration: none; text-transform: none; letter-spacing: 0; }
+.link-cad:hover { text-decoration: underline; }
+.tg.info { background: #e8f0fe; color: #1d4ed8; }

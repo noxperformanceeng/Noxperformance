@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261045">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261110">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261045"></script>
-<script src="../../assets/js/ui.js?v=202610261045"></script>
-<script src="../../assets/js/auth.js?v=202610261045"></script>
-<script src="../../assets/js/layout.js?v=202610261045"></script>
-<script src="../../assets/js/cadastro.js?v=202610261045"></script>
+<script src="../../assets/js/supabase.js?v=202610261110"></script>
+<script src="../../assets/js/ui.js?v=202610261110"></script>
+<script src="../../assets/js/auth.js?v=202610261110"></script>
+<script src="../../assets/js/layout.js?v=202610261110"></script>
+<script src="../../assets/js/cadastro.js?v=202610261110"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -627,7 +627,7 @@ const cfg = {
     const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
       buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao').order('descricao')),
-      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao').eq('aceita_lancamento', true).order('codigo')),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').eq('situacao', 'ativo').order('descricao')),
@@ -681,7 +681,7 @@ const cfg = {
     const box = document.createElement('div');
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Produto</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
-        ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${Object.keys(FICHAS).length ? ' <button type="button" class="btn fino" id="addServ" style="margin-top:4px">+ Serviço de usinagem</button>' : ''}` : ''}
+        ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${CTX.pode('produtos', 'criar') ? ` <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${Object.keys(FICHAS).length ? ' <button type="button" class="btn fino" id="addServ" style="margin-top:4px">+ Serviço de usinagem</button>' : ''}` : ''}
         <div id="matBox" style="margin-top:8px"></div>
         <div class="tot-ped" id="totPed"></div></div>`;
     const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Valores');
@@ -729,6 +729,10 @@ const cfg = {
     if (error) throw error;
     sujo = false;
     return data;
+  },
+  // Voltou do "+ cadastrar": refaz a lista de produtos de cada item sem perder o que foi escolhido
+  aoRecarregarListas(m) {
+    m.querySelectorAll('[data-k=produto_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optProds(Number(v) || null); sel.value = v; });
   },
   tituloRegistro: r => `${r.numero} · ${forn(r.fornecedor_id)?.nome || ''}`,
   chaveHistorico: r => r.numero
