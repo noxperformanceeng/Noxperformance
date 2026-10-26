@@ -6,7 +6,7 @@
 <title>Aprovações pendentes · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261159">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261203">
 <style>
   .apv-topo { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 0 0 12px; }
   .apv-topo .campo { margin: 0; } .apv-topo label { font-size: 11px; color: var(--texto-suave); display: block; }
@@ -59,10 +59,10 @@
   <div id="lista"><div class="apv-vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261159"></script>
-<script src="../../assets/js/ui.js?v=202610261159"></script>
-<script src="../../assets/js/auth.js?v=202610261159"></script>
-<script src="../../assets/js/layout.js?v=202610261159"></script>
+<script src="../../assets/js/supabase.js?v=202610261203"></script>
+<script src="../../assets/js/ui.js?v=202610261203"></script>
+<script src="../../assets/js/auth.js?v=202610261203"></script>
+<script src="../../assets/js/layout.js?v=202610261203"></script>
 <script>
 /* Central de aprovações do master (e de quem tem algo a decidir):
    - Para decidir: agrupado por área (Compras, Financeiro, Cadastros, RH), com aprovação em lote ou individual.
@@ -72,8 +72,8 @@
 const reais = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dia = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
 const NOME_TIPO = { pedido_compra: 'Pedido de compra', item_avulso: 'Item sem cadastro', nf_sem_pedido: 'NF sem pedido', produto_novo: 'Produto novo',
-  categoria_nova: 'Categoria nova', vt: 'RH · Vale-transporte', devolvido: 'Devolvido', aviso: 'Aviso' };
-const AREAS = ['Compras', 'Financeiro', 'Cadastros', 'RH'];
+  categoria_nova: 'Categoria nova', comprovante_divergente: 'Comprovante divergente', comprovante: 'Comprovante divergente', vt: 'RH · Vale-transporte', devolvido: 'Devolvido', aviso: 'Aviso' };
+const AREAS = ['Compras', 'Financeiro', 'Cadastros', 'RH'];   // comprovante divergente aparece em Financeiro
 let CTX = null, GRUPOS = [], HIST = [], aba = 'decidir', marcados = new Set();
 const hoje = () => new Date().toLocaleDateString('sv-SE');
 
@@ -95,7 +95,7 @@ async function carregar() {
   window.top.dispatchEvent(new Event('nox:aprovacoes'));
 }
 function desenhar() {
-  const dec = GRUPOS.filter(g => g.aprovar_aqui), dev = GRUPOS.find(g => g.devolvido), av = GRUPOS.find(g => g.aviso);
+  const dec = GRUPOS.filter(g => g.aprovar_aqui || g.ciente), dev = GRUPOS.find(g => g.devolvido), av = GRUPOS.find(g => g.aviso);
   const nDec = dec.reduce((s, g) => s + filtrados(g).length, 0), vDec = dec.reduce((s, g) => s + filtrados(g).reduce((t, i) => t + Number(i.valor || 0), 0), 0);
   const nDev = dev ? filtrados(dev).length : 0, nAv = av ? filtrados(av).length : 0;
   const hAp = HIST.filter(x => x.decisao === 'aprovado').length, hRe = HIST.length - hAp;
@@ -118,16 +118,18 @@ function desenhar() {
   ligar();
 }
 function htmlGrupo(g) {
-  const ls = filtrados(g), decide = !!g.aprovar_aqui, soma = ls.reduce((s, i) => s + Number(i.valor || 0), 0);
+  const ls = filtrados(g), decide = !!g.aprovar_aqui || !!g.ciente, soma = ls.reduce((s, i) => s + Number(i.valor || 0), 0);
   const todos = ls.length && ls.every(i => marcados.has(g.tipo + ':' + i.id));
   return `<div class="apv-grupo ${g.aviso ? 'avs' : g.devolvido ? 'devolvido' : ''}" data-g="${g.tipo}"><header>
       ${decide ? `<input type="checkbox" data-todos="${g.tipo}" ${todos ? 'checked' : ''} title="Marcar todos">` : ''}
       <h3>${esc(g.titulo)} <span class="tg ${g.aviso ? 'alerta' : 'erro'}">${ls.length}</span></h3>${soma ? `<span class="soma">${reais(soma)}</span>` : ''}
-      ${decide ? `<span class="bts"><button class="btn fino primario" data-lote="aprovar" data-tipo="${g.tipo}">Aprovar marcados</button><button class="btn fino" data-lote="recusar" data-tipo="${g.tipo}">Recusar marcados…</button></span>` : ''}</header>
+      ${g.ciente ? `<span class="bts"><button class="btn fino primario" data-lote="ciente" data-tipo="${g.tipo}">Ciente dos marcados</button></span>`
+        : decide ? `<span class="bts"><button class="btn fino primario" data-lote="aprovar" data-tipo="${g.tipo}">Aprovar marcados</button><button class="btn fino" data-lote="recusar" data-tipo="${g.tipo}">Recusar marcados…</button></span>` : ''}</header>
     <table class="apv-tab"><tbody>${ls.map(i => { const k = g.tipo + ':' + i.id; return `<tr class="${marcados.has(k) ? 'marcado' : ''}">
       ${decide ? `<td style="width:28px"><input type="checkbox" data-k="${k}" ${marcados.has(k) ? 'checked' : ''}></td>` : ''}
       <td>${esc(i.texto)}</td><td class="col-quem sub2">${esc(i.quem || '')}</td><td class="col-data sub2">${dia(i.data)}</td><td class="num">${reais(i.valor)}</td>
-      <td class="bts">${decide ? `<button class="btn fino primario" data-um="aprovar" data-tipo="${g.tipo}" data-id="${i.id}">Aprovar</button><button class="btn fino" data-um="recusar" data-tipo="${g.tipo}" data-id="${i.id}">Recusar…</button>` : ''}
+      <td class="bts">${g.ciente ? `<button class="btn fino primario" data-um="ciente" data-tipo="${g.tipo}" data-id="${i.id}">Ciente</button>`
+        : decide ? `<button class="btn fino primario" data-um="aprovar" data-tipo="${g.tipo}" data-id="${i.id}">Aprovar</button><button class="btn fino" data-um="recusar" data-tipo="${g.tipo}" data-id="${i.id}">Recusar…</button>` : ''}
         ${i.link ? `<button class="btn fino discreto" data-abrir="${esc(i.link)}">Abrir ›</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>`;
 }
 function linhasGerais() {
@@ -149,7 +151,7 @@ function htmlHistorico() {
       <span class="bts"><button class="btn fino" id="btnExpH">Exportar Excel</button></span></header>
     <table class="apv-tab"><thead><tr><th>Quando</th><th>Tipo</th><th>Descrição</th><th>Decisão</th><th>Motivo</th><th class="col-quem">Decidiu</th><th class="col-quem">Criado por</th><th class="num">Valor</th></tr></thead><tbody>
     ${HIST.map(x => `<tr><td class="sub2" style="white-space:nowrap">${dataHoraBR(x.em)}</td><td class="sub2">${esc(NOME_TIPO[x.tipo] || x.tipo)}</td><td>${esc(x.texto || '')}</td>
-      <td><span class="tg ${x.decisao}">${x.decisao === 'aprovado' ? 'Aprovado' : 'Recusado'}</span></td><td class="sub2">${esc(x.motivo || '')}</td>
+      <td><span class="tg ${x.tipo === 'comprovante' ? 'neutro' : x.decisao}">${x.tipo === 'comprovante' ? 'Ciente' : x.decisao === 'aprovado' ? 'Aprovado' : 'Recusado'}</span></td><td class="sub2">${esc(x.motivo || '')}</td>
       <td class="col-quem sub2">${esc(x.por || '')}</td><td class="col-quem sub2">${esc(x.criado_por || '')}</td><td class="num">${reais(x.valor)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function ligar() {
@@ -157,17 +159,23 @@ function ligar() {
   L.querySelectorAll('[data-k]').forEach(c => c.onchange = () => { c.checked ? marcados.add(c.dataset.k) : marcados.delete(c.dataset.k); desenhar(); });
   L.querySelectorAll('[data-todos]').forEach(c => c.onchange = () => { const g = GRUPOS.find(x => x.tipo === c.dataset.todos);
     filtrados(g).forEach(i => c.checked ? marcados.add(g.tipo + ':' + i.id) : marcados.delete(g.tipo + ':' + i.id)); desenhar(); });
-  L.querySelectorAll('[data-um]').forEach(b => b.onclick = () => decidir(b.dataset.tipo, [Number(b.dataset.id)], b.dataset.um === 'aprovar'));
+  L.querySelectorAll('[data-um]').forEach(b => b.onclick = () => b.dataset.um === 'ciente' ? ciente([Number(b.dataset.id)]) : decidir(b.dataset.tipo, [Number(b.dataset.id)], b.dataset.um === 'aprovar'));
   L.querySelectorAll('[data-lote]').forEach(b => b.onclick = () => {
     const ids = [...marcados].filter(k => k.startsWith(b.dataset.tipo + ':')).map(k => Number(k.split(':')[1]));
     if (!ids.length) return aviso('Marque pelo menos um item deste grupo', true);
-    decidir(b.dataset.tipo, ids, b.dataset.lote === 'aprovar');
+    b.dataset.lote === 'ciente' ? ciente(ids) : decidir(b.dataset.tipo, ids, b.dataset.lote === 'aprovar');
   });
   L.querySelectorAll('[data-abrir]').forEach(b => b.onclick = () => window.top.postMessage({ nox: 'abrir', url: RAIZ + b.dataset.abrir }, location.origin));
   document.getElementById('btnExp')?.addEventListener('click', () => exportarExcel('pendencias', ['Situação', 'Área', 'Tipo', 'Descrição', 'Quem', 'Data', 'Valor'],
     linhasGerais().map(i => [i.sit, i.g.area || '', NOME_TIPO[i.g.tipo] || i.g.titulo, i.texto, i.quem || '', dia(i.data), i.valor ?? ''])));
   document.getElementById('btnExpH')?.addEventListener('click', () => exportarExcel('historico_aprovacoes', ['Quando', 'Tipo', 'Descrição', 'Decisão', 'Motivo', 'Decidiu', 'Criado por', 'Valor'],
     HIST.map(x => [dataHoraBR(x.em), NOME_TIPO[x.tipo] || x.tipo, x.texto || '', x.decisao, x.motivo || '', x.por || '', x.criado_por || '', x.valor ?? ''])));
+}
+// Comprovante divergente: o master toma ciência (sai da tela e vai para o histórico)
+async function ciente(ids) {
+  const { data, error } = await db.rpc('comprovante_ciente', { p_ids: ids });
+  if (error) return aviso('Não salvou: ' + error.message, true);
+  aviso(`Ciente de ${data} comprovante(s) · registrado no histórico`); ids.forEach(id => marcados.delete('comprovante_divergente:' + id)); carregar();
 }
 function decidir(tipo, ids, aprovar) {
   const g = GRUPOS.find(x => x.tipo === tipo), itens = g.itens.filter(i => ids.includes(i.id)), soma = itens.reduce((s, i) => s + Number(i.valor || 0), 0);
