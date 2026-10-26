@@ -67,7 +67,44 @@ function botoesRelatorio(containerId, obterDados) {
     if (!d.linhas.length) return aviso('Nada para exportar com esses filtros', true);
     exportarExcel(d.arquivo, d.colunas, d.linhas);
   };
-  el.querySelector('[data-r="imprimir"]').onclick = () => window.print();
+  el.querySelector('[data-r="imprimir"]').onclick = () => {
+    const d = obterDados();
+    if (!d.linhas.length) return aviso('Nada para imprimir com esses filtros', true);
+    imprimirRelatorio(d);
+  };
+}
+
+// Impressão / PDF: monta um relatório limpo (só a tabela filtrada) num quadro oculto e abre a janela de impressão.
+// Não imprime a tela inteira: com milhares de linhas a pré-visualização do navegador travava.
+function imprimirRelatorio({ arquivo, colunas, linhas, titulo }) {
+  const MAX = 3000, ls = linhas.slice(0, MAX), raiz = typeof RAIZ !== 'undefined' ? RAIZ : '../../';
+  let usuario = '';
+  try { usuario = (parent.document.querySelector('.menu-usuario b') || document.querySelector('.menu-usuario b'))?.textContent || ''; } catch { /* outra origem */ }
+  const empresa = (() => { try { return document.querySelector('.empresa-chips .ativa, .empresa-chips .on')?.textContent || ''; } catch { return ''; } })();
+  const num = v => /^-?R?\$?\s?-?[\d.]+,\d{2}$/.test(String(v).trim());
+  const nome = titulo || document.body.dataset.titulo || arquivo || 'Relatório';
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(nome)}</title><style>
+    @page { size: A4 landscape; margin: 10mm; }
+    body { font: 10px Inter, Arial, sans-serif; color: #111; margin: 0; }
+    .cab { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 8px; }
+    .cab img { height: 28px; } .cab h1 { font-size: 15px; margin: 0; } .cab .info { margin-left: auto; text-align: right; color: #555; }
+    table { width: 100%; border-collapse: collapse; } thead { display: table-header-group; }
+    th { text-align: left; font-size: 9px; text-transform: uppercase; border-bottom: 1px solid #999; padding: 3px 4px; }
+    td { border-bottom: 1px solid #e3e3e3; padding: 2px 4px; vertical-align: top; } td.n { text-align: right; white-space: nowrap; }
+    tr { page-break-inside: avoid; } .rod { margin-top: 6px; color: #555; }
+  </style></head><body>
+    <div class="cab"><img src="${raiz}assets/img/logo-nox.png" alt=""><h1>${esc(nome)}</h1>
+      <div class="info">${esc(empresa)}${empresa ? ' · ' : ''}${new Date().toLocaleString('pt-BR')}${usuario ? '<br>' + esc(usuario) : ''}</div></div>
+    <table><thead><tr>${colunas.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+    <tbody>${ls.map(l => `<tr>${l.map(v => `<td${num(v) ? ' class="n"' : ''}>${esc(v ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table>
+    <div class="rod">${ls.length} linha(s)${linhas.length > MAX ? ` · mostrando as primeiras ${MAX} de ${linhas.length} — filtre um período menor ou use Exportar Excel` : ''}</div>
+  </body></html>`;
+  document.getElementById('quadroImpressao')?.remove();
+  const f = document.createElement('iframe');
+  f.id = 'quadroImpressao'; f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(f);
+  f.onload = () => setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch { aviso('Não abriu a impressão', true); } }, 300);
+  f.srcdoc = html;
 }
 
 // Linhas visíveis de uma tabela (respeita busca/filtros já aplicados na tela)
