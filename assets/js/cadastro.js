@@ -486,6 +486,21 @@ async function montarCadastro(cfg) {
 
   cfg.recarregar = carregar;
   await carregar();
+  // Filtros vindos no endereço (ex.: atalhos da página inicial):
+  // ?aba=v  ?pend=id  ?f_<campo ou filtro extra>=v  ?per=campo&de=AAAA-MM-DD&ate=AAAA-MM-DD  ?busca=texto
+  { const qs = new URLSearchParams(location.search); let mudou = false;
+    if (cfg.abas && qs.has('aba')) { aba = qs.get('aba'); mudou = true; }
+    if (qs.has('pend')) { pendAtual = qs.get('pend'); mudou = true; }
+    for (const [k, v] of qs) {
+      if (!k.startsWith('f_')) continue;
+      const el = cont.querySelector(`[data-filtro="${k.slice(2)}"], [data-filtro-extra="${k.slice(2)}"]`);
+      if (el) { el.value = v; mudou = true; }
+    }
+    if (qs.has('per') && [...$('#fPerCampo').options].some(o => o.value === qs.get('per'))) { $('#fPerCampo').value = qs.get('per'); mudou = true; }
+    if (qs.has('de')) { $('#fDe').value = qs.get('de'); mudou = true; }
+    if (qs.has('ate')) { $('#fAte').value = qs.get('ate'); mudou = true; }
+    if (qs.has('busca')) { $('#fBusca').value = qs.get('busca'); mudou = true; }
+    if (mudou) { if ([...qs.keys()].some(k => k.startsWith('f_') || ['per', 'de', 'ate'].includes(k))) $('#cFilt').hidden = false; desenhar(); } }
   // Endereço com ?abrir=ID (vindo do fluxo de caixa, de outra tela…): abre o registro direto, mesmo fora da lista visível
   const abrirId = new URLSearchParams(location.search).get('abrir');
   if (abrirId) { const r = linhas.find(x => String(x.id) === abrirId); if (r) abrir(r); else aviso('Registro não encontrado nesta tela', true); }

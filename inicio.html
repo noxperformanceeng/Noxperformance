@@ -6,35 +6,255 @@
 <title>NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/style.css?v=202610261218">
+<link rel="stylesheet" href="assets/css/style.css?v=202610262031">
 </head>
-<body data-modulo="" data-titulo="Início" data-shell="sim">
-<main id="conteudo">
-  <h1 id="saudacao">Olá</h1>
-  <p class="sub">NOX Peças · sistema de gestão</p>
-  <h2>Seus atalhos</h2>
-  <div class="grade" id="atalhos"></div>
+<body data-modulo="" data-titulo="Visão geral" data-shell="sim">
+<main id="conteudo" class="painel" aria-live="polite">
+  <div class="painel-cab">
+    <div><h1>Seu negócio, em movimento.</h1><p id="saudacao">&nbsp;</p></div>
+    <div class="painel-cab-acoes">
+      <div class="seg" id="segEmpresa" role="group" aria-label="Empresa"></div>
+      <div class="menu-novo" id="menuNovo" hidden></div>
+    </div>
+  </div>
+  <section class="kpis" id="kpis" aria-label="Indicadores principais"></section>
+  <div class="painel-grade">
+    <div class="painel-col">
+      <section class="bloco" id="blPrio" aria-labelledby="tPrio"><div class="bloco-cab"><h2 id="tPrio">Prioridades da operação</h2></div><div id="prio"></div></section>
+      <section class="bloco" id="blCaixa" aria-labelledby="tCaixa" hidden><div class="bloco-cab"><h2 id="tCaixa">Entradas e saídas</h2>
+        <a href="pages/financeiro/fluxo-caixa.html">Fluxo de caixa</a></div>
+        <p class="bloco-sub">Dinheiro que entrou e saiu das contas nos últimos 7 dias (recebimentos, pagamentos e extrato classificado; sem transferências entre contas).</p>
+        <div id="caixa"></div></section>
+    </div>
+    <div class="painel-col">
+      <section class="bloco" id="blAcoes" aria-labelledby="tAcoes" hidden><div class="bloco-cab"><h2 id="tAcoes">O que você precisa fazer?</h2></div><div class="acoes-rap" id="acoes"></div></section>
+      <section class="bloco" id="blEst" aria-labelledby="tEst" hidden><div class="bloco-cab"><h2 id="tEst">Estoque em atenção</h2><span id="estLink"></span></div><div id="est"></div></section>
+      <section class="bloco" id="blCan" aria-labelledby="tCan" hidden><div class="bloco-cab"><h2 id="tCan">Marketplaces</h2><span id="canLink"></span></div><div id="can"></div></section>
+    </div>
+  </div>
+  <div class="painel-rodape"><span id="atualizado"></span><button type="button" id="btnAtualizar" aria-label="Atualizar os números da página">↻ Atualizar</button></div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/supabase.js?v=202610261218"></script>
-<script src="assets/js/ui.js?v=202610261218"></script>
-<script src="assets/js/auth.js?v=202610261218"></script>
-<script src="assets/js/layout.js?v=202610261218"></script>
+<script src="assets/js/supabase.js?v=202610262031"></script>
+<script src="assets/js/ui.js?v=202610262031"></script>
+<script src="assets/js/auth.js?v=202610262031"></script>
+<script src="assets/js/layout.js?v=202610262031"></script>
 <script>
-  (async () => {
-    const ctx = await iniciarTela();
-    if (!ctx) return;
+/* Visão do gestor — todos os números vêm de public.painel_gestor() (um bloco por permissão). */
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const reaisCurto = v => { const n = Number(v || 0), a = Math.abs(n);
+  return a >= 1e6 ? 'R$ ' + (n / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi' : a >= 1e4 ? 'R$ ' + (n / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : reais(n); };
+const dm = d => d ? String(d).slice(0, 10).split('-').reverse().slice(0, 2).join('/') : '';
+const dhm = d => d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const plural = (n, s, p) => `${n.toLocaleString('pt-BR')} ${n === 1 ? s : (p || s + 's')}`;
+const addDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const $ = id => document.getElementById(id);
+let CTX, ultimaCarga = 0;
 
-    const h = new Date().getHours();
-    const nome = (ctx.usuario.nome || '').split(' ')[0];
-    document.getElementById('saudacao').textContent = (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + ', ' + nome;
+function esqueleto() {
+  $('kpis').innerHTML = Array(4).fill('<div class="kpi" aria-hidden="true"><div class="esq" style="height:12px;width:55%"></div><div class="esq" style="height:26px;width:70%;margin:12px 0 8px"></div><div class="esq" style="height:11px;width:80%"></div></div>').join('');
+  $('prio').innerHTML = '<div class="esq" style="height:14px;margin:8px 0 14px"></div>'.repeat(4);
+}
 
-    const prontos = MENU.flatMap(g => g.itens.map(i => ({ ...i, grupo: g.grupo }))).filter(i => i.arquivo && ctx.pode(i.id) && (!i.exige || ctx.pode(i.exige)));
-    document.getElementById('atalhos').innerHTML = prontos.length
-      ? prontos.map(i => `<a class="atalho" href="${RAIZ + i.arquivo}"><b>${i.nome}</b><small>${i.grupo}</small></a>`).join('')
-      : '<div class="cartao vazio">Ainda não há telas liberadas para você. Fale com o administrador.</div>';
-  })();
+/* ---------- Indicadores ---------- */
+function desenharKpis(p) {
+  const k = [];
+  if (p.vendas) {
+    const v = p.vendas, varr = v.total_ant > 0 ? (v.total - v.total_ant) / v.total_ant * 100 : null;
+    k.push(`<a class="kpi" href="pages/comercial/pedidos-venda.html?per=data_pedido&de=${v.de}&ate=${v.ate}">
+      <div class="kpi-tit">${icone('vendas', 16)}Vendas do mês</div><div class="kpi-valor">${reais(v.total)}</div>
+      <div class="kpi-ctx">${plural(v.qtd, 'pedido')} · ${dm(v.de)} a ${dm(v.ate)}<br>${varr === null ? 'Sem base de comparação no mês anterior'
+        : `<span class="${varr >= 0 ? 'var-pos' : 'var-neg'}">${varr >= 0 ? '▲' : '▼'} ${Math.abs(varr).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</span> vs. ${dm(v.ant_de)} a ${dm(v.ant_ate)}`}</div></a>`);
+  }
+  if (p.receber) {
+    const r = p.receber;
+    k.push(`<a class="kpi" href="pages/financeiro/contas-receber.html?f_grupo=abertos&per=data_vencimento&de=${r.de}&ate=${r.ate}">
+      <div class="kpi-tit">${icone('receber', 16)}A receber · próximos 7 dias</div><div class="kpi-valor">${reais(r.valor)}</div>
+      <div class="kpi-ctx">${plural(r.qtd, 'recebimento previsto', 'recebimentos previstos')} até ${dm(r.ate)}${r.qtd_vencido ? `<br><span class="alerta-txt">${reais(r.vencido)} vencidos</span> (${r.qtd_vencido})` : '<br>Nenhum recebimento vencido'}</div></a>`);
+  }
+  if (p.pagar) {
+    const g = p.pagar;
+    k.push(`<a class="kpi" href="pages/financeiro/contas-pagar.html?f_grupo=abertos&per=data_vencimento&de=${g.de}&ate=${g.ate}">
+      <div class="kpi-tit">${icone('pagar', 16)}A pagar · próximos 7 dias</div><div class="kpi-valor">${reais(g.valor)}</div>
+      <div class="kpi-ctx">${plural(g.qtd, 'título')} até ${dm(g.ate)}${g.qtd_ate_amanha ? ` · <b>${reais(g.ate_amanha)}</b> até amanhã` : ''}${g.qtd_vencido ? `<br><span class="alerta-txt">${reais(g.vencido)} vencidos</span> (${g.qtd_vencido}) fora deste total` : ''}${g.projecao ? `<br>+ ${reais(g.projecao)} em projeções` : ''}</div></a>`);
+  }
+  if (p.expedir) {
+    const m = p.expedir.ml || {}, e = p.expedir.entregas || {}, tot = (m.qtd || 0) + (e.qtd || 0);
+    const destino = m.qtd ? 'pages/comercial/pedidos-venda.html?f_etapa=pronto_envio' : 'pages/expedicao/separacao.html';
+    const linhas = [];
+    if (m.qtd) linhas.push(`${m.qtd} do Mercado Livre (fora do Full)${m.aguardando_etiqueta ? `, ${m.aguardando_etiqueta} aguardando etiqueta` : ''}`);
+    if (e.qtd) linhas.push(`${e.qtd} entrega${e.qtd > 1 ? 's' : ''} a separar/expedir`);
+    const atencao = (m.ha_2_dias || 0) + (e.atrasadas || 0);
+    k.push(`<a class="kpi" href="${destino}">
+      <div class="kpi-tit">${icone('caminhao', 16)}Pedidos para expedir</div><div class="kpi-valor">${tot.toLocaleString('pt-BR')}</div>
+      <div class="kpi-ctx">${linhas.join(' · ') || 'Nada aguardando envio'}${atencao ? `<br><span class="alerta-txt">${atencao} parado${atencao > 1 ? 's' : ''} há 2+ dias ou atrasado${atencao > 1 ? 's' : ''}</span>` : ''}</div></a>`);
+  }
+  $('kpis').innerHTML = k.join('') || '<div class="bloco bloco-estado">Os indicadores dependem de acesso a vendas e financeiro.</div>';
+  $('kpis').hidden = !k.length;
+}
+
+/* ---------- Prioridades ---------- */
+function desenharPrioridades(p, aprov) {
+  const it = [], hoje = p.hoje, amanha = addDias(p.hoje, 1);
+  const add = (urg, tit, sub, href, acao = 'Revisar') => it.push({ urg, tit, sub, href, acao });
+  if (p.pagar?.qtd_vencido) add('alta', `Regularizar ${plural(p.pagar.qtd_vencido, 'conta vencida', 'contas vencidas')}`, `Financeiro · ${reais(p.pagar.vencido)}`, 'pages/financeiro/contas-pagar.html?f_grupo=vencidos', 'Resolver');
+  if (p.pagar?.qtd_ate_amanha) add('alta', `Revisar contas que vencem hoje e amanhã`, `Financeiro · ${plural(p.pagar.qtd_ate_amanha, 'título')} · ${reais(p.pagar.ate_amanha)}`,
+    `pages/financeiro/contas-pagar.html?f_grupo=abertos&per=data_vencimento&de=${hoje}&ate=${amanha}`);
+  const m = p.expedir?.ml, e = p.expedir?.entregas;
+  if (m?.ha_2_dias) add('alta', `Enviar ${plural(m.ha_2_dias, 'pedido parado', 'pedidos parados')} há 2 dias ou mais`, `Vendas · Mercado Livre · o mais antigo é de ${dm(m.mais_antigo)}`, 'pages/comercial/pedidos-venda.html?f_etapa=pronto_envio', 'Resolver');
+  if (e?.atrasadas) add('alta', `Expedir ${plural(e.atrasadas, 'entrega atrasada', 'entregas atrasadas')}`, 'Vendas · previsão de entrega vencida', 'pages/expedicao/separacao.html', 'Resolver');
+  if (e?.ate_amanha) add('media', `Separar ${plural(e.ate_amanha, 'entrega', 'entregas')} para envio`, 'Vendas · prazo até amanhã', 'pages/expedicao/separacao.html');
+  if (aprov?.decidir) add('media', `Decidir ${plural(aprov.decidir, 'aprovação pendente', 'aprovações pendentes')}`, 'Aprovações · compras, cadastros, RH e outros', 'pages/config/aprovacoes.html', 'Decidir');
+  if (p.receber?.qtd_vencido) add('media', `Cobrar ${plural(p.receber.qtd_vencido, 'recebimento vencido', 'recebimentos vencidos')}`, `Financeiro · ${reais(p.receber.vencido)}`, 'pages/financeiro/contas-receber.html?f_grupo=vencidos');
+  if (p.estoque?.abaixo) add('media', `Repor ${plural(p.estoque.abaixo, 'produto', 'produtos')} abaixo do mínimo`, 'Estoque · verificar necessidade de compra',
+    CTX.pode('compras') ? 'pages/compras/pedidos.html?sugestao=1' : 'pages/cadastros/produtos.html');
+  (p.canais || []).forEach(c => { const s = estadoCanal(c); if (s.cls === 'atencao' || s.cls === 'desconectado')
+    add(s.cls === 'desconectado' ? 'alta' : 'media', `Verificar a integração ${c.nome}`, `Integrações · ${s.motivo}`, 'pages/config/integracoes.html'); });
+  if (p.falhas?.qtd) add('media', `Revisar ${plural(p.falhas.qtd, 'leitura com erro', 'leituras com erro')} nos últimos 3 dias`, `Integrações · ${p.falhas.msg ? String(p.falhas.msg).slice(0, 70) : 'Tiny'}`, 'pages/config/integracoes.html');
+  if (p.quarentena?.qtd) add('baixa', `Revisar ${plural(p.quarentena.qtd, 'título', 'títulos')} em quarentena`, 'Integrações · contas a pagar importadas com pendência', 'pages/financeiro/quarentena.html');
+  const ord = { alta: 0, media: 1, baixa: 2 }; it.sort((a, b) => ord[a.urg] - ord[b.urg]);
+  const rot = { alta: 'Urgente', media: 'Atenção', baixa: 'Quando puder' };
+  const linha = x => `<li><span class="prio-marca ${x.urg}" aria-hidden="true"></span><div class="prio-txt"><b>${esc(x.tit)}</b><small>${esc(x.sub)}</small></div>
+    <span class="prio-urg ${x.urg}">${rot[x.urg]}</span><a class="prio-acao" href="${x.href}" aria-label="${esc(x.acao + ': ' + x.tit)}">${x.acao}</a></li>`;
+  if (!it.length) { $('prio').innerHTML = `<div class="prio-tranquilo">${icone('ok', 18)}Nenhuma prioridade agora. Tudo em dia nas áreas que você acompanha.</div>`; return; }
+  const LIM = 5;
+  $('prio').innerHTML = `<ul class="prio" id="prioLista">${it.slice(0, LIM).map(linha).join('')}</ul>` +
+    (it.length > LIM ? `<button type="button" class="prio-mais" id="prioMais" aria-expanded="false">Ver todas as ${it.length} prioridades</button>` : '');
+  $('prioMais')?.addEventListener('click', ev => { $('prioLista').innerHTML = it.map(linha).join(''); ev.target.remove(); });
+}
+
+/* ---------- Entradas e saídas (gráfico de linhas em SVG) ---------- */
+function desenharCaixa(dias) {
+  const bl = $('blCaixa'); if (!dias) { bl.hidden = true; return; } bl.hidden = false;
+  const tE = dias.reduce((s, d) => s + Number(d.entradas), 0), tS = dias.reduce((s, d) => s + Number(d.saidas), 0);
+  if (!tE && !tS) { $('caixa').innerHTML = '<div class="bloco-estado">Nenhuma entrada ou saída registrada nos últimos 7 dias.</div>'; return; }
+  const W = 640, H = 200, ml = 54, mr = 12, mt = 12, mb = 28, iw = W - ml - mr, ih = H - mt - mb;
+  const max = Math.max(...dias.flatMap(d => [Number(d.entradas), Number(d.saidas)]), 1);
+  const passo = (() => { const b = Math.pow(10, Math.floor(Math.log10(max / 4))); return [1, 2, 2.5, 5, 10].map(x => x * b).find(x => x * 4 >= max); })();
+  const topo = passo * 4, x = i => ml + (dias.length === 1 ? iw / 2 : i * iw / (dias.length - 1)), y = v => mt + ih - Number(v) / topo * ih;
+  const caminho = k => dias.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(d[k]).toFixed(1)}`).join(' ');
+  const semana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const rot = d => { const dt = new Date(d + 'T12:00:00'); return `${semana[dt.getDay()]} ${dm(d)}`; };
+  const grade = [0, 1, 2, 3, 4].map(i => `<line class="grade-l" x1="${ml}" x2="${W - mr}" y1="${y(passo * i)}" y2="${y(passo * i)}"/><text x="${ml - 8}" y="${y(passo * i) + 4}" text-anchor="end">${reaisCurto(passo * i).replace('R$ ', '')}</text>`).join('');
+  $('caixa').innerHTML = `<div class="graf-legenda" aria-hidden="true"><span><i></i>Entradas</span><span><i class="saida"></i>Saídas</span><span>Valores em R$</span></div>
+    <div class="graf" id="graf"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Entradas e saídas dos últimos 7 dias: entradas ${reais(tE)}, saídas ${reais(tS)}">
+      <g class="eixo">${grade}${dias.map((d, i) => `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${rot(d.d)}</text>`).join('')}</g>
+      <path d="${caminho('saidas')}" fill="none" stroke="#8b929c" stroke-width="2" stroke-dasharray="5 4"/>
+      <path d="${caminho('entradas')}" fill="none" stroke="var(--destaque)" stroke-width="2.25"/>
+      ${dias.map((d, i) => `<circle cx="${x(i)}" cy="${y(d.saidas)}" r="3" fill="#fff" stroke="#8b929c" stroke-width="1.5"/><circle cx="${x(i)}" cy="${y(d.entradas)}" r="3.5" fill="#fff" stroke="var(--destaque)" stroke-width="2"/>`).join('')}
+      ${dias.map((d, i) => `<rect class="ponto" data-i="${i}" x="${x(i) - iw / (dias.length - 1) / 2}" y="${mt}" width="${iw / (dias.length - 1)}" height="${ih}" fill="transparent" tabindex="0"
+        aria-label="${rot(d.d)}: entradas ${reais(d.entradas)}, saídas ${reais(d.saidas)}"/>`).join('')}
+    </svg><div class="graf-tip" id="grafTip" hidden></div></div>
+    <div class="graf-tot"><span>Entradas <b>${reais(tE)}</b></span><span>Saídas <b>${reais(tS)}</b></span><span>Saldo do período <b class="${tE - tS < 0 ? 'var-neg' : ''}">${reais(tE - tS)}</b></span></div>`;
+  const tip = $('grafTip'), svg = $('graf').querySelector('svg');
+  const mostrar = el => { const i = +el.dataset.i, d = dias[i], r = svg.getBoundingClientRect(), k = r.width / W;
+    tip.innerHTML = `<b>${rot(d.d)}</b><br>Entradas ${reais(d.entradas)}<br>Saídas ${reais(d.saidas)}`;
+    tip.style.left = Math.min(Math.max(x(i) * k, 70), r.width - 70) + 'px'; tip.style.top = (Math.min(y(d.entradas), y(d.saidas)) * k) + 'px'; tip.hidden = false; };
+  svg.querySelectorAll('.ponto').forEach(el => { ['mouseenter', 'focus', 'touchstart'].forEach(ev => el.addEventListener(ev, () => mostrar(el), { passive: true }));
+    ['mouseleave', 'blur'].forEach(ev => el.addEventListener(ev, () => { tip.hidden = true; })); });
+}
+
+/* ---------- Ações rápidas ---------- */
+function desenharAcoes() {
+  const a = [];
+  if (CTX.pode('pedidos', 'criar')) a.push(['vendas', 'Nova venda', 'Pedido de venda', 'pages/comercial/pedidos-venda.html?novo=1']);
+  if (CTX.pode('pagar', 'criar')) a.push(['despesa', 'Registrar despesa', 'Conta a pagar', 'pages/financeiro/contas-pagar.html?novo=1']);
+  if (CTX.pode('notas', 'criar')) a.push(['entrada', 'Entrada de estoque', 'Pela NF de entrada (XML)', 'pages/financeiro/notas-fiscais.html?novo=1']);
+  if (CTX.pode('compras', 'criar')) a.push(['pedido', 'Pedido de compra', 'Novo pedido', 'pages/compras/pedidos.html?novo=1']);
+  $('blAcoes').hidden = !a.length;
+  $('acoes').innerHTML = a.map(([i, t, s, h]) => `<a class="acao-rap" href="${h}">${icone(i, 18)}<span>${t}<small>${s}</small></span></a>`).join('');
+}
+function desenharNovo() {
+  const op = [];
+  if (CTX.pode('pagar', 'criar')) op.push(['pagar', 'Conta a pagar', 'Financeiro · despesa ou título', 'pages/financeiro/contas-pagar.html?novo=1']);
+  if (CTX.pode('receber', 'criar')) op.push(['receber', 'Conta a receber', 'Financeiro · título avulso', 'pages/financeiro/contas-receber.html?novo=1']);
+  if (CTX.pode('lancamentos', 'criar')) op.push(['pessoas', 'Lançamento da folha', 'RH · eventos do colaborador', 'pages/rh/lancamentos.html']);
+  const box = $('menuNovo'); box.hidden = !op.length; if (!op.length) return;
+  box.innerHTML = `<button type="button" class="btn primario" id="btnNovo" aria-haspopup="true" aria-expanded="false" aria-controls="listaNovo">${icone('mais', 16)}Novo lançamento</button>
+    <div class="menu-novo-lista" id="listaNovo" role="menu" hidden>${op.map(([i, t, s, h]) => `<a role="menuitem" href="${h}">${icone(i, 16)}<span>${t}<small>${s}</small></span></a>`).join('')}</div>`;
+  const b = $('btnNovo'), l = $('listaNovo');
+  const fechar = () => { l.hidden = true; b.setAttribute('aria-expanded', 'false'); };
+  b.onclick = e => { e.stopPropagation(); l.hidden = !l.hidden; b.setAttribute('aria-expanded', String(!l.hidden)); if (!l.hidden) l.querySelector('a')?.focus(); };
+  document.addEventListener('click', e => { if (!box.contains(e.target)) fechar(); });
+  box.addEventListener('keydown', e => { if (e.key === 'Escape') { fechar(); b.focus(); } });
+  l.addEventListener('click', fechar);
+}
+
+/* ---------- Estoque em atenção ---------- */
+function desenharEstoque(s) {
+  const bl = $('blEst'); if (!s) { bl.hidden = true; return; } bl.hidden = false;
+  const destino = CTX.pode('compras') ? 'pages/compras/pedidos.html?sugestao=1' : 'pages/cadastros/produtos.html';
+  $('estLink').innerHTML = s.abaixo ? `<a href="${destino}">Ver os ${s.abaixo} produtos</a>` : '';
+  const nota = s.inventariados ? '' : '<p class="bloco-sub" style="margin:0 0 10px">Saldo pelas entradas e saídas registradas no sistema: o inventário inicial ainda não foi feito.</p>';
+  if (!s.com_minimo) { $('est').innerHTML = `<div class="bloco-estado">Nenhum produto tem estoque mínimo definido. Sem o mínimo, o sistema não sabe o que é crítico.<br><a class="bloco-link" href="pages/cadastros/produtos.html">Definir no cadastro de produtos</a></div>`; return; }
+  if (!s.abaixo) { $('est').innerHTML = nota + `<div class="prio-tranquilo">${icone('ok', 18)}Nenhum dos ${s.com_minimo} produtos com mínimo definido está abaixo dele.</div>`; return; }
+  const q = (v, u) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + (u ? ' ' + u : '');
+  $('est').innerHTML = nota + `<ul class="lista-est">${s.itens.slice(0, 3).map(i => `<li><div class="nome"><b title="${esc(i.descricao)}">${esc(i.descricao)}</b><small>SKU ${esc(i.codigo || '—')}</small></div>
+    <div class="qtd"><b class="${Number(i.saldo) <= 0 ? 'zero' : ''}">${q(i.saldo, i.unidade)}</b>mínimo ${q(i.minimo)}</div></li>`).join('')}</ul>
+    <p class="bloco-sub" style="margin:10px 0 0">Só entram produtos com estoque mínimo definido (${s.com_minimo} hoje). Ordem: sem saldo primeiro, depois maior falta.</p>`;
+}
+
+/* ---------- Marketplaces ---------- */
+function estadoCanal(c) {
+  if (c.integracao !== 'api') return { cls: 'semInfo', t: 'Sem conexão automática', motivo: 'vendas entram por ' + (c.integracao === 'planilha' ? 'planilha' : 'lançamento manual') };
+  if (!c.conta) return { cls: 'desconectado', t: 'Desconectado', motivo: 'conta não autorizada' };
+  if (c.situacao_conta && c.situacao_conta !== 'ativo') return { cls: 'desconectado', t: 'Desconectado', motivo: 'autorização ' + c.situacao_conta };
+  if (c.ultimo_erro) return { cls: 'atencao', t: 'Atenção', motivo: String(c.ultimo_erro).slice(0, 80) };
+  const h = c.ultimo_evento ? (Date.now() - Date.parse(c.ultimo_evento)) / 36e5 : null;
+  if (h === null) return { cls: 'semInfo', t: 'Sem informação', motivo: 'nenhuma notificação recebida ainda' };
+  if (h > 6) return { cls: 'atencao', t: 'Atenção', motivo: `sem notificações há ${Math.round(h)} h` };
+  const pend = c.pendente_desde ? (Date.now() - Date.parse(c.pendente_desde)) / 36e5 : 0;
+  if (c.pendentes && pend > 1) return { cls: 'atencao', t: 'Atenção', motivo: `${plural(c.pendentes, 'notificação', 'notificações')} sem processar desde ${dm(String(c.pendente_desde).slice(0, 10))}` };
+  return { cls: 'conectado', t: 'Conectado', motivo: '' };
+}
+function desenharCanais(lista) {
+  const bl = $('blCan'); if (!lista) { bl.hidden = true; return; } bl.hidden = false;
+  $('canLink').innerHTML = CTX.pode('integracoes') ? '<a href="pages/config/integracoes.html">Painel de integrações</a>' : '';
+  if (!lista.length) { $('can').innerHTML = `<div class="bloco-estado">Nenhum marketplace configurado.${CTX.pode('canais_venda', 'criar') ? '<br><a class="bloco-link" href="pages/cadastros/canais-venda.html">Configurar canais de venda</a>' : ''}</div>`; return; }
+  $('can').innerHTML = `<ul class="canais">${lista.map(c => { const s = estadoCanal(c);
+    const det = c.integracao === 'api' ? [c.conta ? 'Conta ' + c.conta : '', c.ultimo_evento ? 'última notificação ' + dhm(c.ultimo_evento) : '', c.ultima_sync ? 'sincronização completa ' + dhm(c.ultima_sync) : ''].filter(Boolean).join(' · ') : s.motivo;
+    return `<li><div class="c-nome"><b>${esc(c.nome)}</b><small>${esc(det)}</small>${s.cls === 'atencao' || s.cls === 'desconectado' ? `<small style="color:var(--erro)">${esc(s.motivo)}</small>` : ''}</div><span class="est ${s.cls}">${s.t}</span></li>`; }).join('')}</ul>`;
+}
+
+/* ---------- Carga ---------- */
+async function carregar() {
+  ultimaCarga = Date.now();
+  if (!$('kpis').children.length) esqueleto();
+  const [res, ap] = await Promise.all([db.rpc('painel_gestor', { p_empresa: CTX.empresa || null }), db.rpc('minhas_aprovacoes')]);
+  if (res.error) {
+    $('kpis').innerHTML = `<div class="bloco bloco-estado erro" style="grid-column:1/-1">Não foi possível carregar os indicadores: ${esc(res.error.message)}. <button class="btn fino" onclick="carregar()">Tentar de novo</button></div>`;
+    $('prio').innerHTML = '<div class="bloco-estado erro">Prioridades indisponíveis no momento.</div>';
+    return;
+  }
+  const p = res.data || {};
+  const aprov = ap.error ? null : { decidir: (ap.data || []).filter(g => !g.aviso && !g.devolvido).reduce((t, g) => t + (g.itens || []).length, 0) };
+  const bloco = (fn, ...a) => { try { fn(...a); } catch (e) { console.error(e); } };
+  bloco(desenharKpis, p); bloco(desenharPrioridades, p, aprov); bloco(desenharCaixa, p.caixa);
+  bloco(desenharEstoque, p.estoque); bloco(desenharCanais, p.canais);
+  $('atualizado').textContent = 'Atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' · datas pelo horário de Brasília';
+}
+
+function desenharEmpresas() {
+  const op = [{ id: null, nome: 'Consolidado' }, ...CTX.empresas];
+  $('segEmpresa').hidden = CTX.empresas.length < 2;
+  $('segEmpresa').innerHTML = op.map(e => `<button type="button" data-emp="${e.id ?? ''}" aria-pressed="${(e.id ?? null) === (CTX.empresa ?? null)}" title="${esc(e.nome)}">${esc(e.id ? String(e.nome).split('·')[0].trim() : e.nome)}</button>`).join('');
+}
+
+(async () => {
+  CTX = await iniciarTela();
+  if (!CTX) return;
+  const h = new Date().getHours(), nome = (CTX.usuario.nome || '').split(' ')[0];
+  $('saudacao').textContent = `${h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'}${nome ? ', ' + nome : ''}. Veja o que merece sua atenção.`;
+  desenharEmpresas(); desenharNovo(); desenharAcoes();
+  $('segEmpresa').addEventListener('click', e => { const b = e.target.closest('[data-emp]'); if (!b) return;
+    const sel = document.getElementById('seletorEmpresa');
+    if (sel) { sel.value = b.dataset.emp; sel.dispatchEvent(new Event('change')); } });
+  window.addEventListener('empresa', () => { desenharEmpresas(); carregar(); });
+  window.addEventListener('inicio-ativo', () => { if (Date.now() - ultimaCarga > 120000) carregar(); });
+  $('btnAtualizar').onclick = carregar;
+  carregar();
+})();
 </script>
 </body>
 </html>

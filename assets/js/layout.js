@@ -6,51 +6,38 @@
    Os ids precisam ser os mesmos da tabela "modulos" do banco.
    ===================================================================== */
 const MENU = [
-  { grupo: 'Cadastros', itens: [
-    { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
-    { id: 'produtos',      nome: 'Grupos de produtos', arquivo: 'pages/cadastros/grupos-produtos.html' },
-    { id: 'clientes',      nome: 'Clientes',          arquivo: 'pages/cadastros/clientes.html' },
-    { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
-    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' },
-    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' },
-    { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html' },
-    { id: 'condicoes_pagamento', nome: 'Formas de pagamento', arquivo: 'pages/financeiro/formas-pagamento.html' },
-    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html' },
-    { id: 'canais_venda', nome: 'Canais de venda', arquivo: 'pages/cadastros/canais-venda.html' },
-    { id: 'canais_venda', nome: 'Tarifas de marketplace', arquivo: 'pages/cadastros/tarifas-marketplace.html' }
-  ]},
-  { grupo: 'Comercial', itens: [
+  { grupo: 'Vendas', icone: 'vendas', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html' },
     { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html' },
+    { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
   ]},
-  { grupo: 'Suprimentos', itens: [
-    { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html' },
+  { grupo: 'Estoque', icone: 'estoque', itens: [
+    { id: 'estoque',       nome: 'Posição de estoque', arquivo: null },
     { id: 'almoxarifado',  nome: 'Almoxarifado',      arquivo: null },
-    { id: 'estoque',       nome: 'Estoque',           arquivo: null },
-    { id: 'inventario',    nome: 'Inventário',        arquivo: null }
+    { id: 'inventario',    nome: 'Inventário',        arquivo: null },
+    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' }
   ]},
-  { grupo: 'Produção', itens: [
+  { grupo: 'Compras', icone: 'compras', itens: [
+    { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html' },
+    { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html' }
+  ]},
+  { grupo: 'Produção', icone: 'producao', itens: [
     { id: 'ordens',        nome: 'Ordens de produção', arquivo: null },
     { id: 'etapas',        nome: 'Etapas',             arquivo: null },
     { id: 'apontamento',   nome: 'Apontamento',        arquivo: null },
-    { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },
-    { id: 'embalagem',     nome: 'Embalagem',          arquivo: null }
-  ]},
-  { grupo: 'Engenharia', itens: [
+    { id: 'embalagem',     nome: 'Embalagem',          arquivo: null },
     { id: 'desenvolvimento', nome: 'Desenvolvimento', arquivo: null },
     { id: 'desenhos',        nome: 'Desenho técnico', arquivo: null },
     { id: 'precificacao',    nome: 'Precificação',    arquivo: null }
   ]},
-  { grupo: 'Financeiro', itens: [
+  { grupo: 'Financeiro', icone: 'financeiro', itens: [
     { id: 'pagar',         nome: 'Contas a pagar',    arquivo: 'pages/financeiro/contas-pagar.html' },
     { id: 'receber',       nome: 'Contas a receber',  arquivo: 'pages/financeiro/contas-receber.html' },
-    { id: 'conciliacao',   nome: 'Extratos e conciliação', arquivo: 'pages/financeiro/conciliacao.html' },
     { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: 'pages/financeiro/fluxo-caixa.html' },
-    { id: 'quarentena',    nome: 'Quarentena das importações', arquivo: 'pages/financeiro/quarentena.html' },
-    { id: 'notas',         nome: 'Notas fiscais',     arquivo: 'pages/financeiro/notas-fiscais.html' }
+    { id: 'conciliacao',   nome: 'Extratos e conciliação', arquivo: 'pages/financeiro/conciliacao.html' }
   ]},
-  { grupo: 'RH', itens: [
+  { grupo: 'Pessoas e RH', icone: 'pessoas', itens: [
     { id: 'funcionarios',  nome: 'Colaboradores',     arquivo: 'pages/cadastros/funcionarios.html' },
     { id: 'lancamentos',   nome: 'Lançamentos',       arquivo: 'pages/rh/lancamentos.html' },
     { id: 'lancamentos',   nome: 'Conferência da folha', arquivo: 'pages/rh/conferencia.html' },
@@ -66,11 +53,24 @@ const MENU = [
     { id: 'rh_eventos',    nome: 'Eventos da folha',  arquivo: 'pages/rh/eventos.html' },
     { id: 'rh_relatorios', nome: 'Relatórios do RH',  arquivo: 'pages/rh/relatorios.html' }
   ]},
-  { grupo: 'Integrações', itens: [
-    { id: 'integracoes',   nome: 'Painel de integrações', arquivo: 'pages/config/integracoes.html' },
-    { id: 'canais_venda',  nome: 'Mercado Livre e Shopee', arquivo: 'pages/cadastros/canais-venda.html', exige: 'integracoes' }
+  { grupo: 'Cadastros', icone: 'cadastros', gerenciar: true, itens: [
+    { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
+    { id: 'produtos',      nome: 'Grupos de produtos', arquivo: 'pages/cadastros/grupos-produtos.html' },
+    { id: 'clientes',      nome: 'Clientes',          arquivo: 'pages/cadastros/clientes.html' },
+    { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
+    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' },
+    { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html' },
+    { id: 'condicoes_pagamento', nome: 'Formas de pagamento', arquivo: 'pages/financeiro/formas-pagamento.html' },
+    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html' },
+    { id: 'canais_venda', nome: 'Canais de venda', arquivo: 'pages/cadastros/canais-venda.html' },
+    { id: 'canais_venda', nome: 'Tarifas de marketplace', arquivo: 'pages/cadastros/tarifas-marketplace.html' }
   ]},
-  { grupo: 'Configurações', itens: [
+  { grupo: 'Integrações', icone: 'integracoes', gerenciar: true, itens: [
+    { id: 'integracoes',   nome: 'Painel de integrações', arquivo: 'pages/config/integracoes.html' },
+    { id: 'canais_venda',  nome: 'Mercado Livre e Shopee', arquivo: 'pages/cadastros/canais-venda.html', exige: 'integracoes' },
+    { id: 'quarentena',    nome: 'Quarentena das importações', arquivo: 'pages/financeiro/quarentena.html' }
+  ]},
+  { grupo: 'Configurações', icone: 'config', gerenciar: true, itens: [
     { id: 'usuarios',      nome: 'Usuários e acessos', arquivo: 'pages/config/usuarios.html' },
     { id: 'auditoria',     nome: 'Auditoria',          arquivo: 'pages/config/auditoria.html' }
   ]}
@@ -80,8 +80,9 @@ const MENU = [
 function lerEmpresa() { try { const v = localStorage.getItem('nox_empresa'); return v ? Number(v) : null; } catch { return null; } }
 function gravarEmpresa(v) { try { v ? localStorage.setItem('nox_empresa', v) : localStorage.removeItem('nox_empresa'); } catch {} }
 
-function lerFechados() { try { return JSON.parse(localStorage.getItem('nox_menu_fechados') || '[]'); } catch { return []; } }
-function gravarFechados(v) { try { localStorage.setItem('nox_menu_fechados', JSON.stringify(v)); } catch {} }
+// Grupos do menu abertos (o grupo da tela atual abre sozinho)
+function lerAbertos() { try { return JSON.parse(localStorage.getItem('nox_menu_abertos') || '[]'); } catch { return []; } }
+function gravarAbertos(v) { try { localStorage.setItem('nox_menu_abertos', JSON.stringify(v)); } catch {} }
 
 // Chame em toda tela: const ctx = await iniciarTela();
 // A tela declara no <body>: data-modulo="id" (vazio = livre p/ todos) e data-titulo="Nome"
@@ -116,23 +117,28 @@ async function iniciarTela() {
   if (EMBUTIDO) return montarEmbutido(ctx, usaEmpresa);
 
   const atual = location.href.split('?')[0].split('#')[0];
-  const fechados = lerFechados();
+  const abertos = lerAbertos();
 
-  let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span><b>NOX</b><small>Sistema de gestão</small></span></a>
-    <a class="item${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html">Início</a>
-    <a class="item item-aprov" id="itemAprov" href="${RAIZ}pages/config/aprovacoes.html" hidden>Aprovações pendentes <span class="n-aprov" id="nAprov"></span><span class="av-aprov pisca" id="avAprov" hidden>!</span></a>`;
+  let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span class="rotulo"><b>NOX</b><small>Sistema de gestão</small></span></a>
+    <a class="item item-raiz${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html" title="Visão geral">${icone('painel')}<span class="rotulo">Visão geral</span></a>
+    <a class="item item-raiz item-aprov" id="itemAprov" href="${RAIZ}pages/config/aprovacoes.html" title="Aprovações pendentes" hidden>${icone('aprovar')}<span class="rotulo">Aprovações</span><span class="n-aprov" id="nAprov"></span><span class="av-aprov pisca" id="avAprov" hidden>!</span></a>`;
 
+  let secaoGerenciar = false;
   MENU.forEach(g => {
     // Só o que a pessoa pode abrir: tela liberada no perfil/usuário (e a tela que o item exige, quando houver).
     // Itens "em breve" (sem tela pronta) só aparecem para o administrador.
     const visiveis = g.itens.filter(i => ctx.pode(i.id) && (!i.exige || ctx.pode(i.exige)) && (i.arquivo || ctx.admin));
     if (!visiveis.length) return;
-    menuHtml += `<div class="grupo${fechados.includes(g.grupo) ? ' fechado' : ''}" data-grupo="${g.grupo}">
-      <button class="grupo-titulo" type="button">${g.grupo}</button><div class="grupo-itens">`;
+    if (g.gerenciar && !secaoGerenciar) { secaoGerenciar = true; menuHtml += '<div class="menu-secao"><span class="rotulo">Gerenciar</span></div>'; }
+    const temAtivo = visiveis.some(i => i.arquivo && atual === RAIZ + i.arquivo);
+    const id = 'grp-' + g.grupo.normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase();
+    const aberto = temAtivo || abertos.includes(g.grupo);
+    menuHtml += `<div class="grupo${aberto ? '' : ' fechado'}" data-grupo="${g.grupo}">
+      <button class="grupo-titulo" type="button" aria-expanded="${aberto}" aria-controls="${id}" title="${g.grupo}">${icone(g.icone)}<span class="rotulo">${g.grupo}</span><span class="seta-grupo">${icone('baixo', 15)}</span></button><div class="grupo-itens" id="${id}">`;
     visiveis.forEach(i => {
       if (!i.arquivo) { menuHtml += `<span class="item breve">${i.nome}<span class="tag">em breve</span></span>`; return; }
       const url = RAIZ + i.arquivo;
-      menuHtml += `<a class="item${atual === url ? ' ativo' : ''}" href="${url}">${i.nome}</a>`;
+      menuHtml += `<a class="item${atual === url ? ' ativo' : ''}" href="${url}"${atual === url ? ' aria-current="page"' : ''}>${i.nome}</a>`;
     });
     menuHtml += '</div></div>';
   });
@@ -144,7 +150,7 @@ async function iniciarTela() {
   // A barra de cima só aparece no celular (botão ☰): no computador a tela inteira fica para os dados.
   const marca = menuHtml.slice(0, menuHtml.indexOf('</a>') + 4), itens = menuHtml.slice(menuHtml.indexOf('</a>') + 4);
   app.innerHTML = `<nav class="menu" id="menu">
-      <button class="btn-recolher" id="btnRecolher" type="button" title="Ocultar o menu (mais espaço para a tela)">«</button>
+      <button class="btn-recolher" id="btnRecolher" type="button" title="Recolher o menu" aria-label="Recolher o menu">${icone('esquerda', 16)}</button>
       ${marca}
       ${usaEmpresa || ehShell ? `<div class="menu-empresa"${ehShell ? ' hidden' : ''} id="menuEmpresa"><label for="seletorEmpresa">Empresa</label>
         <select id="seletorEmpresa" title="Empresa">
@@ -152,12 +158,13 @@ async function iniciarTela() {
           ${ctx.empresas.map(e => `<option value="${e.id}"${e.id === ctx.empresa ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}
         </select></div>` : ''}
       <div class="menu-itens">${itens}</div>
-      <div class="menu-usuario"><div><b>${esc(ctx.usuario.nome)}</b><small>${esc(ctx.usuario.perfis?.nome || 'sem perfil')}</small></div>
-        <button class="btn-sair" type="button" onclick="sair()">Sair</button></div>
+      <div class="menu-usuario"><span class="avatar" aria-hidden="true">${esc((ctx.usuario.nome || '?').trim().split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase())}</span>
+        <div class="rotulo"><b>${esc(ctx.usuario.nome)}</b><small>${esc(ctx.usuario.perfis?.nome || 'sem perfil')}</small></div>
+        <button class="btn-sair" type="button" onclick="sair()" title="Sair do sistema" aria-label="Sair do sistema">${icone('sair', 16)}<span class="rotulo">Sair</span></button></div>
     </nav>
-    <button class="btn-expandir" id="btnExpandir" type="button" title="Mostrar o menu">»</button>
+    <button class="btn-expandir" id="btnExpandir" type="button" title="Mostrar o menu" aria-label="Mostrar o menu">${icone('direita', 16)}</button>
     <div class="principal">
-      <header class="topo"><button class="btn-menu" id="btnMenu" aria-label="Abrir menu">☰</button><b>${esc(document.body.dataset.titulo || 'NOX')}</b></header>
+      <header class="topo"><button class="btn-menu" id="btnMenu" aria-label="Abrir menu">${icone('menu', 22)}</button><b>${esc(document.body.dataset.titulo || 'NOX')}</b></header>
     </div>`;
   document.body.prepend(app);
   // Aprovações pendentes: contador no menu (atualiza a cada 2 min)
@@ -173,10 +180,10 @@ async function iniciarTela() {
   // Menu lateral recolhível (lembra a escolha)
   const recolher = v => { document.body.classList.toggle('menu-recolhido', v); try { localStorage.setItem('nox_menu_recolhido', v ? '1' : ''); } catch {} };
   try { if (localStorage.getItem('nox_menu_recolhido')) document.body.classList.add('menu-recolhido'); } catch {}
-  document.getElementById('btnRecolher').onclick = () => recolher(true);
+  document.getElementById('btnRecolher').onclick = () => recolher(!document.body.classList.contains('menu-recolhido'));
   document.getElementById('btnExpandir').onclick = () => recolher(false);
   // Ícone da aba e cabeçalho que aparece só na impressão dos relatórios
-  const icone = document.createElement('link'); icone.rel = 'icon'; icone.href = RAIZ + 'assets/img/favicon.png'; document.head.appendChild(icone);
+  const linkIcone = document.createElement('link'); linkIcone.rel = 'icon'; linkIcone.href = RAIZ + 'assets/img/favicon.png'; document.head.appendChild(linkIcone);
   const cab = document.createElement('div'); cab.className = 'cabecalho-impressao';
   cab.innerHTML = `<img src="${RAIZ}assets/img/logo-nox.png" alt=""><div><b>NOX Performance Engineering</b><br>${esc(document.body.dataset.titulo || '')}</div>
     <div class="info" id="infoImpressao"></div>`;
@@ -202,8 +209,12 @@ async function iniciarTela() {
   document.title = (document.body.dataset.titulo ? document.body.dataset.titulo + ' · ' : '') + 'NOX ERP';
 
   app.querySelectorAll('.grupo-titulo').forEach(b => b.addEventListener('click', () => {
-    const g = b.parentElement; g.classList.toggle('fechado');
-    gravarFechados([...app.querySelectorAll('.grupo.fechado')].map(x => x.dataset.grupo));
+    const g = b.parentElement;
+    // Menu recolhido (só ícones): o clique no grupo abre o menu já com o grupo aberto
+    if (document.body.classList.contains('menu-recolhido') && window.innerWidth > 860) { recolher(false); g.classList.remove('fechado'); }
+    else g.classList.toggle('fechado');
+    b.setAttribute('aria-expanded', String(!g.classList.contains('fechado')));
+    gravarAbertos([...app.querySelectorAll('.grupo:not(.fechado)')].map(x => x.dataset.grupo));
   }));
   document.getElementById('seletorEmpresa')?.addEventListener('change', e => {
     ctx.empresa = e.target.value ? Number(e.target.value) : null;
@@ -239,12 +250,16 @@ function montarBarraTelas(ctx, app) {
   const principal = app.querySelector('.principal');
   const inicio = document.getElementById('conteudo');
   principal.classList.add('shell');
-  const barra = document.createElement('div'); barra.className = 'barra-telas'; barra.id = 'barraTelas';
+  const barra = document.createElement('div'); barra.className = 'barra-telas'; barra.id = 'barraTelas'; barra.setAttribute('role', 'tablist'); barra.setAttribute('aria-label', 'Telas abertas');
+  const barraTopo = document.createElement('div'); barraTopo.className = 'barra-topo';
+  const barraInfo = document.createElement('div'); barraInfo.className = 'barra-info'; barraInfo.id = 'barraInfo';
   const telas = document.createElement('div'); telas.className = 'telas';
   const painelInicio = document.createElement('div'); painelInicio.className = 'tela-painel'; painelInicio.dataset.caminho = '';
   painelInicio.appendChild(inicio);
   telas.appendChild(painelInicio);
-  principal.append(barra, telas);
+  barraTopo.append(barra, barraInfo);
+  principal.append(barraTopo, telas);
+  window.addEventListener('empresa', () => ativar(ativa));
 
   let abas = [];          // [{ caminho, titulo }]
   let ativa = '';         // '' = Início
@@ -255,11 +270,11 @@ function montarBarraTelas(ctx, app) {
   const iframeDe = c => painel(c)?.querySelector('iframe');
 
   function desenharBarra() {
-    barra.innerHTML = `<button type="button" class="aba-tela fixa${ativa === '' ? ' ativa' : ''}" data-c="">Início</button>` +
+    barra.innerHTML = `<button type="button" class="aba-tela fixa${ativa === '' ? ' ativa' : ''}" data-c="" title="Visão geral">${icone('painel', 15)}<span class="aba-nome">Início</span></button>` +
       abas.map(a => `<div class="aba-tela${a.caminho === ativa ? ' ativa' : ''}" data-c="${esc(a.caminho)}" title="${esc(a.titulo)}">
         <span class="aba-nome">${esc(a.titulo)}</span>
-        <button type="button" class="aba-acao" data-recarregar title="Recarregar esta tela">↻</button>
-        <button type="button" class="aba-acao" data-fechar title="Fechar (os dados não salvos desta tela se perdem)">×</button></div>`).join('');
+        <button type="button" class="aba-acao" data-recarregar title="Recarregar esta tela" aria-label="Recarregar ${esc(a.titulo)}">↻</button>
+        <button type="button" class="aba-acao" data-fechar title="Fechar (os dados não salvos desta tela se perdem)" aria-label="Fechar ${esc(a.titulo)}">×</button></div>`).join('');
   }
   function criarPainel(a) {
     const p = document.createElement('div'); p.className = 'tela-painel'; p.dataset.caminho = a.caminho; p.hidden = true;
@@ -272,12 +287,19 @@ function montarBarraTelas(ctx, app) {
     if (c && !painel(c)) criarPainel(abas.find(a => a.caminho === c));
     [...telas.children].forEach(p => { p.hidden = p.dataset.caminho !== c; });
     const base = c.split('?')[0];
-    app.querySelectorAll('.menu .item[href]').forEach(i => i.classList.toggle('ativo', c ? caminhoTela(i.href) === base : caminhoTela(i.href) === 'inicio.html'));
+    app.querySelectorAll('.menu .item[href]').forEach(i => {
+      const on = c ? caminhoTela(i.href) === base : caminhoTela(i.href) === 'inicio.html';
+      i.classList.toggle('ativo', on); on ? i.setAttribute('aria-current', 'page') : i.removeAttribute('aria-current');
+      if (on) { const g = i.closest('.grupo'); if (g?.classList.contains('fechado')) { g.classList.remove('fechado'); g.querySelector('.grupo-titulo')?.setAttribute('aria-expanded', 'true'); } }
+    });
+    const nomeEmp = ctx.empresa ? (ctx.empresas.find(e => e.id === ctx.empresa)?.nome || '') : 'Consolidado';
+    const bi = document.getElementById('barraInfo'); if (bi) bi.innerHTML = `<b>${esc(c ? abas.find(a => a.caminho === c).titulo : 'Visão geral')}</b><span>NOX Peças · ${esc(nomeEmp)}</span>`;
     const usa = !!(c && info[c]?.empresa);
     const me = document.getElementById('menuEmpresa'); if (me) me.hidden = !usa;
-    document.title = (c ? abas.find(a => a.caminho === c).titulo : 'Início') + ' · NOX ERP';
+    document.title = (c ? abas.find(a => a.caminho === c).titulo : 'Visão geral') + ' · NOX ERP';
     desenharBarra(); guardar();
     if (c) iframeDe(c)?.contentWindow?.postMessage({ nox: 'ativa' }, location.origin);
+    else window.dispatchEvent(new CustomEvent('inicio-ativo'));
     barra.querySelector('.ativa')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   function abrir(caminho, titulo) {
