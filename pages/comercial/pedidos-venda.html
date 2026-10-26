@@ -6,7 +6,7 @@
 <title>Pedidos de venda · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261213">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261218">
 <style>
   .tot-ped { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 8px; }
   .tot-ped b { font-variant-numeric: tabular-nums; }
@@ -17,11 +17,11 @@
 <body data-modulo="pedidos" data-titulo="Pedidos de venda" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261213"></script>
-<script src="../../assets/js/ui.js?v=202610261213"></script>
-<script src="../../assets/js/auth.js?v=202610261213"></script>
-<script src="../../assets/js/layout.js?v=202610261213"></script>
-<script src="../../assets/js/cadastro.js?v=202610261213"></script>
+<script src="../../assets/js/supabase.js?v=202610261218"></script>
+<script src="../../assets/js/ui.js?v=202610261218"></script>
+<script src="../../assets/js/auth.js?v=202610261218"></script>
+<script src="../../assets/js/layout.js?v=202610261218"></script>
+<script src="../../assets/js/cadastro.js?v=202610261218"></script>
 <script>
 /* =====================================================================
    Pedidos de venda — uma lista só para marketplace e distribuidores
@@ -302,7 +302,7 @@ const cfg = {
     const [c, cl, p, ca, te, co, fo, it, en, ti, rc, pe, pei] = await Promise.all([
       buscarTodos(() => db.from('canais_venda').select('*').order('nome')),
       buscarTodos(() => db.from('clientes').select('id, nome, tipo_cliente, situacao, representante_id').order('nome')),
-      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao, aprovacao, unidade').in('tipo', ['acabado', 'kit', 'semiacabado']).order('descricao')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao, aprovacao, unidade').in('tipo', ['acabado', 'kit', 'semiacabado', 'componente']).order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('encargos_tipos').select('*').order('nome')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
