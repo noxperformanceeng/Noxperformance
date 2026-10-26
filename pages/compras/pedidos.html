@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261016">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261018">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261016"></script>
-<script src="../../assets/js/ui.js?v=202610261016"></script>
-<script src="../../assets/js/auth.js?v=202610261016"></script>
-<script src="../../assets/js/layout.js?v=202610261016"></script>
-<script src="../../assets/js/cadastro.js?v=202610261016"></script>
+<script src="../../assets/js/supabase.js?v=202610261018"></script>
+<script src="../../assets/js/ui.js?v=202610261018"></script>
+<script src="../../assets/js/auth.js?v=202610261018"></script>
+<script src="../../assets/js/layout.js?v=202610261018"></script>
+<script src="../../assets/js/cadastro.js?v=202610261018"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -502,6 +502,44 @@ function abrirEscala() {
 }
 
 /* ---------- Alertas (topo da tela) ---------- */
+/* ---------- Sugestão de compra (produtos abaixo do estoque mínimo) ---------- */
+let SUG = [];
+function abrirSugestao() {
+  const semInv = SUG.some(x => !x.inventariado);
+  const grupos = {}; SUG.forEach(x => (grupos[x.fornecedor_id || 0] ||= []).push(x));
+  const m = abrirModal(`<h2>Sugestão de compra</h2>
+    <p class="sub" style="margin:0 0 6px">Produtos com estoque abaixo do mínimo (cadastro do produto), já descontando o que está em pedido. Marque, ajuste a quantidade e gere os pedidos em rascunho — um por fornecedor.</p>
+    ${semInv ? '<div class="aviso-box">Estoque ainda <b>não apurado</b> (sem inventário) em parte dos itens: a sugestão considera saldo zero. A compra continua livre para qualquer produto.</div>' : ''}
+    ${!SUG.length ? '<p class="sub">Nenhum produto abaixo do mínimo. Para entrar aqui, o produto precisa ter <b>estoque mínimo</b> no cadastro.</p>' : `
+    <div class="campo" style="max-width:280px"><label>Empresa dos pedidos</label><select id="sgEmp" data-simples>${EMPRESAS.map(e => `<option value="${e.id}"${e.id === (CTX.empresa || EMPRESAS[0]?.id) ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div>
+    <div class="sub-ed" style="max-height:52vh;overflow:auto"><table><thead><tr><th></th><th>Produto</th><th class="num">Saldo</th><th class="num">Mínimo</th><th class="num">Em pedido</th><th>Comprar</th><th>Último preço</th></tr></thead><tbody>
+    ${Object.entries(grupos).map(([fid, ls]) => `<tr><td colspan="7" style="padding-top:8px"><b>${esc(forn(Number(fid))?.nome || 'Sem fornecedor definido')}</b></td></tr>
+      ${ls.map(x => `<tr data-p="${x.produto_id}" data-f="${fid}"><td><input type="checkbox" data-ok checked></td><td>${esc((x.codigo || '') + ' · ' + x.descricao)}${x.inventariado ? '' : ' <span class="tg alerta">não apurado</span>'}</td>
+        <td class="num">${num(x.saldo)} ${esc(x.unidade || '')}</td><td class="num">${num(x.minimo)}</td><td class="num">${num(x.em_pedido)}</td>
+        <td style="width:120px"><input data-q inputmode="decimal" value="${num(x.sugerido_compra)}"> <small>${esc(x.unidade_compra || '')}</small></td>
+        <td>${x.ultimo_preco ? `${reais(x.ultimo_preco)} <small class="sub">${esc(x.ultimo_pedido || '')} · ${dataCurta(x.ultima_compra)}</small>` : '<span class="sub">—</span>'}</td></tr>`).join('')}`).join('')}
+    </tbody></table></div>`}
+    <div class="acoes"><button class="btn" id="sgN">Fechar</button>${SUG.length ? '<button class="btn primario" id="sgS">Gerar pedidos em rascunho</button>' : ''}</div>`);
+  m.querySelector('.modal').style.maxWidth = '980px';
+  m.querySelector('#sgN').onclick = () => m.remove();
+  m.querySelector('#sgS')?.addEventListener('click', async () => {
+    const emp = Number(m.querySelector('#sgEmp').value), sel = [...m.querySelectorAll('tr[data-p]')].filter(tr => tr.querySelector('[data-ok]').checked)
+      .map(tr => ({ x: SUG.find(s => s.produto_id === Number(tr.dataset.p)), f: Number(tr.dataset.f), q: lerNumero(tr.querySelector('[data-q]').value) || 0 })).filter(i => i.q > 0);
+    if (!sel.length) return aviso('Marque ao menos um produto com quantidade', true);
+    if (sel.some(i => !i.f)) return aviso('Há produto sem fornecedor definido: desmarque-o ou crie o pedido manualmente', true);
+    m.querySelector('#sgS').disabled = true;
+    const porF = {}; sel.forEach(i => (porF[i.f] ||= []).push(i));
+    let n = 0; const erros = [];
+    for (const [fid, its] of Object.entries(porF)) {
+      const { error } = await db.rpc('pedido_compra_salvar', { p_pedido: { empresa_id: emp, fornecedor_id: Number(fid), observacoes_internas: 'Gerado pela sugestão de compra (abaixo do estoque mínimo)' },
+        p_itens: its.map(i => ({ produto_id: i.x.produto_id, descricao: i.x.descricao, unidade: i.x.unidade_compra, quantidade: i.q, valor_unitario: i.x.ultimo_preco || 0, categoria_financeira_id: i.x.categoria_financeira_id })) });
+      if (error) erros.push(`${forn(Number(fid))?.nome}: ${error.message}`); else n++;
+    }
+    aviso(`${n} pedido(s) em rascunho criado(s) — confira preços e envie para aprovação` + (erros.length ? ` · erro: ${erros.join(' | ')}` : ''), !!erros.length);
+    m.remove(); cfg.recarregar();
+  });
+}
+
 function desenharAlertas(linhas) {
   let box = document.getElementById('pcAlertas');
   if (!box) { const alvo = document.querySelector('#cAbas')?.closest('div')?.parentElement || document.querySelector('#conteudo'); box = document.createElement('div'); box.id = 'pcAlertas'; box.className = 'pc-alertas'; alvo.parentElement.insertBefore(box, alvo); }
@@ -509,6 +547,7 @@ function desenharAlertas(linhas) {
   const ls = linhas.filter(r => !emp || r.empresa_id === emp);
   const a = [
     { aba: 'minha', n: ls.filter(possoAprovar).length, t: 'aguardando a sua aprovação', cls: 'erro' },
+    { acao: 'sugestao', n: SUG.length, t: 'produto(s) abaixo do estoque mínimo · sugestão de compra', cls: 'alerta' },
     ...(possoLiberar() ? [{ aba: 'liberar', n: ls.filter(r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length).length, t: 'com item sem cadastro para liberar', cls: 'erro' }] : []),
     { aba: 'recusados', n: ls.filter(r => r.situacao === 'recusado').length, t: 'recusado(s) para ajustar', cls: 'erro' },
     { aba: 'aprovacao', n: ls.filter(r => r.situacao === 'em_aprovacao').length, t: 'em aprovação', cls: 'alerta' },
@@ -516,7 +555,13 @@ function desenharAlertas(linhas) {
     { aba: 'atrasados', n: ls.filter(r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hoje).length, t: 'com entrega atrasada', cls: 'erro' },
     { aba: 'receber', n: ls.filter(r => ['enviado', 'recebido_parcial'].includes(r.situacao)).length, t: 'aguardando entrega/NF', cls: 'info' }
   ].filter(x => x.n);
-  box.innerHTML = a.map(x => `<button type="button" class="${x.cls}" data-aba="${x.aba}"><b>${x.n}</b> ${esc(x.t)}</button>`).join('');
+  box.innerHTML = a.map(x => `<button type="button" class="${x.cls}" ${x.acao ? `data-acao="${x.acao}"` : `data-aba="${x.aba}"`}><b>${x.n}</b> ${esc(x.t)}</button>`).join('');
+  box.querySelector('[data-acao=sugestao]')?.addEventListener('click', abrirSugestao);
+  if (CTX.pode('compras', 'criar') && !document.getElementById('btnSugestao')) {
+    const novo = document.getElementById('cNovo'), b = document.createElement('button');
+    b.className = 'btn'; b.id = 'btnSugestao'; b.textContent = 'Sugestão de compra'; b.onclick = abrirSugestao;
+    (novo?.parentElement || box).insertBefore(b, novo || null);
+  }
   box.querySelectorAll('[data-aba]').forEach(b => b.onclick = () => document.querySelector(`#cAbas [data-v="${b.dataset.aba}"]`)?.click());
   if (CTX.admin && !document.getElementById('btnEscala')) {
     const novo = document.getElementById('cNovo'), b = document.createElement('button');
@@ -590,6 +635,7 @@ const cfg = {
       buscarTodos(() => db.from('produto_usinagem').select('produto_id, material, comprimento_mm, perda_mm, preco_servico, fornecedor_id'))
     ]);
     FICHAS = Object.fromEntries(fi.map(x => [x.produto_id, x]));
+    SUG = ctx.pode('compras', 'criar') ? ((await db.rpc('sugestao_compra')).data || []) : [];
     FORN = f; PRODS = p.filter(x => !['acabado', 'kit'].includes(x.tipo) || true); CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONDS = co; FORMAS = fo;
     CONTAS = cb.filter(x => x.tipo !== 'historico'); ALC = al; PF = pf; EMPRESAS = em.data || []; USU = (us.data || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); ACOES = new Set(ac.data || []);
     const itens = {}, eventos = {}, recebimentos = {}, titulos = {};
