@@ -513,6 +513,18 @@ function abrirProduto(p) {
         <span class="sub">PDF = desenho técnico · imagem = foto (a primeira vira a principal)</span></div>` : ''}
     </div>`}
 
+    ${novo ? '' : `<div id="blEstr">
+      <div class="secao">Componentes do conjunto <span style="text-transform:none;font-weight:400">· base da compra por conjunto</span></div>
+      <table class="lista-mini"><tbody id="estrLista"></tbody></table>
+      ${podeEditar ? `<div class="add-forn">
+        <div><label>Componente</label><input id="esComp" list="dlProd" placeholder="código ou descrição"></div>
+        <div><label>Quantidade</label><input id="esQtd" inputmode="decimal" value="1"></div>
+        <div><label>Observação</label><input id="esObs" placeholder="ex.: caixa, tampa, fixação"></div>
+        <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="esOpc"> Opcional</label>
+        <button class="btn" type="button" id="esAdd">Adicionar</button></div><datalist id="dlProd"></datalist>` : ''}
+      <div id="estrUsado" class="sub" style="margin-top:6px"></div>
+    </div>`}
+
     <div class="secao">Estoque</div>
     <div class="grade-campos">
       <div class="campo"><label>Unidade de compra</label><select id="pUnC" ${ro}><option value="">Igual à de estoque</option>${unidades.map(u => `<option${u === p.unidade_compra ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
@@ -656,6 +668,59 @@ function abrirProduto(p) {
       aviso('Arquivos anexados'); carregarArq(true);
     };
     carregarArq();
+  }
+
+  /* ---------- Componentes do conjunto (produto_estrutura) ---------- */
+  if (!novo) {
+    const estr = { lista: [] };
+    const pr = id => produtos.find(x => x.id === id);
+    const descr = x => `${x.codigo || 'SEM CÓDIGO'} · ${x.descricao}`;
+    const irPara = id => { const x = pr(id); if (!x) return aviso('Produto não está nesta lista', true); m.remove(); abrirProduto(x); };
+    const carregarEstr = async () => {
+      const [a, b] = await Promise.all([
+        db.from('produto_estrutura').select('*').eq('produto_id', p.id).order('ordem').order('id'),
+        db.from('produto_estrutura').select('produto_id, quantidade, opcional').eq('componente_id', p.id).eq('ativo', true)]);
+      if (a.error) return aviso('Componentes: ' + a.error.message, true);
+      estr.lista = a.data || [];
+      $('#estrLista').innerHTML = estr.lista.length ? estr.lista.map(e => { const c = pr(e.componente_id); return `<tr${e.ativo ? '' : ' style="opacity:.5"'}>
+        <td><a href="#" data-ir="${e.componente_id}" style="color:var(--destaque)">${esc(c ? descr(c) : 'produto #' + e.componente_id)}</a>${e.opcional ? ' <span class="tg neutro">opcional</span>' : ''}${e.ativo ? '' : ' <span class="tg neutro">inativo</span>'}${c && c.situacao !== 'ativo' ? ' <span class="tg alerta">componente inativo</span>' : ''}</td>
+        <td style="text-align:right;white-space:nowrap"><b>${fmtN(e.quantidade)}</b> ${esc(c?.unidade || '')}</td>
+        <td style="color:var(--texto-suave)">${esc(e.observacao || '')}</td>
+        <td style="text-align:right;white-space:nowrap">${podeEditar ? `<button class="btn discreto" data-esqtd="${e.id}">quantidade</button><button class="btn discreto" data-esat="${e.id}">${e.ativo ? 'inativar' : 'reativar'}</button>` : ''}</td></tr>`; }).join('')
+        : '<tr><td class="sub" style="padding:6px 0">Sem componentes. Em conjuntos (defletor, kit, intake), liste aqui as peças e quantidades.</td></tr>';
+      const us = b.data || [];
+      $('#estrUsado').innerHTML = us.length ? 'Usado em: ' + us.map(u => { const c = pr(u.produto_id);
+        return `<a href="#" data-ir="${u.produto_id}" style="color:var(--destaque)">${esc(c ? (c.codigo || c.descricao) : '#' + u.produto_id)}</a> (${fmtN(u.quantidade)}${u.opcional ? ', opcional' : ''})`; }).join(' · ') : '';
+    };
+    m.querySelector('#blEstr').addEventListener('click', async e => {
+      const ir = e.target.closest('[data-ir]'), q = e.target.closest('[data-esqtd]'), at = e.target.closest('[data-esat]');
+      if (ir) { e.preventDefault(); return irPara(Number(ir.dataset.ir)); }
+      const linha = estr.lista.find(x => x.id == (q || at)?.dataset[q ? 'esqtd' : 'esat']); if (!linha) return;
+      let mud;
+      if (q) { const v = prompt('Quantidade:', String(linha.quantidade).replace('.', ',')); if (v === null) return;
+        const n = lerNumero(v); if (!(n > 0)) return aviso('Quantidade inválida', true); mud = { quantidade: n }; }
+      else mud = { ativo: !linha.ativo };
+      const { error } = await db.from('produto_estrutura').update(mud).eq('id', linha.id);
+      if (error) return aviso('Não salvou: ' + error.message, true); carregarEstr();
+    });
+    if (podeEditar) {
+      $('#dlProd').innerHTML = produtos.filter(x => x.id !== p.id && x.situacao === 'ativo').map(x => `<option value="${esc(descr(x))}">`).join('');
+      $('#esAdd').onclick = async () => {
+        const v = $('#esComp').value.trim(); if (!v) return aviso('Informe o componente', true);
+        const c = produtos.find(x => descr(x) === v) || produtos.find(x => (x.codigo || '').toUpperCase() === v.toUpperCase());
+        if (!c) return aviso('Componente não encontrado no cadastro', true);
+        if (c.id === p.id) return aviso('O produto não pode ser componente dele mesmo', true);
+        const n = lerNumero($('#esQtd').value); if (!(n > 0)) return aviso('Quantidade inválida', true);
+        const opc = $('#esOpc').checked, obs = $('#esObs').value.trim().toUpperCase() || null;
+        const ja = estr.lista.find(x => x.componente_id === c.id && x.opcional === opc);
+        const { error } = ja ? await db.from('produto_estrutura').update({ quantidade: n, ativo: true, observacao: obs ?? ja.observacao }).eq('id', ja.id)
+          : await db.from('produto_estrutura').insert({ produto_id: p.id, componente_id: c.id, quantidade: n, opcional: opc, observacao: obs,
+              ordem: Math.max(0, ...estr.lista.map(x => x.ordem)) + 1 });
+        if (error) return aviso('Não salvou: ' + error.message, true);
+        $('#esComp').value = ''; $('#esQtd').value = '1'; $('#esObs').value = ''; $('#esOpc').checked = false; carregarEstr();
+      };
+    }
+    carregarEstr();
   }
 
   const desenharForn = () => {
