@@ -119,7 +119,7 @@ async function iniciarTela() {
 
   let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span><b>NOX</b><small>Sistema de gestão</small></span></a>
     <a class="item${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html">Início</a>
-    <a class="item item-aprov" id="itemAprov" href="${RAIZ}pages/config/aprovacoes.html" hidden>Aprovações pendentes <span class="n-aprov" id="nAprov"></span></a>`;
+    <a class="item item-aprov" id="itemAprov" href="${RAIZ}pages/config/aprovacoes.html" hidden>Aprovações pendentes <span class="n-aprov" id="nAprov"></span><span class="av-aprov pisca" id="avAprov" hidden>!</span></a>`;
 
   MENU.forEach(g => {
     // Só o que a pessoa pode abrir: tela liberada no perfil/usuário (e a tela que o item exige, quando houver).
@@ -161,9 +161,12 @@ async function iniciarTela() {
   document.body.prepend(app);
   // Aprovações pendentes: contador no menu (atualiza a cada 2 min)
   const contarAprov = async () => {
-    const { data } = await db.rpc('minhas_aprovacoes'); const n = (data || []).reduce((t, g) => t + (g.itens || []).length, 0);
-    const it = document.getElementById('itemAprov'), b = document.getElementById('nAprov'); if (!it) return;
-    it.hidden = !n && !ctx.admin; b.textContent = n || ''; b.hidden = !n;
+    const { data } = await db.rpc('minhas_aprovacoes');
+    const n = (data || []).filter(g => !g.aviso).reduce((t, g) => t + (g.itens || []).length, 0);   // decidir + devolvidos
+    const av = (data || []).filter(g => g.aviso).reduce((t, g) => t + (g.itens || []).length, 0);    // só aviso
+    const it = document.getElementById('itemAprov'), b = document.getElementById('nAprov'), d = document.getElementById('avAprov'); if (!it) return;
+    it.hidden = !n && !av && !ctx.admin; b.textContent = n || ''; b.hidden = !n; b.classList.toggle('pisca', !!n);
+    if (d) { d.hidden = !av; d.title = av + ' aviso(s) de pendência'; }
   };
   contarAprov(); setInterval(contarAprov, 120000); window.addEventListener('nox:aprovacoes', contarAprov);
   // Menu lateral recolhível (lembra a escolha)

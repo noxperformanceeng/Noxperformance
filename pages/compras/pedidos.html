@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261131">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261143">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261131"></script>
-<script src="../../assets/js/ui.js?v=202610261131"></script>
-<script src="../../assets/js/auth.js?v=202610261131"></script>
-<script src="../../assets/js/layout.js?v=202610261131"></script>
-<script src="../../assets/js/cadastro.js?v=202610261131"></script>
+<script src="../../assets/js/supabase.js?v=202610261143"></script>
+<script src="../../assets/js/ui.js?v=202610261143"></script>
+<script src="../../assets/js/auth.js?v=202610261143"></script>
+<script src="../../assets/js/layout.js?v=202610261143"></script>
+<script src="../../assets/js/cadastro.js?v=202610261143"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -230,10 +230,20 @@ function aoEscolherProduto(tr) {
 }
 
 /* ---------- Painel do pedido: etapas, ações, financeiro, linha do tempo ---------- */
+// O que falta no pedido (vem do banco: mesma regra que trava o "Enviar para aprovação")
+async function mostrarPendencias(m, r) {
+  const { data } = await db.rpc('pc_pendencias', { p_id: r.id }); const ls = data || [], box = m.querySelector('#pcPend'), et = m.querySelector('#etDados');
+  if (et && EDITAVEL.includes(r.situacao)) { et.className = ls.some(x => x.bloqueia) ? 'erro' : 'ok'; et.textContent = ls.some(x => x.bloqueia) ? `Dados completos · falta ${ls.filter(x => x.bloqueia).length}` : 'Dados completos ✓'; }
+  if (!box || !ls.length || FINAL.includes(r.situacao)) return;
+  box.innerHTML = `<div class="aviso-box ${ls.some(x => x.bloqueia) ? 'erro pisca-borda' : ''}" style="margin-top:8px"><b>⚠ Pendências deste pedido</b>${ls.some(x => x.bloqueia) && EDITAVEL.includes(r.situacao) ? ' — o rascunho fica salvo; resolva as marcadas com ● para enviar à aprovação' : ''}
+    <ul style="margin:4px 0 0 18px;padding:0">${ls.map(x => `<li>${x.bloqueia ? '● ' : ''}${esc(x.texto)}</li>`).join('')}</ul></div>`;
+}
+
 function secaoPedido(r) {
   if (!r.id) return '';
   const s = r.situacao, n = nivelAtual(r), aprov = (r.niveis_aprovados || []);
   const etapas = [`<span class="${s === 'rascunho' ? 'agora' : 'ok'}">Rascunho</span>`];
+  if (r.origem !== 'tiny') etapas.push(`<span id="etDados" class="${EDITAVEL.includes(s) ? '' : 'ok'}">Dados completos${EDITAVEL.includes(s) ? '' : ' ✓'}</span>`);
   if (s === 'recusado') etapas.push('<span class="erro">Recusado: ajustar e reenviar</span>');
   (r.niveis_exigidos || []).forEach(nv => etapas.push(`<span class="${aprov.includes(nv) ? 'ok' : nv === n && s === 'em_aprovacao' ? 'agora' : ''}">${esc(nomeNivel(r, nv))}${aprov.includes(nv) ? ' ✓' : ''}</span>`));
   if (!(r.niveis_exigidos || []).length && s !== 'recusado') etapas.push('<span>Aprovação</span>');
@@ -266,7 +276,7 @@ function secaoPedido(r) {
   if (pend.length && EDITAVEL.includes(s)) avisos.push(`<div class="aviso-box erro"><b>Item sem cadastro:</b> ${esc(pend.map(i => i.descricao).join(', '))}. Cadastre o produto e escolha-o no item, ou peça liberação ao administrador (compra ocasional, ex.: manutenção). Sem isso o pedido não vai para aprovação.</div>`);
   else if (r.liberacao_avulso && (ex.itens[r.id] || []).some(i => !i.produto_id)) avisos.push(`<div class="aviso-box">Item sem cadastro <b>liberado</b> por ${esc(usu(r.liberacao_avulso.por) || 'administrador')} em ${dataHoraBR(r.liberacao_avulso.em)} · ${esc(r.liberacao_avulso.motivo || '')}</div>`);
   return `<div class="secao">Andamento</div>
-    <div class="fluxo-pc">${etapas.join('<i>›</i>')}</div>${avisos.join('')}
+    <div class="fluxo-pc">${etapas.join('<i>›</i>')}</div><div id="pcPend"></div>${avisos.join('')}
     <div class="acoes-pc">${acoes.join('')}</div>
     <div class="secao">Contas a pagar</div>
     ${tits.length ? `<table class="lista-mini"><thead><tr><th>Documento</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Situação</th></tr></thead><tbody>
@@ -589,6 +599,7 @@ const cfg = {
     { v: 'aprovacao', n: 'Em aprovação', teste: r => r.situacao === 'em_aprovacao' },
     { v: 'liberar', n: 'Item sem cadastro', teste: r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length > 0 },
     { v: 'recusados', n: 'Recusados', teste: r => r.situacao === 'recusado' },
+    { v: 'pendencia', n: '⚠ Com pendência', teste: r => !FINAL.includes(r.situacao) && r.origem !== 'tiny' && [...(r._pend || [])].some(x => x !== 'nao_revisado') },
     { v: 'enviar', n: 'Para enviar', teste: r => r.situacao === 'aprovado' },
     { v: 'receber', n: 'Aguardando entrega', teste: r => ['enviado', 'recebido_parcial'].includes(r.situacao) },
     { v: 'atrasados', n: 'Atrasados', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
@@ -673,11 +684,14 @@ const cfg = {
     { id: 'sem_itens', nome: 'Sem itens', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !(e.itens[r.id] || []).length },
     { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
     { id: 'nao_enviado', nome: 'Aprovado sem envio', cor: 'alerta', teste: r => r.situacao === 'aprovado' },
-    { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista }
+    { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista && r.origem !== 'tiny' },
+    { id: 'sem_cond', nome: 'Sem condição de pagamento', cor: 'alerta', teste: r => !FINAL.includes(r.situacao) && !r.condicao_pagamento_id && r.origem !== 'tiny' },
+    { id: 'prod_sem_cat', nome: 'Produto sem categoria no cadastro', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => i.produto_id && !prod(i.produto_id)?.categoria_financeira_id && !i.uso_consumo) }
   ],
   apagado: r => r.situacao === 'cancelado',
   aoAbrir(m, r, ctx) {
     modalAtual = m; sujo = false;
+    if (r.id && r.origem !== 'tiny') mostrarPendencias(m, r);
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
     const box = document.createElement('div');
@@ -721,7 +735,6 @@ const cfg = {
     if (itens.some(i => !(i.quantidade > 0))) return 'Item com quantidade zerada';
     if (itens.some(i => !i.produto_id && !i.descricao)) return 'Item sem cadastro precisa de descrição';
     if (itens.some(i => i.tipo_item === 'servico_usinagem' && !i.produto_id)) return 'Serviço de usinagem: escolha a peça que volta usinada';
-    if (itens.some(i => !i.categoria_financeira_id)) return 'Escolha a categoria financeira de cada item (vai para o contas a pagar)';
     const c = CONTAS.find(x => x.id === d.conta_bancaria_id); if (c && c.empresa_id !== d.empresa_id) return 'A conta prevista é de outra empresa';
     return null;
   },
@@ -730,6 +743,7 @@ const cfg = {
     const { data, error } = await db.rpc('pedido_compra_salvar', { p_pedido: { ...dados, id: novo ? null : r.id }, p_itens: editavel ? lerItens() : null });
     if (error) throw error;
     sujo = false;
+    if (editavel && lerItens().some(i => !i.categoria_financeira_id)) setTimeout(() => aviso('Rascunho salvo com pendência: item sem categoria financeira (precisa antes de enviar para aprovação)', true), 600);
     return data;
   },
   // Voltou do "+ cadastrar": refaz a lista de produtos de cada item sem perder o que foi escolhido

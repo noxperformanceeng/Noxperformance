@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261131">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261143">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -26,11 +26,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261131"></script>
-<script src="../../assets/js/ui.js?v=202610261131"></script>
-<script src="../../assets/js/auth.js?v=202610261131"></script>
-<script src="../../assets/js/layout.js?v=202610261131"></script>
-<script src="../../assets/js/cadastro.js?v=202610261131"></script>
+<script src="../../assets/js/supabase.js?v=202610261143"></script>
+<script src="../../assets/js/ui.js?v=202610261143"></script>
+<script src="../../assets/js/auth.js?v=202610261143"></script>
+<script src="../../assets/js/layout.js?v=202610261143"></script>
+<script src="../../assets/js/cadastro.js?v=202610261143"></script>
+<script src="../../assets/js/comprovante.js?v=202610261143"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -130,7 +131,7 @@ function htmlPagamentos(r) {
       <div class="l2"><label>Conta</label><select id="pgConta">${contasEmp.map(c => `<option value="${c.id}"${c.id === r.conta_bancaria_id ? ' selected' : ''}>${esc(c.descricao)}</option>`).join('')}</select></div>
       <div><label>Forma</label><select id="pgForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}"${f.id === r.forma_pagamento_id ? ' selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
       <div><label>Identificador / autenticação</label><input id="pgIdent"></div>
-      <div class="l2"><label>Comprovante (opcional)</label><input type="file" id="pgComp" accept="application/pdf,image/*" multiple></div>
+      <div class="l2"><label>Comprovante * (PDF ou foto — o sistema confere fornecedor, valor e data)</label><input type="file" id="pgComp" accept="application/pdf,image/*"></div>
       <div class="acao" style="grid-column: span 2; justify-content:flex-end"><button type="button" class="btn primario" id="pgRegistrar">Registrar pagamento</button></div>
     </div>` : ''}`;
 }
@@ -148,7 +149,7 @@ function htmlAnexos(r) {
     ${podeAnexar ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><select id="anCat" data-simples style="width:auto">${Object.entries(CAT_ANEXO).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select>
       <label class="btn fino" style="cursor:pointer">+ Anexar arquivo<input type="file" id="anArq" multiple accept="application/pdf,image/*,.xml" hidden></label><small class="sub">PDF ou imagem, até 15 MB</small></div>` : ''}`;
 }
-async function anexarArquivos(r, arquivos, categoria, pagamentoId) {
+async function anexarArquivos(r, arquivos, categoria, pagamentoId, conferencia) {
   let n = 0;
   for (const f of arquivos) {
     if (f.size > 15 * 1024 * 1024) { aviso(f.name + ': maior que 15 MB', true); continue; }
@@ -156,7 +157,7 @@ async function anexarArquivos(r, arquivos, categoria, pagamentoId) {
     const caminho = `pagar/${r.empresa_id}/${r.id}/${Date.now()}_${limpo}`;
     const up = await db.storage.from('financeiro').upload(caminho, f, { contentType: f.type || undefined });
     if (up.error) { aviso(f.name + ': ' + up.error.message, true); continue; }
-    const { error } = await db.from('titulos_anexos').insert({ tipo: 'pagar', titulo_id: r.id, pagamento_id: pagamentoId || null, categoria, nome: f.name, caminho, mime: f.type || null, tamanho: f.size });
+    const { error } = await db.from('titulos_anexos').insert({ tipo: 'pagar', titulo_id: r.id, pagamento_id: pagamentoId || null, categoria, nome: f.name, caminho, mime: f.type || null, tamanho: f.size, conferencia: conferencia || null });
     if (error) { aviso(f.name + ': ' + error.message, true); continue; }
     n++;
   }
@@ -203,12 +204,41 @@ async function registrarPagamento(r) {
     if (e1) return aviso('Não gravou a categoria: ' + e1.message, true);
     r.categoria_financeira_id = cat;
   }
+  // Comprovante obrigatório, conferido automaticamente (fornecedor, valor e data)
+  const comp = [...(q('#pgComp')?.files || [])];
+  if (!comp.length) return aviso('Anexe o comprovante do pagamento (obrigatório)', true);
+  const forn = FORN.find(f => f.v === r.fornecedor_id);
+  const conf = await conferirComTela(comp[0], { valor: p.valor + p.juros - p.desconto, data: p.data_pagamento, nome: forn?.n || r.origem_ref?.fornecedor_tiny || '', doc: forn?.doc });
+  if (!conf) return;
+  if (conf.justificativa) p.observacoes = 'Comprovante com divergência: ' + conf.justificativa;
   const { data: pg, error } = await db.from('pagamentos').insert(p).select('id').single();
   if (error) return aviso('Não salvou: ' + error.message, true);
-  const comp = [...(q('#pgComp')?.files || [])];
-  if (comp.length) await anexarArquivos(r, comp, 'comprovante', pg?.id);
-  aviso((p.valor >= Number(r.saldo) - 0.005 ? 'Título quitado' : 'Pagamento parcial registrado') + (comp.length ? ' · comprovante anexado' : ''));
+  await anexarArquivos(r, comp, 'comprovante', pg?.id, conf);
+  aviso((p.valor >= Number(r.saldo) - 0.005 ? 'Título quitado' : 'Pagamento parcial registrado') + ' · comprovante anexado' + (conf.justificativa ? ' (com justificativa)' : ''));
   modalAtual.remove(); cfg.recarregar();
+}
+
+// Lê o comprovante, mostra o que bateu e o que não bateu; divergência só segue com justificativa
+async function conferirComTela(arquivo, esperado) {
+  const m = abrirModal(`<h2>Conferindo o comprovante…</h2><p class="sub" id="cfSt">Lendo ${esc(arquivo.name)} (pode levar alguns segundos em foto)</p>`);
+  let itens, texto = '';
+  try { texto = await lerComprovante(arquivo); itens = conferirComprovante(texto, esperado); }
+  catch (e) { itens = [{ item: 'Leitura', ok: false, detalhe: 'Não consegui ler o arquivo: ' + (e.message || e) }]; }
+  const tudo = itens.every(x => x.ok), br = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return new Promise(res => {
+    m.querySelector('.modal').innerHTML = `<h2>${tudo ? '✓ Comprovante confere' : '⚠ Comprovante com divergência'}</h2>
+      <p class="sub" style="margin:0 0 8px">Esperado: ${esc(esperado.nome || '?')} · ${br(esperado.valor)} · ${String(esperado.data).split('-').reverse().join('/')}</p>
+      <ul class="checagem">${itens.map(x => `<li class="${x.ok ? 'ok' : 'erro'}"><b>${esc(x.item)}:</b> ${esc(x.detalhe)}</li>`).join('')}</ul>
+      ${tudo ? '' : `<div class="campo"><label>Justificativa para registrar mesmo assim *</label><textarea id="cfJ" rows="2" placeholder="ex.: pago pelo app com o nome fantasia; valor com juros do banco"></textarea></div>`}
+      ${texto ? `<details style="margin-top:6px"><summary class="sub">Texto lido do comprovante</summary><pre style="font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto">${esc(texto.slice(0, 3000))}</pre></details>` : ''}
+      <div class="acoes"><button class="btn" id="cfN">Voltar</button><button class="btn primario" id="cfS">${tudo ? 'Registrar pagamento' : 'Registrar com justificativa'}</button></div>`;
+    m.querySelector('#cfN').onclick = () => { m.remove(); res(null); };
+    m.querySelector('#cfS').onclick = () => {
+      const j = m.querySelector('#cfJ')?.value.trim();
+      if (!tudo && !j) return aviso('Escreva a justificativa da divergência', true);
+      m.remove(); res({ ok: tudo, itens, justificativa: tudo ? null : j, lido_em: new Date().toISOString() });
+    };
+  });
 }
 
 /* ---------- Janelinha para ações em lote ---------- */
@@ -273,7 +303,7 @@ const cfg = {
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx;
     const [f, c, cb, fp, pg, ra, an] = await Promise.all([
-      buscarTodos(() => db.from('fornecedores').select('id, nome, situacao').order('nome')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, situacao, cnpj').order('nome')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, aplica_produtos, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, exige_codigo, situacao').order('nome')),
@@ -282,7 +312,7 @@ const cfg = {
       buscarTodos(() => db.from('titulos_anexos').select('*').eq('tipo', 'pagar').order('id'))
     ]);
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
-    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: x.nome }));
+    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: x.nome, doc: x.cnpj }));
     CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' }));
     CONTAS = cb; FORMAS = fp.filter(x => x.situacao === 'ativo');
     const pagamentos = {}, rateio = {};
@@ -419,12 +449,19 @@ const cfg = {
             <div><label>Data do pagamento</label><input type="date" id="jData" value="${hoje()}"></div>
             <div><label>Conta</label><select id="jConta">${CONTAS.filter(c => c.empresa_id === emp[0] && c.situacao === 'ativo' && c.tipo !== 'historico').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
             <div><label>Forma</label><select id="jForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</select></div></div>
+            <div style="margin-top:8px"><label>Comprovante * (um arquivo para o lote: o valor conferido é o total)</label><input type="file" id="jComp" accept="application/pdf,image/*"></div>
             <p class="sub" style="margin:0">Cada título é baixado pelo saldo, sem juros/desconto. Para juros ou pagamento parcial, abra o título.</p>`, 'Registrar pagamentos', async m => {
           const data = m.querySelector('#jData').value, contaId = Number(m.querySelector('#jConta').value), formaId = Number(m.querySelector('#jForma').value) || null;
           if (!data || !contaId) { aviso('Informe data e conta', true); return false; }
-          const { error } = await db.from('pagamentos').insert(abertos.map(r => ({ titulo_id: r.id, data_pagamento: data, valor: Number(r.saldo), conta_bancaria_id: contaId, forma_pagamento_id: formaId })));
+          const arq = m.querySelector('#jComp').files[0]; if (!arq) { aviso('Anexe o comprovante (obrigatório)', true); return false; }
+          const fs = [...new Set(abertos.map(r => r.fornecedor_id))], f1 = fs.length === 1 ? FORN.find(f => f.v === fs[0]) : null;
+          const conf = await conferirComTela(arq, { valor: total, data, nome: f1?.n || '', doc: f1?.doc });
+          if (!conf) return false;
+          const { data: pgs, error } = await db.from('pagamentos').insert(abertos.map(r => ({ titulo_id: r.id, data_pagamento: data, valor: Number(r.saldo), conta_bancaria_id: contaId,
+            forma_pagamento_id: formaId, observacoes: conf.justificativa ? 'Comprovante com divergência: ' + conf.justificativa : 'Pago em lote com ' + abertos.length + ' título(s)' }))).select('id, titulo_id');
           if (error) { aviso('Não salvou: ' + error.message, true); return false; }
-          aviso(`${abertos.length} pagamento(s) registrado(s)`); pronto();
+          for (const r of abertos) await anexarArquivos(r, [arq], 'comprovante', (pgs || []).find(x => x.titulo_id === r.id)?.id, conf);
+          aviso(`${abertos.length} pagamento(s) registrado(s) · comprovante anexado`); pronto();
         });
       } },
     { nome: 'Cancelar título', executar: (sel, pronto) => {

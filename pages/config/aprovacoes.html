@@ -6,60 +6,203 @@
 <title>Aprovações pendentes · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261131">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261143">
 <style>
-  .apv-resumo { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
-  .apv-resumo a { text-decoration: none; color: inherit; background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
-  .apv-resumo a b { font-size: 18px; margin-right: 6px; color: var(--erro); }
-  .apv-resumo a.zero b { color: var(--texto-suave); }
-  .apv-grupo { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; margin: 0 0 12px; overflow: hidden; }
-  .apv-grupo h3 { margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid var(--linha); display: flex; gap: 8px; align-items: center; }
-  .apv-grupo h3 .n { background: var(--erro); color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
-  .apv-linha { display: grid; grid-template-columns: 1fr 110px 120px auto; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--linha); font-size: 13px; }
-  .apv-linha:last-child { border-bottom: 0; }
-  .apv-linha .data { color: var(--texto-suave); }
-  .apv-linha .valor { text-align: right; font-variant-numeric: tabular-nums; }
-  .apv-linha .bts { display: flex; gap: 6px; justify-content: flex-end; }
-  .apv-vazio { padding: 28px; text-align: center; color: var(--texto-suave); }
-  @media (max-width: 700px) { .apv-linha { grid-template-columns: 1fr; } .apv-linha .valor, .apv-linha .bts { text-align: left; justify-content: flex-start; } }
+  .apv-topo { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 0 0 12px; }
+  .apv-topo .campo { margin: 0; } .apv-topo label { font-size: 11px; color: var(--texto-suave); display: block; }
+  .apv-topo input[type=date] { width: 140px; }
+  .apv-preset { display: flex; gap: 4px; } .apv-preset button { font-size: 12px; padding: 5px 9px; }
+  .apv-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 0 0 14px; }
+  .apv-card { background: var(--superficie); border: 1px solid var(--linha); border-radius: 12px; padding: 12px 14px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+  .apv-card .n { font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .apv-card .t { font-size: 12.5px; color: var(--texto-suave); } .apv-card .v { font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .apv-card.decidir.tem { border-color: var(--erro); } .apv-card.decidir.tem .n { color: var(--erro); }
+  .apv-card.devolvido.tem { border-color: #b45309; } .apv-card.devolvido.tem .n { color: #b45309; }
+  .apv-card.avs.tem .n { color: #b45309; }
+  .apv-card.ativo { box-shadow: 0 0 0 2px var(--destaque) inset; }
+  .piscar { animation: piscar 1.4s ease-in-out infinite; }
+  @keyframes piscar { 0%, 100% { box-shadow: 0 0 0 0 rgba(192, 38, 38, .45); } 50% { box-shadow: 0 0 0 7px rgba(192, 38, 38, 0); } }
+  .apv-area { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-suave); margin: 14px 0 6px; }
+  .apv-grupo { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; margin: 0 0 10px; overflow: hidden; }
+  .apv-grupo > header { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--linha); flex-wrap: wrap; }
+  .apv-grupo > header h3 { margin: 0; font-size: 14px; } .apv-grupo > header .soma { color: var(--texto-suave); font-size: 12.5px; }
+  .apv-grupo > header .bts { margin-left: auto; display: flex; gap: 6px; }
+  .apv-grupo.avs > header { background: #fff7ed; } .apv-grupo.devolvido > header { background: #fff4e5; }
+  .apv-tab { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .apv-tab td, .apv-tab th { padding: 7px 10px; border-bottom: 1px solid var(--linha); text-align: left; vertical-align: middle; }
+  .apv-tab th { font-size: 11.5px; color: var(--texto-suave); font-weight: 600; }
+  .apv-tab tr:last-child td { border-bottom: 0; }
+  .apv-tab .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .apv-tab .sub2 { color: var(--texto-suave); font-size: 12px; }
+  .apv-tab .bts { display: flex; gap: 5px; justify-content: flex-end; white-space: nowrap; }
+  .apv-grupo .apv-tab { table-layout: fixed; } .apv-tab .col-quem { width: 130px; } .apv-tab .col-data { width: 95px; } .apv-tab td.num { width: 115px; } .apv-tab td.bts { width: 250px; }
+  .apv-tab td { overflow: hidden; text-overflow: ellipsis; }
+  .apv-tab tr.marcado td { background: #f3f7ff; }
+  .apv-vazio { padding: 26px; text-align: center; color: var(--texto-suave); }
+  .tg.aprovado { background: #e8f5ec; color: var(--ok); } .tg.recusado { background: #fdeceb; color: var(--erro); }
+  @media (max-width: 760px) { .apv-tab .col-quem, .apv-tab .col-data { display: none; } }
 </style>
 </head>
 <body data-titulo="Aprovações pendentes">
-<main id="conteudo"><div class="cab-tela"><div><h1>Aprovações pendentes</h1>
-  <p class="sub">Tudo o que está esperando uma decisão sua. Clique para abrir e decidir.</p></div>
-  <button class="btn" id="btnAtualizar">Atualizar</button></div>
-  <div class="apv-resumo" id="resumo"></div><div id="lista"><div class="apv-vazio">Carregando…</div></div></main>
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Aprovações pendentes</h1>
+    <p class="sub">Decida aqui mesmo, um a um ou marcando vários. O que foi recusado volta para quem criou ajustar e reenviar.</p></div>
+    <button class="btn" id="btnAtualizar">Atualizar</button></div>
+  <div class="apv-topo">
+    <div class="campo"><label>De</label><input type="date" id="fDe"></div>
+    <div class="campo"><label>Até</label><input type="date" id="fAte"></div>
+    <div class="apv-preset"><button class="btn fino" data-p="7">7 dias</button><button class="btn fino" data-p="30">30 dias</button><button class="btn fino" data-p="90">90 dias</button><button class="btn fino" data-p="0">Tudo</button></div>
+    <div class="campo" style="flex:1;min-width:200px"><label>Buscar</label><input id="fBusca" class="busca" type="search" placeholder="pedido, fornecedor, funcionário, produto…" data-livre></div>
+  </div>
+  <div class="apv-cards" id="cards"></div>
+  <div class="abas" id="abas" style="margin-bottom:10px"></div>
+  <div id="lista"><div class="apv-vazio">Carregando…</div></div>
+</main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261131"></script>
-<script src="../../assets/js/ui.js?v=202610261131"></script>
-<script src="../../assets/js/auth.js?v=202610261131"></script>
-<script src="../../assets/js/layout.js?v=202610261131"></script>
+<script src="../../assets/js/supabase.js?v=202610261143"></script>
+<script src="../../assets/js/ui.js?v=202610261143"></script>
+<script src="../../assets/js/auth.js?v=202610261143"></script>
+<script src="../../assets/js/layout.js?v=202610261143"></script>
 <script>
-/* Central do master: pedidos de compra na vez de quem está logado, itens sem cadastro para liberar,
-   NF sem pedido de compra, produtos e categorias financeiras novas e vale-transporte aguardando aprovação. */
-const reais = v => v == null ? '' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-let CTX = null;
-async function carregar() {
-  const { data, error } = await db.rpc('minhas_aprovacoes');
-  if (error) { document.getElementById('lista').innerHTML = `<div class="apv-vazio">Erro: ${esc(error.message)}</div>`; return; }
-  const gs = data || [], total = gs.reduce((s, g) => s + g.itens.length, 0);
-  document.getElementById('resumo').innerHTML = gs.map(g => `<a href="#g-${g.tipo}" class="${g.itens.length ? '' : 'zero'}"><b>${g.itens.length}</b>${esc(g.titulo)}</a>`).join('');
-  document.getElementById('lista').innerHTML = !total ? '<div class="apv-vazio">Nada pendente para você agora. ✓</div>' : gs.filter(g => g.itens.length).map(g => `
-    <div class="apv-grupo" id="g-${g.tipo}"><h3>${esc(g.titulo)} <span class="n">${g.itens.length}</span></h3>
-      ${g.itens.map(i => `<div class="apv-linha"><div>${esc(i.texto)}</div><div class="data">${dataCurta(i.data)}</div><div class="valor">${reais(i.valor)}</div>
-        <div class="bts">${g.aprovar_aqui ? `<button class="btn fino primario" data-tipo="${g.tipo}" data-aprovar="${i.id}">Aprovar</button><button class="btn fino" data-tipo="${g.tipo}" data-recusar="${i.id}">Recusar…</button>` : ''}
-          <a class="btn fino${g.aprovar_aqui ? '' : ' primario'}" href="${RAIZ}${esc(i.link)}">Abrir ›</a></div></div>`).join('')}</div>`).join('');
-  document.querySelectorAll('[data-aprovar],[data-recusar]').forEach(b => b.onclick = async () => {
-    const aprovar = !!b.dataset.aprovar, id = Number(b.dataset.aprovar || b.dataset.recusar);
-    let motivo = null; if (!aprovar) { motivo = prompt('Motivo da recusa:'); if (!motivo) return; }
-    const cat = b.dataset.tipo === 'categoria_nova';
-    const { error } = await db.rpc(cat ? 'categoria_aprovar' : 'produto_aprovar', { p_ids: [id], p_aprovar: aprovar, p_motivo: motivo });
-    if (error) return aviso('Não salvou: ' + error.message, true);
-    aviso((cat ? 'Categoria ' : 'Cadastro ') + (aprovar ? 'aprovado' : 'recusado')); carregar();
-  });
+/* Central de aprovações do master (e de quem tem algo a decidir):
+   - Para decidir: agrupado por área (Compras, Financeiro, Cadastros, RH), com aprovação em lote ou individual.
+   - Devolvidos: o que foi recusado e voltou para a pessoa ajustar e reenviar.
+   - Avisos: pendências que não precisam de aprovação, mas travam o processo (ex.: pedido sem categoria).
+   - Lista geral e histórico de decisões, com filtro de período. */
+const reais = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const dia = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
+const NOME_TIPO = { pedido_compra: 'Pedido de compra', item_avulso: 'Item sem cadastro', nf_sem_pedido: 'NF sem pedido', produto_novo: 'Produto novo',
+  categoria_nova: 'Categoria nova', vt: 'RH · Vale-transporte', devolvido: 'Devolvido', aviso: 'Aviso' };
+const AREAS = ['Compras', 'Financeiro', 'Cadastros', 'RH'];
+let CTX = null, GRUPOS = [], HIST = [], aba = 'decidir', marcados = new Set();
+const hoje = () => new Date().toLocaleDateString('sv-SE');
+
+function noPeriodo(d) {
+  const de = document.getElementById('fDe').value, ate = document.getElementById('fAte').value, x = String(d || '').slice(0, 10);
+  return (!de || !x || x >= de) && (!ate || !x || x <= ate);
 }
-const dataCurta = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
-(async () => { CTX = await iniciarTela(); if (!CTX) return; document.getElementById('btnAtualizar').onclick = carregar; carregar(); })();
+function filtrados(g) {
+  const b = document.getElementById('fBusca').value;
+  return (g.itens || []).filter(i => noPeriodo(i.data) && (!b || combinaBusca(`${i.texto} ${i.quem || ''} ${g.titulo}`, b)));
+}
+async function carregar() {
+  const [a, h] = await Promise.all([db.rpc('minhas_aprovacoes'),
+    db.rpc('aprovacoes_historico_lista', { p_de: document.getElementById('fDe').value || null, p_ate: document.getElementById('fAte').value || null })]);
+  if (a.error) { document.getElementById('lista').innerHTML = `<div class="apv-vazio">Erro: ${esc(a.error.message)}</div>`; return; }
+  GRUPOS = a.data || []; HIST = h.data || [];
+  marcados = new Set([...marcados].filter(k => GRUPOS.some(g => g.itens.some(i => k === g.tipo + ':' + i.id))));
+  desenhar();
+  window.top.dispatchEvent(new Event('nox:aprovacoes'));
+}
+function desenhar() {
+  const dec = GRUPOS.filter(g => g.aprovar_aqui), dev = GRUPOS.find(g => g.devolvido), av = GRUPOS.find(g => g.aviso);
+  const nDec = dec.reduce((s, g) => s + filtrados(g).length, 0), vDec = dec.reduce((s, g) => s + filtrados(g).reduce((t, i) => t + Number(i.valor || 0), 0), 0);
+  const nDev = dev ? filtrados(dev).length : 0, nAv = av ? filtrados(av).length : 0;
+  const hAp = HIST.filter(x => x.decisao === 'aprovado').length, hRe = HIST.length - hAp;
+  const card = (k, cls, n, t, v) => `<button class="apv-card ${cls}${n ? ' tem' : ''}${aba === k ? ' ativo' : ''}${n && (k === 'decidir' || k === 'devolvidos') ? ' piscar' : ''}" data-aba="${k}">
+      <div class="n">${n}</div><div class="t">${t}</div>${v ? `<div class="v">${v}</div>` : ''}</button>`;
+  document.getElementById('cards').innerHTML = card('decidir', 'decidir', nDec, 'Para você decidir', nDec ? reais(vDec) + ' no total' : 'nada pendente ✓')
+    + card('devolvidos', 'devolvido', nDev, 'Devolvidos para você ajustar', nDev ? 'corrija e reenvie' : '')
+    + card('avisos', 'avs', nAv, 'Avisos de pendência', nAv ? 'resolva antes de virar retrabalho' : '')
+    + card('historico', '', HIST.length, 'Decididas no período', HIST.length ? `${hAp} aprovadas · ${hRe} recusadas` : '');
+  const abas = [['decidir', 'Para decidir', nDec], ['devolvidos', 'Devolvidos', nDev], ['avisos', 'Avisos', nAv], ['geral', 'Lista geral', nDec + nDev + nAv], ['historico', 'Histórico', HIST.length]];
+  document.getElementById('abas').innerHTML = abas.map(([k, n, c]) => `<button class="aba${aba === k ? ' ativa' : ''}" data-aba="${k}">${n}<span class="n">${c}</span></button>`).join('');
+  document.querySelectorAll('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
+  const el = document.getElementById('lista');
+  if (aba === 'decidir') el.innerHTML = !nDec ? '<div class="apv-vazio">Nada esperando decisão sua neste período. ✓</div>'
+    : AREAS.map(ar => { const gs = dec.filter(g => g.area === ar && filtrados(g).length); return gs.length ? `<div class="apv-area">${ar}</div>` + gs.map(htmlGrupo).join('') : ''; }).join('');
+  else if (aba === 'devolvidos') el.innerHTML = nDev ? htmlGrupo(dev) : '<div class="apv-vazio">Nada devolvido para você. ✓</div>';
+  else if (aba === 'avisos') el.innerHTML = nAv ? htmlGrupo(av) : '<div class="apv-vazio">Sem avisos de pendência. ✓</div>';
+  else if (aba === 'geral') el.innerHTML = htmlGeral();
+  else el.innerHTML = htmlHistorico();
+  ligar();
+}
+function htmlGrupo(g) {
+  const ls = filtrados(g), decide = !!g.aprovar_aqui, soma = ls.reduce((s, i) => s + Number(i.valor || 0), 0);
+  const todos = ls.length && ls.every(i => marcados.has(g.tipo + ':' + i.id));
+  return `<div class="apv-grupo ${g.aviso ? 'avs' : g.devolvido ? 'devolvido' : ''}" data-g="${g.tipo}"><header>
+      ${decide ? `<input type="checkbox" data-todos="${g.tipo}" ${todos ? 'checked' : ''} title="Marcar todos">` : ''}
+      <h3>${esc(g.titulo)} <span class="tg ${g.aviso ? 'alerta' : 'erro'}">${ls.length}</span></h3>${soma ? `<span class="soma">${reais(soma)}</span>` : ''}
+      ${decide ? `<span class="bts"><button class="btn fino primario" data-lote="aprovar" data-tipo="${g.tipo}">Aprovar marcados</button><button class="btn fino" data-lote="recusar" data-tipo="${g.tipo}">Recusar marcados…</button></span>` : ''}</header>
+    <table class="apv-tab"><tbody>${ls.map(i => { const k = g.tipo + ':' + i.id; return `<tr class="${marcados.has(k) ? 'marcado' : ''}">
+      ${decide ? `<td style="width:28px"><input type="checkbox" data-k="${k}" ${marcados.has(k) ? 'checked' : ''}></td>` : ''}
+      <td>${esc(i.texto)}</td><td class="col-quem sub2">${esc(i.quem || '')}</td><td class="col-data sub2">${dia(i.data)}</td><td class="num">${reais(i.valor)}</td>
+      <td class="bts">${decide ? `<button class="btn fino primario" data-um="aprovar" data-tipo="${g.tipo}" data-id="${i.id}">Aprovar</button><button class="btn fino" data-um="recusar" data-tipo="${g.tipo}" data-id="${i.id}">Recusar…</button>` : ''}
+        ${i.link ? `<button class="btn fino discreto" data-abrir="${esc(i.link)}">Abrir ›</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>`;
+}
+function linhasGerais() {
+  return GRUPOS.flatMap(g => filtrados(g).map(i => ({ ...i, g, sit: g.aviso ? 'Aviso' : g.devolvido ? 'Devolvido' : 'Decidir' })));
+}
+function htmlGeral() {
+  const ls = linhasGerais().sort((a, b) => String(a.data).localeCompare(String(b.data)));
+  if (!ls.length) return '<div class="apv-vazio">Nada no período.</div>';
+  return `<div class="apv-grupo"><header><h3>Tudo o que está pendente <span class="tg neutro">${ls.length}</span></h3><span class="soma">${reais(ls.reduce((s, i) => s + Number(i.valor || 0), 0))}</span>
+      <span class="bts"><button class="btn fino" id="btnExp">Exportar Excel</button></span></header>
+    <table class="apv-tab"><thead><tr><th>Situação</th><th>Área</th><th>Tipo</th><th>Descrição</th><th class="col-quem">Quem</th><th class="col-data">Data</th><th class="num">Valor</th><th></th></tr></thead><tbody>
+    ${ls.map(i => `<tr><td><span class="tg ${i.sit === 'Decidir' ? 'erro' : 'alerta'}">${i.sit}</span></td><td class="sub2">${esc(i.g.area || '')}</td><td class="sub2">${esc(NOME_TIPO[i.g.tipo] || i.g.titulo)}</td>
+      <td>${esc(i.texto)}</td><td class="col-quem sub2">${esc(i.quem || '')}</td><td class="col-data sub2">${dia(i.data)}</td><td class="num">${reais(i.valor)}</td>
+      <td class="bts">${i.link ? `<button class="btn fino discreto" data-abrir="${esc(i.link)}">Abrir ›</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function htmlHistorico() {
+  if (!HIST.length) return '<div class="apv-vazio">Nenhuma decisão no período. As decisões passam a ser registradas a partir de 26/10/2026.</div>';
+  return `<div class="apv-grupo"><header><h3>Histórico de aprovações e recusas <span class="tg neutro">${HIST.length}</span></h3>
+      <span class="bts"><button class="btn fino" id="btnExpH">Exportar Excel</button></span></header>
+    <table class="apv-tab"><thead><tr><th>Quando</th><th>Tipo</th><th>Descrição</th><th>Decisão</th><th>Motivo</th><th class="col-quem">Decidiu</th><th class="col-quem">Criado por</th><th class="num">Valor</th></tr></thead><tbody>
+    ${HIST.map(x => `<tr><td class="sub2" style="white-space:nowrap">${dataHoraBR(x.em)}</td><td class="sub2">${esc(NOME_TIPO[x.tipo] || x.tipo)}</td><td>${esc(x.texto || '')}</td>
+      <td><span class="tg ${x.decisao}">${x.decisao === 'aprovado' ? 'Aprovado' : 'Recusado'}</span></td><td class="sub2">${esc(x.motivo || '')}</td>
+      <td class="col-quem sub2">${esc(x.por || '')}</td><td class="col-quem sub2">${esc(x.criado_por || '')}</td><td class="num">${reais(x.valor)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function ligar() {
+  const L = document.getElementById('lista');
+  L.querySelectorAll('[data-k]').forEach(c => c.onchange = () => { c.checked ? marcados.add(c.dataset.k) : marcados.delete(c.dataset.k); desenhar(); });
+  L.querySelectorAll('[data-todos]').forEach(c => c.onchange = () => { const g = GRUPOS.find(x => x.tipo === c.dataset.todos);
+    filtrados(g).forEach(i => c.checked ? marcados.add(g.tipo + ':' + i.id) : marcados.delete(g.tipo + ':' + i.id)); desenhar(); });
+  L.querySelectorAll('[data-um]').forEach(b => b.onclick = () => decidir(b.dataset.tipo, [Number(b.dataset.id)], b.dataset.um === 'aprovar'));
+  L.querySelectorAll('[data-lote]').forEach(b => b.onclick = () => {
+    const ids = [...marcados].filter(k => k.startsWith(b.dataset.tipo + ':')).map(k => Number(k.split(':')[1]));
+    if (!ids.length) return aviso('Marque pelo menos um item deste grupo', true);
+    decidir(b.dataset.tipo, ids, b.dataset.lote === 'aprovar');
+  });
+  L.querySelectorAll('[data-abrir]').forEach(b => b.onclick = () => window.top.postMessage({ nox: 'abrir', url: RAIZ + b.dataset.abrir }, location.origin));
+  document.getElementById('btnExp')?.addEventListener('click', () => exportarExcel('pendencias', ['Situação', 'Área', 'Tipo', 'Descrição', 'Quem', 'Data', 'Valor'],
+    linhasGerais().map(i => [i.sit, i.g.area || '', NOME_TIPO[i.g.tipo] || i.g.titulo, i.texto, i.quem || '', dia(i.data), i.valor ?? ''])));
+  document.getElementById('btnExpH')?.addEventListener('click', () => exportarExcel('historico_aprovacoes', ['Quando', 'Tipo', 'Descrição', 'Decisão', 'Motivo', 'Decidiu', 'Criado por', 'Valor'],
+    HIST.map(x => [dataHoraBR(x.em), NOME_TIPO[x.tipo] || x.tipo, x.texto || '', x.decisao, x.motivo || '', x.por || '', x.criado_por || '', x.valor ?? ''])));
+}
+function decidir(tipo, ids, aprovar) {
+  const g = GRUPOS.find(x => x.tipo === tipo), itens = g.itens.filter(i => ids.includes(i.id)), soma = itens.reduce((s, i) => s + Number(i.valor || 0), 0);
+  const pedeMotivo = !aprovar || tipo === 'item_avulso';
+  const m = abrirModal(`<h2>${aprovar ? 'Aprovar' : 'Recusar'} ${ids.length} · ${esc(NOME_TIPO[tipo] || g.titulo)}</h2>
+    <div style="max-height:40vh;overflow:auto;margin:0 0 8px"><table class="apv-tab"><tbody>${itens.map(i => `<tr><td>${esc(i.texto)}</td><td class="num">${reais(i.valor)}</td></tr>`).join('')}</tbody></table></div>
+    ${soma ? `<p style="margin:0 0 8px">Total: <b>${reais(soma)}</b></p>` : ''}
+    ${tipo === 'vt' && aprovar ? '<p class="sub" style="margin:0 0 8px">Cada VT aprovado vira um título no contas a pagar da empresa do funcionário; o desconto vai para os Lançamentos.</p>' : ''}
+    ${!aprovar ? '<p class="sub" style="margin:0 0 6px">Volta para quem criou ajustar e reenviar; fica no histórico.</p>' : ''}
+    ${pedeMotivo ? `<div class="campo"><label>${aprovar ? 'Motivo da liberação (ex.: compra ocasional para manutenção)' : 'Motivo da recusa *'}</label><textarea id="dMot" rows="2"></textarea></div>` : ''}
+    <div class="acoes"><button class="btn" id="dN">Voltar</button><button class="btn ${aprovar ? 'primario' : ''}" id="dS">${aprovar ? 'Aprovar' : 'Recusar'}</button></div>`);
+  m.querySelector('#dMot')?.focus();
+  m.querySelector('#dN').onclick = () => m.remove();
+  m.querySelector('#dS').onclick = async () => {
+    const mot = m.querySelector('#dMot')?.value.trim() || null;
+    if (!aprovar && !mot) return aviso('Informe o motivo da recusa', true);
+    m.querySelector('#dS').disabled = true;
+    const { data, error } = await db.rpc('aprovacao_decidir', { p_tipo: tipo, p_ids: ids, p_aprovar: aprovar, p_motivo: mot });
+    if (error) { m.querySelector('#dS').disabled = false; return aviso('Não salvou: ' + error.message, true); }
+    aviso(`${data} ${aprovar ? 'aprovado(s)' : 'recusado(s) · voltou para quem criou'}`);
+    ids.forEach(id => marcados.delete(tipo + ':' + id)); m.remove(); carregar();
+  };
+}
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  document.getElementById('btnAtualizar').onclick = carregar;
+  ['fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', carregar));
+  document.getElementById('fBusca').addEventListener('input', desenhar);
+  document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
+    const d = Number(b.dataset.p); document.getElementById('fAte').value = d ? hoje() : '';
+    document.getElementById('fDe').value = d ? new Date(Date.now() - d * 864e5).toLocaleDateString('sv-SE') : ''; carregar();
+  });
+  window.addEventListener('aba-ativa', carregar);
+  carregar();
+})();
 </script>
 </body>
 </html>
