@@ -18,7 +18,7 @@ const RECURSOS: Record<string, { pesquisa: string; lista: string; item: string; 
   notas_entrada:  { pesquisa: 'notas.fiscais.pesquisa.php',  lista: 'notas_fiscais', item: 'nota_fiscal', obter: 'nota.fiscal.obter.php', extra: { tipoNota: 'E' } },
   notas_saida:    { pesquisa: 'notas.fiscais.pesquisa.php',  lista: 'notas_fiscais', item: 'nota_fiscal', obter: 'nota.fiscal.obter.php', extra: { tipoNota: 'S' } },
   contatos:       { pesquisa: 'contatos.pesquisa.php',       lista: 'contatos', item: 'contato', obter: 'contato.obter.php' },
-  ordens_compra:  { pesquisa: 'ordens.compra.pesquisa.php',  lista: 'ordens_compra', item: 'ordem_compra', obter: 'ordem.compra.obter.php' },
+  produtos:       { pesquisa: 'produtos.pesquisa.php',       lista: 'produtos', item: 'produto', obter: 'produto.obter.php' },
 };
 
 let pausa = 300;   // ms entre chamadas; aumenta sozinho se o Tiny reclamar de excesso de acessos
