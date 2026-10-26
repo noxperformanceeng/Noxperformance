@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610252247">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610252310">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610252247"></script>
-<script src="../../assets/js/ui.js?v=202610252247"></script>
-<script src="../../assets/js/auth.js?v=202610252247"></script>
-<script src="../../assets/js/layout.js?v=202610252247"></script>
-<script src="../../assets/js/cadastro.js?v=202610252247"></script>
+<script src="../../assets/js/supabase.js?v=202610252310"></script>
+<script src="../../assets/js/ui.js?v=202610252310"></script>
+<script src="../../assets/js/auth.js?v=202610252310"></script>
+<script src="../../assets/js/layout.js?v=202610252310"></script>
+<script src="../../assets/js/cadastro.js?v=202610252310"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -141,6 +141,22 @@ function aoEscolherServico(tr, escolheu) {
   }
   atualizarServico(tr);
 }
+// quadro "separar e enviar": soma as barras por material, com a lista das peças de cada um
+function resumoMaterial() {
+  const el = modalAtual?.querySelector('#matBox'); if (!el) return;
+  const g = {};
+  modalAtual.querySelectorAll('#itens tbody tr[data-tipo=servico_usinagem]').forEach(tr => {
+    const pid = Number(tr.querySelector('[data-k=produto_id]').value) || null, f = FICHAS[pid]; if (!pid) return;
+    const q = lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, barra = lerNumero(tr.querySelector('[data-k=barra_mm]').value) || 0, c = calcMaterial(f, q, barra);
+    const mat = (f?.material || '').trim() || 'MATERIAL NÃO INFORMADO NA FICHA', k = mat + '|' + barra, x = (g[k] ||= { mat, barra, barras: 0, pecas: [], falta: false });
+    if (c?.barras) x.barras += c.barras; else x.falta = true;
+    x.pecas.push(`${esc(prod(pid)?.codigo || '')} × ${num(q)} pç${c?.barras ? ' = ' + num(c.barras) + ' barra(s)' : ' (sem cálculo)'}`);
+  });
+  const l = Object.values(g);
+  el.innerHTML = l.length ? `<div class="secao">Material para separar e enviar ao prestador</div><table class="lista-mini"><thead><tr><th>Material</th><th>Barra (mm)</th><th class="num">Barras</th><th>Peças</th></tr></thead><tbody>
+    ${l.map(x => `<tr><td><b>${esc(x.mat)}</b></td><td>${num(x.barra)}</td><td class="num"><b>${num(x.barras)}</b>${x.falta ? ' <span class="tg alerta">incompleto</span>' : ''}</td><td>${x.pecas.join('<br>')}</td></tr>`).join('')}</tbody></table>
+    <div class="sub" style="margin:2px 0 6px">Esse material sai do nosso estoque e vai junto com o pedido. A usinagem devolve só as peças prontas.</div>` : '';
+}
 function atualizarServico(tr) {
   const info = tr.querySelector('[data-k=info]'), pid = Number(tr.querySelector('[data-k=produto_id]').value) || null, f = FICHAS[pid];
   const q = lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, barra = lerNumero(tr.querySelector('[data-k=barra_mm]').value) || 0;
@@ -185,6 +201,7 @@ function recalcular() {
     const v = Math.round((q * u - d) * 100) / 100; t += v; tr.querySelector('[data-k=total]').textContent = reais(v);
     if (tr.dataset.tipo === 'servico_usinagem') atualizarServico(tr);
   });
+  resumoMaterial();
   const v = id => lerNumero(modalAtual.querySelector('#f_' + id)?.value) || 0;
   const total = t + v('frete') + v('outras_despesas') - v('desconto');
   const fTot = modalAtual.querySelector('#f_valor_total'); if (fTot) fTot.value = total.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
@@ -600,6 +617,7 @@ const cfg = {
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Produto</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
         ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${Object.keys(FICHAS).length ? ' <button type="button" class="btn fino" id="addServ" style="margin-top:4px">+ Serviço de usinagem</button>' : ''}` : ''}
+        <div id="matBox" style="margin-top:8px"></div>
         <div class="tot-ped" id="totPed"></div></div>`;
     const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Valores');
     antes.parentNode.insertBefore(box, antes);
