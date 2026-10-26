@@ -6,7 +6,7 @@
 <title>Extratos e conciliação · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261116">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261118">
 <style>
   .map-grade { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; margin: 10px 0; }
   .map-grade label { font-size: 11px; }
@@ -18,11 +18,11 @@
 <body data-modulo="conciliacao" data-titulo="Extratos e conciliação" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261116"></script>
-<script src="../../assets/js/ui.js?v=202610261116"></script>
-<script src="../../assets/js/auth.js?v=202610261116"></script>
-<script src="../../assets/js/layout.js?v=202610261116"></script>
-<script src="../../assets/js/cadastro.js?v=202610261116"></script>
+<script src="../../assets/js/supabase.js?v=202610261118"></script>
+<script src="../../assets/js/ui.js?v=202610261118"></script>
+<script src="../../assets/js/auth.js?v=202610261118"></script>
+<script src="../../assets/js/layout.js?v=202610261118"></script>
+<script src="../../assets/js/cadastro.js?v=202610261118"></script>
 <script>
 /* =====================================================================
    Extratos e conciliação (Mercado Pago e bancos)
@@ -202,6 +202,26 @@ function janelaCategoria(sel, pronto) {
 }
 
 const ro = { somenteLeitura: true };
+/* ---------- O que é cada movimento do Mercado Pago e o que falta para fechar ----------
+   o: o que é · f: o que falta / destino (débito → contas a pagar; crédito → contas a receber; o resto se anula) */
+const GUIA_MP = {
+  payment: { o: 'Dinheiro da venda liberado na conta', f: r => r.pedido_venda_id ? 'Baixar o título a receber da venda (valor liberado diferente do título: conferir tarifas/frete da venda)' : 'Venda não encontrada no sistema (anterior a 01/06/2026 ou sem nº): vira recebimento de venda antiga do Tiny' },
+  payout: { o: 'Saque/transferência do Mercado Pago para o banco (Itaú)', f: () => 'Não é despesa: transferência entre contas. Fecha com a entrada no extrato do banco' },
+  'fee-release_in_advance': { o: 'Taxa de antecipação do dinheiro (liberar antes do prazo)', f: () => 'Débito → contas a pagar, categoria 7.03.001 Taxas de antecipação' },
+  shipping: { o: 'Crédito de frete devolvido pelo Mercado Livre', f: () => 'Crédito → contas a receber, categoria 4.01.003 Créditos de frete' },
+  cashback: { o: 'Ressarcimento/bonificação do Mercado Livre', f: () => 'Crédito → contas a receber, categoria 1.02.001 Reembolsos de marketplace' },
+  mediation: { o: 'Dinheiro devolvido ao comprador (reclamação/devolução)', f: () => 'Débito → contas a pagar, categoria 2.03.001 Estorno de vendas (abate a venda)' },
+  mediation_cancel: { o: 'Reclamação encerrada a favor da NOX (dinheiro volta)', f: () => 'Crédito: anula a devolução da mesma venda' },
+  refund: { o: 'Estorno/devolução de valores da venda', f: () => 'Crédito: compensa a devolução da mesma venda; sobra → 2.03.001' },
+  reserve_for_dispute: { o: 'Dinheiro bloqueado por reclamação em andamento', f: () => 'Aguardar: quando a reclamação fecha, o desbloqueio anula este valor' },
+  reserve_for_refund: { o: 'Dinheiro reservado para devolução', f: () => 'Aguardar a devolução/estorno da mesma venda' },
+  reserve_for_bpp_shipping_return: { o: 'Reserva para frete de devolução (Compra Garantida)', f: () => 'Aguardar o fechamento da devolução' },
+  reserve_for_debt_payment: { o: 'Saldo usado pelo Mercado Pago para pagar dívida (empréstimo/saldo negativo)', f: () => 'Débito → contas a pagar, categoria 10.03.001 Empréstimo Mercado Pago (ou 7.02.002 juros)' },
+  reserve_for_payout: { o: 'Bloqueio do valor que vai ser sacado', f: () => 'Anula com o desbloqueio do saque (sem efeito)' },
+  reserve_for_payment: { o: 'Bloqueio temporário de pagamento', f: () => 'Anula com o desbloqueio (sem efeito)' }
+};
+const guiaDe = r => GUIA_MP[r.tipo] || { o: 'Movimento ' + (r.tipo || ''), f: () => 'Classificar manualmente na categoria certa' };
+
 const cfg = {
   tabela: 'extrato_lancamentos', modulo: 'conciliacao', titulo: 'Extratos e conciliação', singular: 'lançamento', plural: 'lançamentos',
   subtitulo: 'Linhas do extrato (Mercado Pago e bancos) ligadas às vendas pelo ID da operação e nº da venda/pacote/envio.',
@@ -250,7 +270,9 @@ const cfg = {
   colunasExtras: [
     { label: 'Venda', texto: r => PEDS[r.pedido_venda_id]?.numero_externo || '', html: r => { const p = PEDS[r.pedido_venda_id]; if (!p) return '';
         const l = linkVenda(p); return l ? `<a class="ext" href="${esc(l)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(p.numero_externo)}</a>` : esc(p.numero_externo || '#' + p.id); } },
-    { label: 'Categoria', texto: r => cat(r.categoria_financeira_id)?.nome || '' }
+    { label: 'Categoria', texto: r => cat(r.categoria_financeira_id)?.nome || '' },
+    { label: 'O que é / o que falta', texto: r => r.conciliacao === 'pendente' ? guiaDe(r).o + ' → ' + guiaDe(r).f(r) : '',
+      html: r => r.conciliacao !== 'pendente' ? '' : `<span class="texto-curto" style="max-width:280px" title="${esc(guiaDe(r).o + '\n→ ' + guiaDe(r).f(r))}"><b>${esc(guiaDe(r).o)}</b><br><small class="sub">${esc(guiaDe(r).f(r))}</small></span>` }
   ],
   textoBuscaExtra: r => [r.pack_id, r.envio_id, r.referencia, cat(r.categoria_financeira_id)?.nome].filter(Boolean).join(' '),
   subtituloLinha: r => [r.pack_id && 'pacote ' + r.pack_id, r.envio_id && 'envio ' + r.envio_id].filter(Boolean).join(' · '),
@@ -263,6 +285,7 @@ const cfg = {
   ],
   apagado: r => ['compensado', 'ignorado'].includes(r.conciliacao),
   secaoExtra: r => `<div class="secao">Conciliação</div><div class="info">
+      <div style="background:#e8f0fe;border-radius:8px;padding:8px 10px;margin-bottom:6px"><b>O que é:</b> ${esc(guiaDe(r).o)}<br><b>${r.conciliacao === 'pendente' ? 'O que falta' : 'Destino'}:</b> ${esc(guiaDe(r).f(r))}</div>
       <div>Situação: <b>${esc(r.conciliacao)}</b>${r.conciliado_em ? ' em ' + dataHoraBR(r.conciliado_em) : ''}</div>
       ${r.pedido_venda_id ? `<div>Venda: <b>${esc(PEDS[r.pedido_venda_id]?.numero_externo || '#' + r.pedido_venda_id)}</b> ${linkVenda(PEDS[r.pedido_venda_id]) ? `<a class="ext" href="${esc(linkVenda(PEDS[r.pedido_venda_id]))}" target="_blank" rel="noopener">abrir na plataforma</a>` : ''}</div>` : ''}
       ${r.titulo_receber_id ? `<div><a href="contas-receber.html?titulo=${r.titulo_receber_id}" style="color:var(--destaque)">Título a receber #${r.titulo_receber_id}</a> <button type="button" class="btn fino discreto" onclick="abrirRastreio('receber', ${r.titulo_receber_id})">Rastreio ›</button></div>` : ''}
