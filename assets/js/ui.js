@@ -281,3 +281,24 @@ async function abrirRastreio(tipo, id) {
   m.querySelector('[data-fechar]').onclick = () => m.remove();
   return m;
 }
+
+/* ---------- Padrão NOX: tudo o que é digitado fica em CAIXA ALTA ----------
+   Vale para campos de texto e observações de todas as telas.
+   Ficam como digitados: e-mail, site/links, senhas, buscas, chaves e campos marcados com data-livre. */
+(function () {
+  const LIVRE = /e-?mail|site|link|url|senha|password|token|busca|pesquisa|chave|codigo_barras|pix|xml/i;
+  const alvo = el => {
+    if (!el || el.readOnly || el.disabled) return false;
+    if (el.tagName === 'INPUT') { if (!['text', 'search', ''].includes(el.type) || el.type === 'search') return false; }
+    else if (el.tagName !== 'TEXTAREA') return false;
+    if (['decimal', 'numeric', 'email', 'url'].includes(el.getAttribute('inputmode'))) return false;
+    if (el.dataset.livre !== undefined || el.closest('[data-livre], .sel-busca')) return false;
+    return !LIVRE.test(`${el.id} ${el.name} ${el.placeholder}`);
+  };
+  document.addEventListener('input', e => {
+    const el = e.target; if (!alvo(el)) return;
+    const v = el.value, u = v.toLocaleUpperCase('pt-BR'); if (v === u) return;
+    const a = el.selectionStart, b = el.selectionEnd; el.value = u;
+    try { el.setSelectionRange(a, b); } catch { /* campo sem cursor */ }
+  }, true);
+})();

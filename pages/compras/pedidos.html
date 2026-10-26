@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261018">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261026">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261018"></script>
-<script src="../../assets/js/ui.js?v=202610261018"></script>
-<script src="../../assets/js/auth.js?v=202610261018"></script>
-<script src="../../assets/js/layout.js?v=202610261018"></script>
-<script src="../../assets/js/cadastro.js?v=202610261018"></script>
+<script src="../../assets/js/supabase.js?v=202610261026"></script>
+<script src="../../assets/js/ui.js?v=202610261026"></script>
+<script src="../../assets/js/auth.js?v=202610261026"></script>
+<script src="../../assets/js/layout.js?v=202610261026"></script>
+<script src="../../assets/js/cadastro.js?v=202610261026"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -361,7 +361,7 @@ function abrirEnvio(r, pai) {
     <div class="grade-campos">
       <div class="campo"><label>Enviar por</label><select id="eVia" data-simples><option value="whatsapp">WhatsApp</option><option value="email"${!zap && email ? ' selected' : ''}>E-mail</option></select></div>
       <div class="campo l2"><label>Para</label><input id="ePara" value="${esc(!zap && email ? email : zap)}"></div>
-      <div class="campo l4"><label>Mensagem</label><textarea id="eMsg" rows="6">Olá${contato ? ' ' + esc(contato) : ''}, tudo bem?
+      <div class="campo l4"><label>Mensagem</label><textarea id="eMsg" rows="6" data-livre>Olá${contato ? ' ' + esc(contato) : ''}, tudo bem?
 Segue o pedido de compra ${esc(r.numero)} da ${esc((EMPRESAS.find(e => e.id === r.empresa_id) || {}).nome || 'NOX')} no valor de ${reais(r.valor_total)}${r.data_entrega_prevista ? ', entrega prevista para ' + dataCurta(r.data_entrega_prevista) : ''}.
 PDF do pedido: {link}
 Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. Obrigado!</textarea></div>
