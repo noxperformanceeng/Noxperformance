@@ -84,7 +84,6 @@ const cfg = {
   msgDuplicado: 'Este funcionário já tem VT nesta competência'
 };
 
-const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 // Aprovação: previsto → aprovado (o banco cria o título no contas a pagar, na empresa do funcionário)
 async function aprovarVT(ids, pai) {
   const ls = (window.__vtLinhas || []).filter(r => ids.includes(r.id) && r.situacao === 'previsto');
