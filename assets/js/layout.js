@@ -8,6 +8,7 @@
 const MENU = [
   { grupo: 'Cadastros', itens: [
     { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
+    { id: 'produtos',      nome: 'Grupos de produtos', arquivo: 'pages/cadastros/grupos-produtos.html' },
     { id: 'clientes',      nome: 'Clientes',          arquivo: 'pages/cadastros/clientes.html' },
     { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
     { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' },

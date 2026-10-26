@@ -6,7 +6,7 @@
 <title>Produtos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261203">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261213">
 <style>
   td.foto { width: 64px; padding: 4px 8px; }
   td.foto img { display: block; width: 52px; height: 52px; object-fit: contain; background: #fff; border: 1px solid var(--linha); border-radius: 6px; cursor: zoom-in; }
@@ -94,10 +94,10 @@
 <datalist id="dlForn"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261203"></script>
-<script src="../../assets/js/ui.js?v=202610261203"></script>
-<script src="../../assets/js/auth.js?v=202610261203"></script>
-<script src="../../assets/js/layout.js?v=202610261203"></script>
+<script src="../../assets/js/supabase.js?v=202610261213"></script>
+<script src="../../assets/js/ui.js?v=202610261213"></script>
+<script src="../../assets/js/auth.js?v=202610261213"></script>
+<script src="../../assets/js/layout.js?v=202610261213"></script>
 <script>
 /* ===================== CONFIGURAÇÃO ===================== */
 const TIPOS = [
@@ -127,7 +127,7 @@ const PEND = [
 ];
 
 let ctx, podeEditar = false;
-let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {}, categorias = [];
+let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {}, categorias = [], GRUPOS = [];
 const catDe = id => categorias.find(c => c.id === id);
 const nomeCat = id => { const c = catDe(id); return c ? `${c.codigo} ${c.nome}` : ''; };
 let tipoAtual = 'materia_prima', pendAtual = '', ordem = { campo: 'codigo', asc: true };
@@ -179,8 +179,10 @@ async function carregar() {
     ]);
     produtos = lista; vinculos = vinc; fornecedores = forn;
     // Plano de categorias (se a tabela ainda não existir, a tela segue sem ela)
-    const cat = await db.from('categorias_financeiras').select('id, codigo, nome, tipo, aceita_lancamento, aplica_produtos, situacao').order('codigo');
+    const [cat, gr] = await Promise.all([db.from('categorias_financeiras').select('id, codigo, nome, tipo, pai_id, aceita_lancamento, aplica_produtos, situacao, aprovacao').order('codigo'),
+      db.from('produto_grupos').select('id, nome, tipo_produto, categoria_financeira_id, situacao').order('nome')]);
     categorias = cat.error ? [] : cat.data || [];
+    GRUPOS = gr.error ? [] : gr.data || [];
     nomes = Object.fromEntries((nm.data || []).map(u => [u.id, u.nome]));
     dups = {};
     (dp.data || []).forEach(d => {
@@ -265,9 +267,25 @@ function pendencias(p) {
 }
 
 // Só categorias que recebem lançamento e estão marcadas para produtos (mantém a atual mesmo se mudou)
+// Categoria do produto: agrupada pelo grupo do plano (igual ao cadastro de categorias), só as liberadas para produto;
+// fora: inativas, "NÃO USAR", as antigas do Tiny (grupo 99) e as que ficaram sem grupo
+const ordCod = c => String(c || '').split('.').map(n => n.padStart(4, '0')).join('.');
+const catUsavel = c => c.aceita_lancamento && c.aplica_produtos && c.situacao === 'ativo' && (c.aprovacao || 'aprovado') === 'aprovado'
+  && c.pai_id && !/^99(\.|$)/.test(c.codigo) && !/N[ÃA]O\s+USAR/i.test(c.nome);
 function opcoesCat(atual) {
-  return categorias.filter(c => (c.aceita_lancamento && c.aplica_produtos && c.situacao === 'ativo') || c.id === atual)
-    .map(c => `<option value="${c.id}"${c.id === atual ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
+  const ls = categorias.filter(c => catUsavel(c) || c.id === atual), grupos = {};
+  ls.forEach(c => (grupos[c.pai_id || 0] ||= []).push(c));
+  const pai = id => categorias.find(c => c.id === id), avo = c => c && c.pai_id ? pai(c.pai_id) : null;
+  return Object.entries(grupos).sort(([a], [b]) => ordCod(pai(Number(a))?.codigo).localeCompare(ordCod(pai(Number(b))?.codigo))).map(([pid, cs]) => {
+    const g = pai(Number(pid)), a = avo(g), rot = g ? `${a ? a.codigo + ' ' + a.nome + ' › ' : ''}${g.codigo} ${g.nome}` : 'Sem grupo';
+    return `<optgroup label="${esc(rot)}">${cs.sort((x, y) => ordCod(x.codigo).localeCompare(ordCod(y.codigo))).map(c => `<option value="${c.id}"${c.id === atual ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</optgroup>`;
+  }).join('');
+}
+// Grupo do produto: vem do cadastro de grupos (ativos + o atual do produto)
+function opcoesGrupo(atual) {
+  const ls = GRUPOS.filter(g => g.situacao === 'ativo' || g.nome === atual);
+  const extra = atual && !ls.some(g => g.nome === atual) ? `<option value="${esc(atual)}" selected>${esc(atual)} (fora da lista)</option>` : '';
+  return '<option value="">— escolher —</option>' + extra + ls.map(g => `<option value="${esc(g.nome)}"${g.nome === atual ? ' selected' : ''}>${esc(g.nome)}</option>`).join('');
 }
 
 function preencherFiltros() {
@@ -456,7 +474,7 @@ function abrirProduto(p) {
       <div class="campo"><label>Situação</label><select id="pSit" ${ro}><option value="ativo"${p.situacao === 'ativo' ? ' selected' : ''}>Ativo</option><option value="inativo"${p.situacao === 'inativo' ? ' selected' : ''}>Inativo</option></select></div>
       <div class="campo"><label>Unid. de estoque / uso</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
       <div class="campo l4"><label>Descrição</label><input id="pDesc" value="${esc(p.descricao || '')}" ${ro}></div>
-      <div class="campo l2"><label>Grupo</label><input id="pGrupo" list="dlGrupos" value="${esc(p.grupo || '')}" placeholder="ex.: Tubo, Abraçadeira, Intake" ${ro}></div>
+      <div class="campo l2"><label>Grupo ${!ro && ctx.pode('produtos', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/grupos-produtos.html?novo=1">+ cadastrar</a>` : ''}</label><select id="pGrupo" ${ro}>${opcoesGrupo(p.grupo || '')}</select></div>
       <div class="campo l2"${categorias.length ? '' : ' hidden'}><label>Categoria financeira</label><select id="pCat" ${ro}><option value="">— escolher —</option>${opcoesCat(p.categoria_financeira_id)}</select></div>
       <div class="campo"><label>NCM</label><input id="pNcm" value="${esc(p.ncm || '')}" ${ro}></div>
       <div class="campo"><label>GTIN / EAN</label><input id="pGtin" value="${esc(p.gtin || '')}" ${ro}></div>
@@ -563,6 +581,18 @@ function abrirProduto(p) {
   };
   ajustarTipo();
   $('#pTipo').onchange = () => { ajustarTipo(); checarParecidos(); };
+  // Grupo escolhido: produto novo herda tipo e categoria padrão do grupo (se ainda estiverem vazios)
+  $('#pGrupo').onchange = () => {
+    const g = GRUPOS.find(x => x.nome === $('#pGrupo').value); if (!g) return;
+    if (!p.id && g.tipo_produto && $('#pTipo').value !== g.tipo_produto && !$('#pCodigo').value) { $('#pTipo').value = g.tipo_produto; ajustarTipo(); }
+    if (g.categoria_financeira_id && $('#pCat') && !$('#pCat').value) $('#pCat').value = g.categoria_financeira_id;
+  };
+  // Voltou do "+ cadastrar" grupo: recarrega a lista sem perder o resto do formulário
+  if (!window.__ouvinteGrupo) { window.__ouvinteGrupo = true; window.addEventListener('aba-ativa', async () => {
+    const sel = document.querySelector('#pGrupo'); if (!sel) return;
+    const { data } = await db.from('produto_grupos').select('id, nome, tipo_produto, categoria_financeira_id, situacao').order('nome');
+    if (data) { GRUPOS = data; const v = sel.value; sel.innerHTML = opcoesGrupo(v); }
+  }); }
 
 
   /* ---------- Desenho técnico e fotos ---------- */

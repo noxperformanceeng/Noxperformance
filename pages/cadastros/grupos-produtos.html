@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grupos de produtos · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261213">
+</head>
+<body data-modulo="produtos" data-titulo="Grupos de produtos">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610261213"></script>
+<script src="../../assets/js/ui.js?v=202610261213"></script>
+<script src="../../assets/js/auth.js?v=202610261213"></script>
+<script src="../../assets/js/layout.js?v=202610261213"></script>
+<script src="../../assets/js/cadastro.js?v=202610261213"></script>
+<script>
+/* Grupos de produtos: lista oficial usada no campo "Grupo" do cadastro de produtos.
+   Tipo e categoria financeira padrão: o produto novo do grupo já vem com eles. Renomear atualiza os produtos. */
+const TIPOS = [{ v: 'materia_prima', n: 'Matéria-prima' }, { v: 'semiacabado', n: 'Semiacabado' }, { v: 'acabado', n: 'Produto acabado' }, { v: 'kit', n: 'Kit' },
+  { v: 'ferramenta', n: 'Ferramenta / dispositivo / gabarito' }];
+let CATS = [], USO = {};
+const ordCod = c => String(c || '').split('.').map(n => n.padStart(4, '0')).join('.');
+montarCadastro({
+  textoNovo: '+ Novo grupo',
+  tabela: 'produto_grupos', modulo: 'produtos', titulo: 'Grupos de produtos', singular: 'grupo', plural: 'grupos',
+  subtitulo: 'Lista oficial do campo "Grupo" no cadastro de produtos. O tipo e a categoria padrão já vêm preenchidos no produto novo do grupo. Renomear um grupo atualiza os produtos dele.',
+  dicaBusca: 'nome do grupo…', ordem: 'nome', revisao: true,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: '', n: 'Todos' }] },
+  campos: [
+    { id: 'nome', label: 'Nome do grupo', obrig: true, col: 2, lista: true, placeholder: 'ex.: Abraçadeira, Tubo, Intake' },
+    { id: 'tipo_produto', label: 'Tipo de produto padrão', tipo: 'select', opcoes: TIPOS, col: 2, lista: true, filtro: true },
+    { id: 'categoria_financeira_id', label: 'Categoria financeira padrão', tipo: 'select', col: 4, cadastro: false,
+      opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Só as categorias liberadas para produtos (Categorias financeiras › "Usar no cadastro de produtos").' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo' },
+    { id: 'descricao', label: 'O que entra neste grupo', tipo: 'textarea', col: 4 }
+  ],
+  async carregarExtra(linhas) {
+    const [c, p] = await Promise.all([
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, pai_id, aceita_lancamento, aplica_produtos, situacao, aprovacao').order('codigo')),
+      buscarTodos(() => db.from('produtos').select('grupo'))]);
+    CATS = c.filter(x => x.aceita_lancamento && x.aplica_produtos && x.situacao === 'ativo' && x.aprovacao === 'aprovado' && x.pai_id && !/^99(\.|$)/.test(x.codigo) && !/N[ÃA]O\s+USAR/i.test(x.nome))
+      .sort((a, b) => ordCod(a.codigo).localeCompare(ordCod(b.codigo)));
+    USO = {}; p.forEach(x => { if (x.grupo) USO[x.grupo] = (USO[x.grupo] || 0) + 1; });
+    return {};
+  },
+  colunasExtras: [
+    { label: 'Categoria padrão', texto: r => { const c = CATS.find(x => x.id === r.categoria_financeira_id); return c ? c.codigo + ' ' + c.nome : ''; } },
+    { label: 'Produtos', texto: r => String(USO[r.nome] || 0) }
+  ],
+  antesSalvar: d => { if (d.categoria_financeira_id) d.categoria_financeira_id = Number(d.categoria_financeira_id); d.nome = (d.nome || '').trim(); },
+  pendencias: [
+    { id: 'revisar', nome: 'Usado por 1 produto (revisar)', cor: 'alerta', teste: r => r.situacao === 'ativo' && (USO[r.nome] || 0) <= 1 },
+    { id: 'sem_cat', nome: 'Sem categoria padrão', cor: 'neutro', teste: r => r.situacao === 'ativo' && !r.categoria_financeira_id },
+    { id: 'sem_tipo', nome: 'Sem tipo padrão', cor: 'neutro', teste: r => r.situacao === 'ativo' && !r.tipo_produto }
+  ],
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  tituloRegistro: r => r.nome,
+  msgDuplicado: 'Já existe um grupo com este nome'
+});
+</script>
+</body>
+</html>
