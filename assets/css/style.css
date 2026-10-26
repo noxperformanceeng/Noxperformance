@@ -376,3 +376,7 @@ body.menu-recolhido .btn-expandir { display: block; }
 .rastro-item span { color: var(--texto); }
 .rastro-item small { display: block; color: var(--texto-suave); margin-top: 1px; }
 .rastro-item small a { color: var(--destaque); }
+
+/* Contador de aprovações pendentes no menu */
+.item-aprov { display: flex; align-items: center; justify-content: space-between; }
+.n-aprov { background: var(--erro); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 700; line-height: 18px; }

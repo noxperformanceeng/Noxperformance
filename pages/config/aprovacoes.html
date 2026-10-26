@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aprovações pendentes · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261036">
+<style>
+  .apv-resumo { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+  .apv-resumo a { text-decoration: none; color: inherit; background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+  .apv-resumo a b { font-size: 18px; margin-right: 6px; color: var(--erro); }
+  .apv-resumo a.zero b { color: var(--texto-suave); }
+  .apv-grupo { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; margin: 0 0 12px; overflow: hidden; }
+  .apv-grupo h3 { margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid var(--linha); display: flex; gap: 8px; align-items: center; }
+  .apv-grupo h3 .n { background: var(--erro); color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+  .apv-linha { display: grid; grid-template-columns: 1fr 110px 120px auto; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--linha); font-size: 13px; }
+  .apv-linha:last-child { border-bottom: 0; }
+  .apv-linha .data { color: var(--texto-suave); }
+  .apv-linha .valor { text-align: right; font-variant-numeric: tabular-nums; }
+  .apv-linha .bts { display: flex; gap: 6px; justify-content: flex-end; }
+  .apv-vazio { padding: 28px; text-align: center; color: var(--texto-suave); }
+  @media (max-width: 700px) { .apv-linha { grid-template-columns: 1fr; } .apv-linha .valor, .apv-linha .bts { text-align: left; justify-content: flex-start; } }
+</style>
+</head>
+<body data-titulo="Aprovações pendentes">
+<main id="conteudo"><div class="cab-tela"><div><h1>Aprovações pendentes</h1>
+  <p class="sub">Tudo o que está esperando uma decisão sua. Clique para abrir e decidir.</p></div>
+  <button class="btn" id="btnAtualizar">Atualizar</button></div>
+  <div class="apv-resumo" id="resumo"></div><div id="lista"><div class="apv-vazio">Carregando…</div></div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610261036"></script>
+<script src="../../assets/js/ui.js?v=202610261036"></script>
+<script src="../../assets/js/auth.js?v=202610261036"></script>
+<script src="../../assets/js/layout.js?v=202610261036"></script>
+<script>
+/* Central do master: pedidos de compra na vez de quem está logado, itens sem cadastro para liberar,
+   NF sem pedido de compra, produtos novos e vale-transporte aguardando aprovação. */
+const reais = v => v == null ? '' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+let CTX = null;
+async function carregar() {
+  const { data, error } = await db.rpc('minhas_aprovacoes');
+  if (error) { document.getElementById('lista').innerHTML = `<div class="apv-vazio">Erro: ${esc(error.message)}</div>`; return; }
+  const gs = data || [], total = gs.reduce((s, g) => s + g.itens.length, 0);
+  document.getElementById('resumo').innerHTML = gs.map(g => `<a href="#g-${g.tipo}" class="${g.itens.length ? '' : 'zero'}"><b>${g.itens.length}</b>${esc(g.titulo)}</a>`).join('');
+  document.getElementById('lista').innerHTML = !total ? '<div class="apv-vazio">Nada pendente para você agora. ✓</div>' : gs.filter(g => g.itens.length).map(g => `
+    <div class="apv-grupo" id="g-${g.tipo}"><h3>${esc(g.titulo)} <span class="n">${g.itens.length}</span></h3>
+      ${g.itens.map(i => `<div class="apv-linha"><div>${esc(i.texto)}</div><div class="data">${dataCurta(i.data)}</div><div class="valor">${reais(i.valor)}</div>
+        <div class="bts">${g.aprovar_aqui ? `<button class="btn fino primario" data-aprovar="${i.id}">Aprovar</button><button class="btn fino" data-recusar="${i.id}">Recusar…</button>` : ''}
+          <a class="btn fino${g.aprovar_aqui ? '' : ' primario'}" href="${RAIZ}${esc(i.link)}">Abrir ›</a></div></div>`).join('')}</div>`).join('');
+  document.querySelectorAll('[data-aprovar],[data-recusar]').forEach(b => b.onclick = async () => {
+    const aprovar = !!b.dataset.aprovar, id = Number(b.dataset.aprovar || b.dataset.recusar);
+    let motivo = null; if (!aprovar) { motivo = prompt('Motivo da recusa:'); if (!motivo) return; }
+    const { error } = await db.rpc('produto_aprovar', { p_ids: [id], p_aprovar: aprovar, p_motivo: motivo });
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    aviso(aprovar ? 'Cadastro aprovado' : 'Cadastro recusado'); carregar();
+  });
+}
+const dataCurta = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
+(async () => { CTX = await iniciarTela(); if (!CTX) return; document.getElementById('btnAtualizar').onclick = carregar; carregar(); })();
+</script>
+</body>
+</html>

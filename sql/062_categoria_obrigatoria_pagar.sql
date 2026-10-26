@@ -36,3 +36,12 @@ begin
 end $$;
 revoke execute on function public.pagamento_exige_categoria() from public, anon, authenticated;
 create or replace trigger exige_categoria before insert on public.pagamentos for each row execute function public.pagamento_exige_categoria();
+
+-- 26/10 (062b–062d): a checagem na BAIXA foi desligada (a função pagamento_exige_categoria só retorna new).
+--   Motivo: a categoria escolhida na tela ainda não estava gravada no título no momento da baixa (página em cache).
+--   A tela de contas a pagar agora grava a categoria antes de registrar o pagamento. A regra do LANÇAMENTO segue ativa.
+create or replace function public.pagamento_exige_categoria()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  return new;
+end $$;

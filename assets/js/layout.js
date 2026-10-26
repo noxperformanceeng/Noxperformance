@@ -118,7 +118,8 @@ async function iniciarTela() {
   const fechados = lerFechados();
 
   let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span><b>NOX</b><small>Sistema de gestão</small></span></a>
-    <a class="item${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html">Início</a>`;
+    <a class="item${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html">Início</a>
+    <a class="item item-aprov" id="itemAprov" href="${RAIZ}pages/config/aprovacoes.html" hidden>Aprovações pendentes <span class="n-aprov" id="nAprov"></span></a>`;
 
   MENU.forEach(g => {
     // Só o que a pessoa pode abrir: tela liberada no perfil/usuário (e a tela que o item exige, quando houver).
@@ -158,6 +159,13 @@ async function iniciarTela() {
       <header class="topo"><button class="btn-menu" id="btnMenu" aria-label="Abrir menu">☰</button><b>${esc(document.body.dataset.titulo || 'NOX')}</b></header>
     </div>`;
   document.body.prepend(app);
+  // Aprovações pendentes: contador no menu (atualiza a cada 2 min)
+  const contarAprov = async () => {
+    const { data } = await db.rpc('minhas_aprovacoes'); const n = (data || []).reduce((t, g) => t + (g.itens || []).length, 0);
+    const it = document.getElementById('itemAprov'), b = document.getElementById('nAprov'); if (!it) return;
+    it.hidden = !n && !ctx.admin; b.textContent = n || ''; b.hidden = !n;
+  };
+  contarAprov(); setInterval(contarAprov, 120000); window.addEventListener('nox:aprovacoes', contarAprov);
   // Menu lateral recolhível (lembra a escolha)
   const recolher = v => { document.body.classList.toggle('menu-recolhido', v); try { localStorage.setItem('nox_menu_recolhido', v ? '1' : ''); } catch {} };
   try { if (localStorage.getItem('nox_menu_recolhido')) document.body.classList.add('menu-recolhido'); } catch {}
