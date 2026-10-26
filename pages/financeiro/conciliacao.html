@@ -6,7 +6,7 @@
 <title>Extratos e conciliação · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261156">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261159">
 <style>
   .map-grade { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; margin: 10px 0; }
   .map-grade label { font-size: 11px; }
@@ -18,11 +18,11 @@
 <body data-modulo="conciliacao" data-titulo="Extratos e conciliação" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261156"></script>
-<script src="../../assets/js/ui.js?v=202610261156"></script>
-<script src="../../assets/js/auth.js?v=202610261156"></script>
-<script src="../../assets/js/layout.js?v=202610261156"></script>
-<script src="../../assets/js/cadastro.js?v=202610261156"></script>
+<script src="../../assets/js/supabase.js?v=202610261159"></script>
+<script src="../../assets/js/ui.js?v=202610261159"></script>
+<script src="../../assets/js/auth.js?v=202610261159"></script>
+<script src="../../assets/js/layout.js?v=202610261159"></script>
+<script src="../../assets/js/cadastro.js?v=202610261159"></script>
 <script>
 /* =====================================================================
    Extratos e conciliação (Mercado Pago e bancos)
@@ -206,7 +206,7 @@ const ro = { somenteLeitura: true };
    o: o que é · f: o que falta / destino (débito → contas a pagar; crédito → contas a receber; o resto se anula) */
 const GUIA_MP = {
   payment: { o: 'Dinheiro da venda liberado na conta', f: r => r.pedido_venda_id ? 'Baixar o título a receber da venda (valor liberado diferente do título: conferir tarifas/frete da venda)' : 'Venda não encontrada no sistema (anterior a 01/06/2026 ou sem nº): vira recebimento de venda antiga do Tiny' },
-  payout: { o: 'Saque/transferência do Mercado Pago para o banco (Itaú)', f: () => 'Não é despesa: transferência entre contas. Fecha com a entrada no extrato do banco' },
+  payout: { o: 'Saque/transferência do Mercado Pago para o banco', f: () => 'Não é despesa: use "Transferência entre contas" e escolha a conta que recebe. A entrada concilia sozinha quando o extrato de lá chegar' },
   'fee-release_in_advance': { o: 'Taxa de antecipação do dinheiro (liberar antes do prazo)', f: () => 'Débito → contas a pagar, categoria 7.03.001 Taxas de antecipação' },
   shipping: { o: 'Crédito de frete devolvido pelo Mercado Livre', f: () => 'Crédito → contas a receber, categoria 4.01.003 Créditos de frete' },
   cashback: { o: 'Ressarcimento/bonificação do Mercado Livre', f: () => 'Crédito → contas a receber, categoria 1.02.001 Reembolsos de marketplace' },
@@ -226,6 +226,29 @@ const CAT_SUGERIDA = { 'fee-release_in_advance': '7.03.001', mediation: '2.03.00
 const DESC_SUGERIDA = { payout: 'TRANSFERÊNCIA DO MERCADO PAGO PARA O BANCO', 'fee-release_in_advance': 'TAXA DE ANTECIPAÇÃO MERCADO PAGO', mediation: 'DEVOLUÇÃO AO COMPRADOR (RECLAMAÇÃO ML)',
   reserve_for_debt_payment: 'PAGAMENTO DE DÍVIDA NO MERCADO PAGO', shipping: 'CRÉDITO DE FRETE MERCADO LIVRE', cashback: 'RESSARCIMENTO MERCADO LIVRE' };
 let PESSOAS = null;
+// Transferência entre contas: lança a saída (aqui) e a entrada (na conta que recebe); a entrada concilia sozinha quando o extrato de lá chegar
+function lancarTransferencia(linhas, pronto) {
+  const ls = linhas.filter(r => r.conciliacao === 'pendente' && r.valor < 0);
+  if (!ls.length) return aviso('Selecione linhas de SAÍDA pendentes (ex.: saque do Mercado Pago)', true);
+  const origens = [...new Set(ls.map(r => r.conta_bancaria_id))];
+  if (origens.length > 1) return aviso('Selecione saídas de uma conta só', true);
+  const o = conta(origens[0]), total = ls.reduce((s, r) => s + Math.abs(Number(r.valor)), 0);
+  const destinos = CONTAS.filter(c => c.id !== o?.id && c.situacao === 'ativo' && c.tipo !== 'historico');
+  const m = abrirModal(`<h2>Transferência entre contas · ${ls.length} saída(s) · ${reais(total)}</h2>
+    <p class="sub" style="margin:0 0 8px">Sai de <b>${esc(o?.descricao || '')}</b>. O sistema lança a saída (paga e conciliada aqui) e a entrada na conta que recebe; quando o extrato de lá chegar com o mesmo valor (até 5 dias), a entrada é conciliada sozinha. Não entra no resultado.</p>
+    <div class="campo" style="max-width:360px"><label>Conta que recebe *</label><select id="trD"><option value="">— escolher —</option>${destinos.map(c => `<option value="${c.id}"${c.id === o?.conta_transferencia_padrao ? ' selected' : ''}>${esc(c.descricao)}${c.empresa_id !== o?.empresa_id ? ' (outra empresa)' : ''}</option>`).join('')}</select></div>
+    <label class="chk" style="margin:6px 0"><input type="checkbox" id="trP" ${ls.some(r => r.tipo === 'payout') ? 'checked' : ''}> Usar sempre esta conta para os saques de ${esc(o?.descricao || '')} (os próximos entram sozinhos)</label>
+    <div class="acoes"><button class="btn" id="trN">Voltar</button><button class="btn primario" id="trS">Lançar transferência</button></div>`);
+  m.querySelector('#trN').onclick = () => m.remove();
+  m.querySelector('#trS').onclick = async () => {
+    const dest = Number(m.querySelector('#trD').value); if (!dest) return aviso('Escolha a conta que recebe', true);
+    m.querySelector('#trS').disabled = true;
+    const { data, error } = await db.rpc('extrato_transferencia', { p_ids: ls.map(r => r.id), p_conta_destino: dest, p_padrao: m.querySelector('#trP').checked });
+    if (error) { m.querySelector('#trS').disabled = false; return aviso('Não lançou: ' + error.message, true); }
+    if (m.querySelector('#trP').checked && o) o.conta_transferencia_padrao = dest;
+    aviso(`${data} transferência(s) lançada(s) · entrada aguardando o extrato de ${conta(dest)?.descricao || ''}`); m.remove(); document.querySelector('.modal-fundo')?.remove(); pronto();
+  };
+}
 // Atalho: cria o título (contas a pagar se é saída; a receber se é entrada) já baixado e conciliado com a(s) linha(s)
 async function lancarTitulo(linhas, pronto) {
   const ls = linhas.filter(r => r.conciliacao === 'pendente');
@@ -302,7 +325,7 @@ const cfg = {
     CTX = ctx;
     db.rpc('usuarios_nomes').then(({ data }) => { window.__nomesUsu = Object.fromEntries((data || []).map(u => [u.id, u.nome])); });
     const [cb, c, cn, pv] = await Promise.all([
-      buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
+      buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo, conta_transferencia_padrao').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').eq('situacao', 'ativo').order('codigo')),
       buscarTodos(() => db.from('canais_venda').select('id, nome, link_pedido, empresa_id').order('nome')),
       buscarTodos(() => db.from('pedidos_venda').select('id, canal_id, empresa_id, numero_externo, pack_id, envio_id'))
@@ -331,9 +354,11 @@ const cfg = {
   apagado: r => ['compensado', 'ignorado'].includes(r.conciliacao),
   aoAbrir(m, r) {
     m.querySelector('#btnLancarTit')?.addEventListener('click', () => lancarTitulo([r], () => cfg.recarregar ? cfg.recarregar() : location.reload()));
+    m.querySelector('#btnTransf')?.addEventListener('click', () => lancarTransferencia([r], () => cfg.recarregar ? cfg.recarregar() : location.reload()));
   },
   secaoExtra: r => `<div class="secao">Conciliação</div>
     ${r.conciliacao === 'pendente' ? `<p style="margin:0 0 8px"><button type="button" class="btn primario" id="btnLancarTit">${r.valor < 0 ? 'Lançar no contas a pagar (fornecedor e categoria)…' : 'Lançar no contas a receber…'}</button>
+      ${r.valor < 0 ? `<button type="button" class="btn${r.tipo === 'payout' ? ' primario' : ''}" id="btnTransf">Transferência entre contas…</button>` : ''}
       <span class="sub"> cria o título já ${r.valor < 0 ? 'pago' : 'recebido'} e concilia esta linha</span></p>` : ''}<div class="info">
       <div style="background:#e8f0fe;border-radius:8px;padding:8px 10px;margin-bottom:6px"><b>O que é:</b> ${esc(guiaDe(r).o)}<br><b>${r.conciliacao === 'pendente' ? 'O que falta' : 'Destino'}:</b> ${esc(guiaDe(r).f(r))}</div>
       <div>Situação: <b>${esc(r.conciliacao)}</b>${r.conciliado_em ? ' em ' + dataHoraBR(r.conciliado_em) : ''}</div>
@@ -345,6 +370,7 @@ const cfg = {
       ${r.tarifas ? `<div>Tarifas na linha: ${esc(Object.entries(r.tarifas).map(([k, v]) => `${k} ${reais(v)}`).join(' · '))}</div>` : ''}</div>
       ${r.linha_original ? `<details style="margin-top:8px"><summary class="sub">Linha original do arquivo</summary><pre style="font-size:11px;white-space:pre-wrap">${esc(JSON.stringify(r.linha_original, null, 1))}</pre></details>` : ''}`,
   acoesLote: [
+    { nome: 'Transferência entre contas…', executar: (sel, pronto) => lancarTransferencia(sel, pronto) },
     { nome: 'Lançar título (pagar/receber)…', executar: (sel, pronto) => lancarTitulo(sel, pronto) },
     { nome: 'Classificar em categoria', executar: (sel, pronto) => ACOES.has('receber.conciliar') ? janelaCategoria(sel, pronto) : aviso('Sem permissão para conciliar', true) },
     { nome: 'Ligar à venda…', executar: async (sel, pronto) => {

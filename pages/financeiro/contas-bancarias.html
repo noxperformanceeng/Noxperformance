@@ -6,16 +6,16 @@
 <title>Contas bancárias · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261156">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261159">
 </head>
 <body data-modulo="contas_bancarias" data-titulo="Contas bancárias" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261156"></script>
-<script src="../../assets/js/ui.js?v=202610261156"></script>
-<script src="../../assets/js/auth.js?v=202610261156"></script>
-<script src="../../assets/js/layout.js?v=202610261156"></script>
-<script src="../../assets/js/cadastro.js?v=202610261156"></script>
+<script src="../../assets/js/supabase.js?v=202610261159"></script>
+<script src="../../assets/js/ui.js?v=202610261159"></script>
+<script src="../../assets/js/auth.js?v=202610261159"></script>
+<script src="../../assets/js/layout.js?v=202610261159"></script>
+<script src="../../assets/js/cadastro.js?v=202610261159"></script>
 <script>
 const TIPOS = [{ v: 'corrente', n: 'Conta corrente' }, { v: 'pagamentos', n: 'Conta de pagamentos (Mercado Pago…)' }, { v: 'cartao', n: 'Cartão de crédito' },
   { v: 'caixa', n: 'Caixa (dinheiro)' }, { v: 'aplicacao', n: 'Aplicação' }, { v: 'historico', n: 'Histórico (lançamentos antigos sem conciliação)' }];
@@ -37,11 +37,16 @@ montarCadastro({
     { id: 'saldo_inicial', label: 'Saldo inicial (R$)', tipo: 'moeda', secao: 'Saldo e conciliação' },
     { id: 'data_saldo_inicial', label: 'Data do saldo inicial', tipo: 'data' },
     { id: 'conciliavel', label: 'Conciliação', tipo: 'bool', padrao: true, textoBool: 'Tem extrato para conciliar' },
+    { id: 'conta_transferencia_padrao', label: 'Saques / transferências vão para', tipo: 'select', col: 2, cadastro: false,
+      opcoes: () => (window.__contas || []).filter(c => c.situacao === 'ativo' && c.tipo !== 'historico').map(c => ({ v: c.id, n: c.descricao })),
+      ajuda: 'Conta que recebe os saques desta conta (ex.: Mercado Pago 30 → Itaú 30). Com ela preenchida, o saque do extrato vira transferência sozinho e a entrada é conciliada quando o extrato da conta de destino chegar.' },
     { id: 'nome_tiny', label: 'Nome no Tiny', ajuda: 'Como a conta aparece no Tiny (usado na importação do histórico).' },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativa' }, { v: 'inativo', n: 'Inativa' }], obrig: true, padrao: 'ativo' },
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
   ],
-  antesSalvar: d => { if (d.empresa_id) d.empresa_id = Number(d.empresa_id); },
+  carregarExtra(linhas) { window.__contas = linhas; return {}; },
+  antesSalvar: (d, r) => { if (d.empresa_id) d.empresa_id = Number(d.empresa_id); d.conta_transferencia_padrao = Number(d.conta_transferencia_padrao) || null;
+    if (r?.id && d.conta_transferencia_padrao === r.id) d.conta_transferencia_padrao = null; },
   pendencias: [
     { id: 'sem_saldo', nome: 'Sem data do saldo inicial', cor: 'alerta', bloqueia: true, teste: r => r.situacao === 'ativo' && r.tipo !== 'historico' && !r.data_saldo_inicial },
     { id: 'sem_dados', nome: 'Sem agência/conta', cor: 'neutro', teste: r => ['corrente', 'pagamentos'].includes(r.tipo) && !r.conta }
