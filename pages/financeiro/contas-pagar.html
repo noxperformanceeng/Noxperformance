@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261110">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261112">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -26,11 +26,11 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261110"></script>
-<script src="../../assets/js/ui.js?v=202610261110"></script>
-<script src="../../assets/js/auth.js?v=202610261110"></script>
-<script src="../../assets/js/layout.js?v=202610261110"></script>
-<script src="../../assets/js/cadastro.js?v=202610261110"></script>
+<script src="../../assets/js/supabase.js?v=202610261112"></script>
+<script src="../../assets/js/ui.js?v=202610261112"></script>
+<script src="../../assets/js/auth.js?v=202610261112"></script>
+<script src="../../assets/js/layout.js?v=202610261112"></script>
+<script src="../../assets/js/cadastro.js?v=202610261112"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -130,8 +130,60 @@ function htmlPagamentos(r) {
       <div class="l2"><label>Conta</label><select id="pgConta">${contasEmp.map(c => `<option value="${c.id}"${c.id === r.conta_bancaria_id ? ' selected' : ''}>${esc(c.descricao)}</option>`).join('')}</select></div>
       <div><label>Forma</label><select id="pgForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}"${f.id === r.forma_pagamento_id ? ' selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
       <div><label>Identificador / autenticação</label><input id="pgIdent"></div>
-      <div class="acao" style="grid-column: span 4; justify-content:flex-end"><button type="button" class="btn primario" id="pgRegistrar">Registrar pagamento</button></div>
+      <div class="l2"><label>Comprovante (opcional)</label><input type="file" id="pgComp" accept="application/pdf,image/*" multiple></div>
+      <div class="acao" style="grid-column: span 2; justify-content:flex-end"><button type="button" class="btn primario" id="pgRegistrar">Registrar pagamento</button></div>
     </div>` : ''}`;
+}
+
+/* ---------- Anexos (comprovantes, boletos, notas) ---------- */
+const CAT_ANEXO = { comprovante: 'Comprovante', boleto: 'Boleto', nota: 'Nota / recibo', outro: 'Outro' };
+function htmlAnexos(r) {
+  if (!r.id) return '';
+  const ls = extraAtual.anexos[r.id] || [], ctx = window.__ctxNox, podeAnexar = ctx?.pode('pagar', 'criar');
+  return `<div class="secao">Anexos${ls.length ? ' · ' + ls.length : ''}</div>
+    ${ls.length ? `<table class="lista-mini"><tbody>${ls.map(a => `<tr><td><a href="#" data-anexo="${a.id}" style="color:var(--destaque)">${esc(a.nome)}</a></td>
+      <td><span class="tg neutro">${esc(CAT_ANEXO[a.categoria] || a.categoria)}</span>${a.pagamento_id ? ' <small class="sub">do pagamento de ' + dataCurta((extraAtual.pagamentos[r.id] || []).find(p => p.id === a.pagamento_id)?.data_pagamento) + '</small>' : ''}</td>
+      <td class="sub">${dataHoraBR(a.criado_em)}</td>${ctx?.admin ? `<td><button type="button" class="btn discreto fino" data-anexo-rm="${a.id}">Excluir</button></td>` : '<td></td>'}</tr>`).join('')}</tbody></table>`
+      : '<p class="sub" style="margin:0 0 6px">Nenhum arquivo. Anexe o comprovante do pagamento, o boleto ou a nota.</p>'}
+    ${podeAnexar ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><select id="anCat" data-simples style="width:auto">${Object.entries(CAT_ANEXO).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select>
+      <label class="btn fino" style="cursor:pointer">+ Anexar arquivo<input type="file" id="anArq" multiple accept="application/pdf,image/*,.xml" hidden></label><small class="sub">PDF ou imagem, até 15 MB</small></div>` : ''}`;
+}
+async function anexarArquivos(r, arquivos, categoria, pagamentoId) {
+  let n = 0;
+  for (const f of arquivos) {
+    if (f.size > 15 * 1024 * 1024) { aviso(f.name + ': maior que 15 MB', true); continue; }
+    const limpo = f.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9._-]+/gi, '_');
+    const caminho = `pagar/${r.empresa_id}/${r.id}/${Date.now()}_${limpo}`;
+    const up = await db.storage.from('financeiro').upload(caminho, f, { contentType: f.type || undefined });
+    if (up.error) { aviso(f.name + ': ' + up.error.message, true); continue; }
+    const { error } = await db.from('titulos_anexos').insert({ tipo: 'pagar', titulo_id: r.id, pagamento_id: pagamentoId || null, categoria, nome: f.name, caminho, mime: f.type || null, tamanho: f.size });
+    if (error) { aviso(f.name + ': ' + error.message, true); continue; }
+    n++;
+  }
+  return n;
+}
+function ligarAnexos(m, r) {
+  m.querySelectorAll('[data-anexo]').forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    const x = (extraAtual.anexos[r.id] || []).find(y => y.id === Number(a.dataset.anexo));
+    const { data, error } = await db.storage.from('financeiro').createSignedUrl(x.caminho, 300);
+    if (error) return aviso('Não abriu: ' + error.message, true);
+    window.open(data.signedUrl, '_blank', 'noopener');
+  });
+  m.querySelectorAll('[data-anexo-rm]').forEach(b => b.onclick = async () => {
+    const x = (extraAtual.anexos[r.id] || []).find(y => y.id === Number(b.dataset.anexoRm));
+    if (!confirm(`Excluir o anexo "${x.nome}"?`)) return;
+    const { error } = await db.from('titulos_anexos').delete().eq('id', x.id);
+    if (error) return aviso('Não excluiu: ' + error.message, true);
+    await db.storage.from('financeiro').remove([x.caminho]);
+    aviso('Anexo excluído'); m.remove(); cfg.recarregar();
+  });
+  const inp = m.querySelector('#anArq');
+  if (inp) inp.onchange = async () => {
+    const arquivos = [...inp.files]; inp.value = ''; if (!arquivos.length) return;
+    const n = await anexarArquivos(r, arquivos, m.querySelector('#anCat').value);
+    if (n) { aviso(`${n} arquivo(s) anexado(s)`); m.remove(); await cfg.recarregar(); }
+  };
 }
 
 async function registrarPagamento(r) {
@@ -151,9 +203,11 @@ async function registrarPagamento(r) {
     if (e1) return aviso('Não gravou a categoria: ' + e1.message, true);
     r.categoria_financeira_id = cat;
   }
-  const { error } = await db.from('pagamentos').insert(p);
+  const { data: pg, error } = await db.from('pagamentos').insert(p).select('id').single();
   if (error) return aviso('Não salvou: ' + error.message, true);
-  aviso(p.valor >= Number(r.saldo) - 0.005 ? 'Título quitado' : 'Pagamento parcial registrado');
+  const comp = [...(q('#pgComp')?.files || [])];
+  if (comp.length) await anexarArquivos(r, comp, 'comprovante', pg?.id);
+  aviso((p.valor >= Number(r.saldo) - 0.005 ? 'Título quitado' : 'Pagamento parcial registrado') + (comp.length ? ' · comprovante anexado' : ''));
   modalAtual.remove(); cfg.recarregar();
 }
 
@@ -218,13 +272,14 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx;
-    const [f, c, cb, fp, pg, ra] = await Promise.all([
+    const [f, c, cb, fp, pg, ra, an] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, situacao').order('nome')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, aplica_produtos, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, exige_codigo, situacao').order('nome')),
       buscarTodos(() => db.from('pagamentos').select('*').order('data_pagamento')),
-      buscarTodos(() => db.from('titulos_pagar_rateio').select('*').order('id'))
+      buscarTodos(() => db.from('titulos_pagar_rateio').select('*').order('id')),
+      buscarTodos(() => db.from('titulos_anexos').select('*').eq('tipo', 'pagar').order('id'))
     ]);
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
     FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: x.nome }));
@@ -233,7 +288,8 @@ const cfg = {
     const pagamentos = {}, rateio = {};
     pg.forEach(p => (pagamentos[p.titulo_id] ||= []).push(p));
     ra.forEach(x => (rateio[x.titulo_id] ||= []).push(x));
-    extraAtual = { pagamentos, rateio };
+    const anexos = {}; an.forEach(x => (anexos[x.titulo_id] ||= []).push(x));
+    extraAtual = { pagamentos, rateio, anexos };
     return extraAtual;
   },
   colunasExtras: [
@@ -243,7 +299,7 @@ const cfg = {
     { label: 'Conta', texto: (r, e) => { const p = (e.pagamentos[r.id] || []).filter(x => !x.estornado); return conta(p.length ? p.at(-1).conta_bancaria_id : r.conta_bancaria_id)?.descricao || ''; } }
   ],
   textoBuscaExtra: r => `${cat(r.categoria_financeira_id)?.codigo || ''} ${conta(r.conta_bancaria_id)?.descricao || ''} ${r.descricao || ''} ${r.origem_ref?.fornecedor_tiny || ''} ${r.origem_ref?.categoria_tiny || ''} ${r.origem_ref?.tiny_id || ''} ${Number(r.valor || 0).toFixed(2).replace('.', ',')}`,
-  subtituloLinha: r => [r.projecao ? 'projeção' : '', r.parcela && r.parcelas ? `parcela ${r.parcela}/${r.parcelas}` : ''].filter(Boolean).join(' · '),
+  subtituloLinha: r => [r.projecao ? 'projeção' : '', extraAtual.anexos?.[r.id]?.length ? `📎 ${extraAtual.anexos[r.id].length}` : '', r.parcela && r.parcelas ? `parcela ${r.parcela}/${r.parcelas}` : ''].filter(Boolean).join(' · '),
   resumo: v => {
     window.__visiveisNox = v;
     const venc = v.filter(vencido);
@@ -256,6 +312,7 @@ const cfg = {
     { id: 'produto_sem_pedido', nome: 'Compra de produto sem pedido', cor: 'alerta',
       teste: (r, e) => ['manual', 'recorrente'].includes(r.origem) && [r.categoria_financeira_id, ...(e.rateio[r.id] || []).map(x => x.categoria_financeira_id)].some(id => cat(id)?.aplica_produtos) },
     { id: 'sem_codigo', nome: 'Boleto sem código de barras', cor: 'neutro', teste: r => ABERTOS.includes(r.situacao) && forma(r.forma_pagamento_id)?.exige_codigo && !r.codigo_barras },
+    { id: 'sem_comprovante', nome: 'Pago sem comprovante', cor: 'neutro', teste: (r, e) => r.situacao === 'pago' && r.data_pagamento >= '2026-10-23' && !(e.anexos[r.id] || []).length },
     { id: 'nao_conc', nome: 'Pago e não conciliado', cor: 'neutro', teste: (r, e) => (e.pagamentos[r.id] || []).some(p => !p.estornado && !p.conciliado) }
   ],
   apagado: r => r.situacao === 'cancelado' || r.situacao === 'pago',
@@ -300,6 +357,7 @@ const cfg = {
       m.querySelector('#f_valor')?.addEventListener('input', conferirRateio);
     } else el.querySelectorAll('input, select').forEach(i => i.disabled = true);
     conferirRateio();
+    if (r.id) ligarAnexos(m, r);
     // Pagamentos
     if (!r.id || !pode) return;
     m.querySelector('#pgRegistrar')?.addEventListener('click', () => registrarPagamento(r));
@@ -315,7 +373,7 @@ const cfg = {
       aviso(c.checked ? 'Conciliado' : 'Conciliação desfeita');
     });
   },
-  secaoExtra: r => htmlRastreio(r) + htmlPagamentos(r),
+  secaoExtra: r => htmlRastreio(r) + htmlPagamentos(r) + htmlAnexos(r),
   antesSalvar: d => {
     ['empresa_id', 'fornecedor_id', 'categoria_financeira_id', 'conta_bancaria_id', 'forma_pagamento_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); });
     if (d.codigo_barras) d.codigo_barras = soDigitos(d.codigo_barras) || d.codigo_barras;
