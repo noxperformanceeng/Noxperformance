@@ -86,6 +86,11 @@ async function rodar(jobId: number, chave: string) {
       pagina++;
     }
     // 2) detalhar os que ainda não têm detalhe
+    // pedidos: os de e-commerce (Mercado Livre, Shopee…) já vêm pela integração direta — não detalha, só marca
+    if (job.recurso === 'pedidos' && p.so_sem_ecommerce) {
+      const { error } = await db.rpc('tiny_pedidos_pular_ecommerce', { p_empresa: job.empresa_id });
+      if (error) throw new Error('pular e-commerce: ' + error.message);
+    }
     if (def.obter && p.detalhar !== false) {
       while (true) {
         const { data: pend } = await db.from('tiny_brutos').select('id, tiny_id').eq('empresa_id', job.empresa_id).eq('recurso', job.recurso).is('detalhe', null).order('id').limit(25);
@@ -110,6 +115,11 @@ async function rodar(jobId: number, chave: string) {
     }
     await salvar({ situacao: 'ok', detalhados, falhas, params: p, mensagem: `Concluído: ${lidos} lidos, ${detalhados} detalhados, ${falhas} falhas` });
     // contas a pagar: aplica no sistema o que é novo ou mudou no Tiny
+    // pedidos de distribuidores/venda direta (sem e-commerce): cria clientes e pedidos de venda no sistema
+    if (job.recurso === 'pedidos' && p.so_sem_ecommerce && p.carregar !== false) {
+      const { data: r, error } = await db.rpc('tiny_carregar_pedidos_venda', { p_empresa: job.empresa_id });
+      await salvar({ mensagem: `Concluído: ${lidos} lidos, ${detalhados} detalhados, ${falhas} falhas · carga: ${error ? error.message : JSON.stringify(r)}`.slice(0, 1000) });
+    }
     if (job.recurso === 'contas_pagar' && p.carregar !== false) {
       const { data: r, error } = await db.rpc('tiny_carregar_contas_pagar', { p_empresa: job.empresa_id, p_incluir_pessoal: true });
       await salvar({ mensagem: `Concluído: ${lidos} lidos, ${detalhados} detalhados, ${falhas} falhas · carga: ${error ? error.message : JSON.stringify(r)}`.slice(0, 1000) });
@@ -145,7 +155,7 @@ Deno.serve(async req => {
     const { data: rodando } = await db.from('integracao_jobs').select('id').eq('origem', 'tiny').eq('empresa_id', emp.id).eq('recurso', corpo.recurso).in('situacao', ['fila', 'rodando']).gt('atualizado_em', new Date(Date.now() - 10 * 60_000).toISOString()).maybeSingle();
     if (rodando) return resp({ erro: 'Já existe uma leitura em andamento para este item', job: rodando.id });
     const { data: job, error } = await db.from('integracao_jobs').insert({ origem: 'tiny', empresa_id: emp.id, recurso: corpo.recurso,
-      params: { sufixo, filtros: corpo.filtros ?? {}, detalhar: corpo.detalhar !== false, fase: 'listar' } }).select('id').single();
+      params: { sufixo, filtros: corpo.filtros ?? {}, detalhar: corpo.detalhar !== false, so_sem_ecommerce: corpo.so_sem_ecommerce === true, fase: 'listar' } }).select('id').single();
     if (error) return resp({ erro: error.message });
     // @ts-ignore
     EdgeRuntime.waitUntil(rodar(job.id, chave));

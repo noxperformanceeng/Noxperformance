@@ -6,7 +6,7 @@
 <title>Usuários e acessos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261112">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261116">
 </head>
 <body data-modulo="usuarios" data-titulo="Usuários e acessos">
 <main id="conteudo">
@@ -52,7 +52,7 @@
       <button class="btn primario" id="salvarPerfil">Salvar perfil</button>
       <button class="btn" id="novoPerfil" type="button">+ Novo perfil</button>
     </div>
-    <p class="sub" style="margin:0 0 8px;font-size:12.5px">Escolha o perfil, marque o que cada tela permite e salve. Quem tem o perfil recebe essas telas; telas a mais ou a menos para uma pessoa só ficam na aba Usuários (botão de editar do usuário).<br><b>Níveis:</b> Só ver · Ver e incluir novos (não mexe nos que já existem) · Ver, incluir e alterar (não inativa nem exclui) · Tudo (inclusive inativar/excluir).</p>
+    <p class="sub" style="margin:0 0 8px;font-size:12.5px">Escolha o perfil, marque o que cada tela permite e salve. Quem tem o perfil recebe essas telas; telas a mais ou a menos para uma pessoa só ficam na aba Usuários (botão de editar do usuário).<br><b>Níveis:</b> Só ver · Ver e incluir novos (não mexe nos que já existem) · Ver, incluir e alterar (não inativa nem exclui) · Tudo (inclusive inativar). <b>Excluir</b> registros: só o master — os demais inativam.</p>
     <div class="cartao tabela-rolagem">
       <table>
         <thead><tr><th>Setor</th><th>Tela</th><th style="width:180px">Acesso</th></tr></thead>
@@ -74,15 +74,15 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261112"></script>
-<script src="../../assets/js/ui.js?v=202610261112"></script>
-<script src="../../assets/js/auth.js?v=202610261112"></script>
-<script src="../../assets/js/layout.js?v=202610261112"></script>
+<script src="../../assets/js/supabase.js?v=202610261116"></script>
+<script src="../../assets/js/ui.js?v=202610261116"></script>
+<script src="../../assets/js/auth.js?v=202610261116"></script>
+<script src="../../assets/js/layout.js?v=202610261116"></script>
 <script>
 let ctx, perfis = [], modulos = [], permissoes = [], ajustes = [], usuarios = [];
 let acoes = [], perfilAcoes = [], usuarioAcoes = [];   // ações sensíveis (estornar, cancelar…), por perfil e por pessoa
 const GRUPOS = { cadastros: 'Cadastros', comercial: 'Comercial', suprimentos: 'Suprimentos', producao: 'Produção', engenharia: 'Engenharia', financeiro: 'Financeiro', rh: 'RH', config: 'Configurações' };
-const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, incluir e alterar', editar: 'Tudo (inclusive inativar/excluir)', nenhum: 'Bloqueado' };
+const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, incluir e alterar', editar: 'Tudo (inclusive inativar)', nenhum: 'Bloqueado' };
 
 (async () => {
   ctx = await iniciarTela();

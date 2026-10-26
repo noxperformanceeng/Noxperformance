@@ -6,7 +6,7 @@
 <title>Ponto · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261112">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261116">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -23,12 +23,12 @@
 <body data-modulo="ponto" data-titulo="Ponto" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261112"></script>
-<script src="../../assets/js/ui.js?v=202610261112"></script>
-<script src="../../assets/js/auth.js?v=202610261112"></script>
-<script src="../../assets/js/layout.js?v=202610261112"></script>
-<script src="../../assets/js/cadastro.js?v=202610261112"></script>
-<script src="../../assets/js/rh.js?v=202610261112"></script>
+<script src="../../assets/js/supabase.js?v=202610261116"></script>
+<script src="../../assets/js/ui.js?v=202610261116"></script>
+<script src="../../assets/js/auth.js?v=202610261116"></script>
+<script src="../../assets/js/layout.js?v=202610261116"></script>
+<script src="../../assets/js/cadastro.js?v=202610261116"></script>
+<script src="../../assets/js/rh.js?v=202610261116"></script>
 <script>
 /* =====================================================================
    Ponto — leitura do relógio
@@ -144,7 +144,7 @@ function detalhe(fid) {
       <div><label>Observação</label><input id="fObs" value="${esc(fe?.observacao || '')}"></div>
       <div><button class="btn primario fino" id="fOk">${fe ? 'Atualizar fechamento' : 'Fechar ponto'}</button></div></div>
     <p class="sub" style="margin:6px 0 0">${fe ? `Fechado em ${dataHoraBR(fe.atualizado_em)}. ` : ''}Valores sugeridos pelo cálculo; ajuste se houver banco de horas ou acordo.</p>` : ''}
-    <div class="acoes" style="margin-top:14px">${PODE && r.faltas.length ? `<button class="btn" id="fFaltas">Registrar ${r.faltas.length} falta(s) na tela Faltas</button>` : ''}${PODE && fe ? '<button class="btn" id="fDesf">Desfazer fechamento</button>' : ''}<button class="btn" id="fFechar">Fechar</button></div>`);
+    <div class="acoes" style="margin-top:14px">${PODE && r.faltas.length ? `<button class="btn" id="fFaltas">Registrar ${r.faltas.length} falta(s) na tela Faltas</button>` : ''}${PODE && fe && CTX.admin ? '<button class="btn" id="fDesf">Desfazer fechamento</button>' : ''}<button class="btn" id="fFechar">Fechar</button></div>`);
   m.querySelector('.modal').classList.add('form', 'largo');
   const q = s => m.querySelector(s);
   q('#fFechar').onclick = () => m.remove();
@@ -152,7 +152,7 @@ function detalhe(fid) {
   const reabrir = async () => { m.remove(); await carregar(); detalhe(fid); };
   m.querySelectorAll('[data-m]').forEach(s => s.onclick = async () => {
     const x = MARC.find(y => y.id === +s.dataset.m);
-    if (x.origem === 'manual' && !x.desconsiderada && confirm(`Apagar a marcação manual das ${x.hora.slice(0, 5)}?`)) {
+    if (CTX.admin && x.origem === 'manual' && !x.desconsiderada && confirm(`Apagar a marcação manual das ${x.hora.slice(0, 5)}?`)) {
       const { error } = await db.from('rh_marcacoes').delete().eq('id', x.id); if (error) return aviso('Não apagou: ' + error.message, true); return reabrir();
     }
     const motivo = x.desconsiderada ? null : prompt(`Desconsiderar a marcação das ${x.hora.slice(0, 5)}? Motivo:`);

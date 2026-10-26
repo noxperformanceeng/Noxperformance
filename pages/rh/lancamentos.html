@@ -6,7 +6,7 @@
 <title>Lançamentos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261112">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261116">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -24,12 +24,12 @@
 <body data-modulo="lancamentos" data-titulo="Lançamentos" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261112"></script>
-<script src="../../assets/js/ui.js?v=202610261112"></script>
-<script src="../../assets/js/auth.js?v=202610261112"></script>
-<script src="../../assets/js/layout.js?v=202610261112"></script>
-<script src="../../assets/js/cadastro.js?v=202610261112"></script>
-<script src="../../assets/js/rh.js?v=202610261112"></script>
+<script src="../../assets/js/supabase.js?v=202610261116"></script>
+<script src="../../assets/js/ui.js?v=202610261116"></script>
+<script src="../../assets/js/auth.js?v=202610261116"></script>
+<script src="../../assets/js/layout.js?v=202610261116"></script>
+<script src="../../assets/js/cadastro.js?v=202610261116"></script>
+<script src="../../assets/js/rh.js?v=202610261116"></script>
 <script>
 /* =====================================================================
    Lançamentos do mês (competência)
@@ -188,7 +188,7 @@ function abrirFuncionario(fid) {
       return sep + `<tr${aConf ? ' style="background:color-mix(in srgb,#f5a623 16%,transparent)"' : ''}><td>${esc(ev.codigo)}</td><td>${esc(ev.descricao)}${aConf ? ' <span class="tg alerta">a conferir</span>' : ''}${l.observacao ? `<small class="sub2">${esc(l.observacao)}</small>` : ''}</td><td class="num">${refBR(ev, l.referencia)}</td>
         <td class="num">${ev.tipo === 'provento' ? num2(l.valor) : ''}</td><td class="num">${ev.tipo === 'desconto' ? num2(l.valor) : ev.tipo === 'informativo' ? '(' + num2(l.valor) + ')' : ''}</td>
         <td>${manual ? '<small>Lançamentos</small>' : `<a class="tg neutro" href="${TELAS_URL[l.origem] || '#'}${l.origem_id && CADASTRO_RH.includes(l.origem) ? '?abrir=' + l.origem_id : ''}" title="Abrir o registro de origem">🔒 ${esc(TELAS_RH[l.origem] || l.origem)} ↗</a>`}</td>
-        <td style="white-space:nowrap">${manual && pode ? `${aConf ? `<button class="acao-linha" data-conf="${l.id}" title="Valor conferido" style="color:var(--ok,#2e9e5b);font-weight:700">✓</button>` : ''}<button class="acao-linha" data-ed="${l.id}" title="Alterar">✎</button><button class="acao-linha" data-rm="${l.id}" title="Excluir">✕</button>` : ''}</td></tr>`; }).join('')
+        <td style="white-space:nowrap">${manual && pode ? `${aConf ? `<button class="acao-linha" data-conf="${l.id}" title="Valor conferido" style="color:var(--ok,#2e9e5b);font-weight:700">✓</button>` : ''}<button class="acao-linha" data-ed="${l.id}" title="Alterar">✎</button>${CTX.admin ? `<button class="acao-linha" data-rm="${l.id}" title="Excluir (só o master)">✕</button>` : ''}` : ''}</td></tr>`; }).join('')
       : '<tr><td colspan="7" class="vazio">Nenhum lançamento neste mês.</td></tr>';
     const t = totais(ls);
     m.querySelector('#lTot').innerHTML = `<span>Contábil: vencimentos <b>${num2(t.pc)}</b> · descontos <b>${num2(t.dc)}</b> · líquido <b>${reais(t.pc - t.dc)}</b></span>` +
