@@ -244,3 +244,40 @@ function etiquetaEmpresa(id, nome) {
   const curto = String(nome || id).split('·')[0].trim();
   return `<span class="tg-emp e${Number(id) % 4}" title="${esc(nome || '')}">${esc(curto)}</span>`;
 }
+
+/* ---------- Rastreio completo de um título (mesma linha do tempo em todas as telas) ----------
+   abrirRastreio('pagar' | 'receber', idDoTitulo)  ·  abrirRastreio('pagamento' | 'recebimento', idDaBaixa)
+   Mostra: origem (pedido de compra e aprovações, folha, Tiny, pedido de venda), quem lançou e quando,
+   alterações, revisão, pagamentos/recebimentos e conciliação com o extrato. */
+async function abrirRastreio(tipo, id) {
+  if (tipo === 'pagamento' || tipo === 'recebimento') {
+    const { data } = await db.from(tipo === 'pagamento' ? 'pagamentos' : 'recebimentos').select('titulo_id').eq('id', id).maybeSingle();
+    if (!data) return aviso('Baixa não encontrada', true);
+    tipo = tipo === 'pagamento' ? 'pagar' : 'receber'; id = data.titulo_id;
+  }
+  const { data, error } = await db.rpc('rastreio_titulo', { p_tipo: tipo, p_id: id });
+  if (error) return aviso('Sem rastreio: ' + error.message, true);
+  const t = data.titulo, ps = data.passos || [], raiz = typeof RAIZ !== 'undefined' ? RAIZ : '../../';
+  const dia = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
+  const quando = v => !v ? '' : String(v).length <= 10 ? dia(v) : dataHoraBR(v);
+  const moeda = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const CAMPOS = { data_vencimento: 'vencimento', data_programada: 'programado para', data_emissao: 'emissão', data_competencia: 'competência',
+    conta_bancaria_id: 'conta', forma_pagamento_id: 'forma de pagamento', categoria_financeira_id: 'categoria', fornecedor_id: 'fornecedor',
+    cliente_id: 'cliente', empresa_id: 'empresa', codigo_barras: 'código de barras', descricao: 'descrição', documento: 'documento', valor: 'valor',
+    observacoes: 'observações', projecao: 'projeção', parcela: 'parcela', parcelas: 'parcelas', origem_ref: 'dados de origem', revisado_em: 'revisão', revisado_por: 'revisão' };
+  ps.forEach(p => { if (p.detalhe?.startsWith('campos: ')) p.detalhe = 'campos: ' + [...new Set(p.detalhe.slice(8).split(', ').map(c => CAMPOS[c] || c.replace(/_/g, ' ')))].join(', '); });
+  let grupo = null;
+  const itens = ps.map(p => {
+    const cab = p.grupo !== grupo ? `<li class="rastro-grupo">${esc(p.grupo)}</li>` : ''; grupo = p.grupo;
+    return cab + `<li class="rastro-item ${esc(p.cor || '')}"><b>${esc(p.etapa)}</b>${p.detalhe ? ` <span>${esc(p.detalhe)}</span>` : ''}
+      <small>${[quando(p.quando), p.quem].filter(Boolean).map(esc).join(' · ')}${p.link ? ` · <a href="${raiz}${esc(p.link)}">abrir ›</a>` : ''}</small></li>`;
+  }).join('');
+  const m = abrirModal(`<h2>Rastreio · ${esc(t.documento || (t.tipo === 'pagar' ? 'título a pagar' : 'título a receber') + ' #' + t.id)}</h2>
+    <p class="sub" style="margin:0 0 8px">${esc([t.pessoa, t.empresa].filter(Boolean).join(' · '))} · <b>${moeda(t.valor)}</b> · ${esc(t.situacao)}${t.projecao ? ' (previsão)' : ''}<br>
+      Emissão ${dia(t.emissao)} · vencimento ${dia(t.vencimento)}${t.competencia ? ' · competência ' + dia(t.competencia).slice(3) : ''}${t.descricao ? '<br>' + esc(t.descricao) : ''}</p>
+    <ul class="rastro">${itens || '<li>Sem eventos registrados.</li>'}</ul>
+    <div class="acoes"><a class="btn" href="${raiz}pages/financeiro/${t.tipo === 'pagar' ? 'contas-pagar' : 'contas-receber'}.html?abrir=${t.id}">Abrir o título</a><button class="btn" type="button" data-fechar>Fechar</button></div>`);
+  m.querySelector('.modal').style.maxWidth = '720px';
+  m.querySelector('[data-fechar]').onclick = () => m.remove();
+  return m;
+}

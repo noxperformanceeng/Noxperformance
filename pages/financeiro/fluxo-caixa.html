@@ -211,13 +211,13 @@ async function detalhe(cats, k) {
   const nomesCat = [...new Set(cats)].map(id => cat(id)).filter(Boolean).map(c => c.codigo + ' ' + c.nome);
   const m = abrirModal(`<h2>Origem do valor</h2>
     <p class="sub" style="margin:0 0 8px">${esc(nomesCat.length > 3 ? nomesCat.length + ' categorias' : nomesCat.join(', ') || 'Sem categoria')}${k ? ' · ' + esc(k.length === 7 ? k.split('-').reverse().join('/') : k.split('-').reverse().join('/')) : ' · período inteiro'} · <b>${reais(tot)}</b> em ${ls.length} lançamento(s)</p>
-    <div class="tabela-rolagem" style="max-height:60vh"><table class="det"><thead><tr><th>Data</th><th>Origem</th><th>Título</th><th>Venda / fornecedor</th><th>Categoria</th><th class="num">Valor (R$)</th></tr></thead><tbody>
+    <div class="tabela-rolagem" style="max-height:60vh"><table class="det"><thead><tr><th>Data</th><th>Origem</th><th>Título</th><th>Venda / fornecedor</th><th>Categoria</th><th class="num">Valor (R$)</th><th></th></tr></thead><tbody>
     ${ls.slice(0, 1500).map(x => {
       const ehRec = x.o.includes('rec'), t = ehRec ? TR[x.t] : TP[x.t], p = PV[x.p], c0 = cat(x.c);
       const linkT = x.t ? `<a href="${RAIZ}pages/financeiro/${ehRec ? 'contas-receber' : 'contas-pagar'}.html?abrir=${x.t}" style="color:var(--destaque)">${esc(t?.documento || t?.numero_externo || '#' + x.t)}</a>` : (x.o === 'extrato' ? `<a href="${RAIZ}pages/financeiro/conciliacao.html?abrir=${x.r}" style="color:var(--destaque)">linha #${x.r}</a>` : '');
       const quem = p ? `<a href="${RAIZ}pages/comercial/pedidos-venda.html?abrir=${p.id}" style="color:var(--destaque)">${esc(p.numero_externo || '#' + p.id)}</a> ${esc(p.cliente_nome || '')}` : esc(t?.fornecedores?.nome || t?.descricao || '');
       return `<tr><td>${x.d.split("-").reverse().join("/")}${x.atrasado ? ' <small style="color:var(--alerta)">(atrasado)</small>' : ''}</td><td>${ORIG[x.o] || x.o}</td><td>${linkT}</td><td>${quem}</td>
-        <td>${esc(c0 ? c0.codigo : '')}</td><td class="num${x.v < 0 ? ' valor-neg' : ''}">${reais(Number(x.v))}</td></tr>`; }).join('')}
+        <td>${esc(c0 ? c0.codigo : '')}</td><td class="num${x.v < 0 ? ' valor-neg' : ''}">${reais(Number(x.v))}</td><td>${x.t ? `<button type="button" class="btn fino discreto" title="Quem lançou, aprovações, pedido, pagamento e conciliação" onclick="abrirRastreio('${ehRec ? 'receber' : 'pagar'}', ${x.t})">Rastreio ›</button>` : ''}</td></tr>`; }).join('')}
     </tbody></table></div>${ls.length > 1500 ? '<p class="sub">Mostrando 1.500 linhas. Use um período menor ou a visão diária.</p>' : ''}
     <div class="acoes"><button class="btn" id="mFechar" type="button">Fechar</button></div>`);
   m.querySelector('#mFechar').onclick = () => m.remove();

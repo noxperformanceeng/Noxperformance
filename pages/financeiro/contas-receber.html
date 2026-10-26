@@ -83,7 +83,8 @@ function htmlRastreio(r) {
     ${etapa(true, 'Título')}<i>›</i>${etapa(rcs.length, rcs.length ? 'Recebido ' + dataCurta(rcs.at(-1).data_recebimento) : 'Recebimento')}<i>›</i>${etapa(rcs.length && rcs.every(x => x.conciliado), 'Conciliado')}</div>
     <p style="margin:8px 0 0;font-size:13px">${p ? `<a href="../comercial/pedidos-venda.html" style="color:var(--destaque)">Pedido no sistema: ${esc(p.numero_externo || '#' + p.id)}</a>` : ''}
       ${lv ? ` &nbsp; <a class="ext" href="${esc(lv)}" target="_blank" rel="noopener">Abrir a venda na plataforma</a>` : ''}
-      ${(extraAtual.extrato[r.id] || []).length ? ` &nbsp; <span class="sub">Extrato: ${extraAtual.extrato[r.id].map(l => esc(l.id_operacao || '#' + l.id)).join(', ')}</span>` : ''}</p>`;
+      ${(extraAtual.extrato[r.id] || []).length ? ` &nbsp; <span class="sub">Extrato: ${extraAtual.extrato[r.id].map(l => esc(l.id_operacao || '#' + l.id)).join(', ')}</span>` : ''}</p>
+    ${r.id ? `<p style="margin:6px 0 0"><button type="button" class="btn fino" onclick="abrirRastreio('receber', ${r.id})">Ver rastreio completo · venda, quem lançou, recebimento, conciliação</button></p>` : ''}`;
 }
 
 /* ---------- Recebimentos (baixas) ---------- */

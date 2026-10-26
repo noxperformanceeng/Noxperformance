@@ -365,3 +365,14 @@ body.menu-recolhido .btn-expandir { display: block; }
 .dica { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--linha); color: var(--texto-suave);
   font-size: 10px; font-weight: 600; cursor: help; margin-left: 3px; vertical-align: 1px; }
 .dica:hover, .dica:focus { background: var(--destaque); color: #fff; outline: none; }
+
+/* Rastreio (linha do tempo do título) */
+.rastro { list-style: none; margin: 0; padding: 0; font-size: 12.5px; max-height: 62vh; overflow: auto; }
+.rastro-grupo { margin: 10px 0 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: var(--texto-suave); }
+.rastro-grupo:first-child { margin-top: 0; }
+.rastro-item { position: relative; padding: 3px 0 5px 16px; margin-left: 5px; border-left: 2px solid var(--linha); }
+.rastro-item::before { content: ''; position: absolute; left: -6px; top: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--linha); }
+.rastro-item.ok::before { background: var(--ok); } .rastro-item.erro::before { background: var(--erro); } .rastro-item.alerta::before { background: #d97706; }
+.rastro-item span { color: var(--texto); }
+.rastro-item small { display: block; color: var(--texto-suave); margin-top: 1px; }
+.rastro-item small a { color: var(--destaque); }

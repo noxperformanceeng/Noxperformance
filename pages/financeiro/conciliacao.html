@@ -235,6 +235,7 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     CTX = ctx;
+    db.rpc('usuarios_nomes').then(({ data }) => { window.__nomesUsu = Object.fromEntries((data || []).map(u => [u.id, u.nome])); });
     const [cb, c, cn, pv] = await Promise.all([
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').order('codigo')),
@@ -264,7 +265,9 @@ const cfg = {
   secaoExtra: r => `<div class="secao">Conciliação</div><div class="info">
       <div>Situação: <b>${esc(r.conciliacao)}</b>${r.conciliado_em ? ' em ' + dataHoraBR(r.conciliado_em) : ''}</div>
       ${r.pedido_venda_id ? `<div>Venda: <b>${esc(PEDS[r.pedido_venda_id]?.numero_externo || '#' + r.pedido_venda_id)}</b> ${linkVenda(PEDS[r.pedido_venda_id]) ? `<a class="ext" href="${esc(linkVenda(PEDS[r.pedido_venda_id]))}" target="_blank" rel="noopener">abrir na plataforma</a>` : ''}</div>` : ''}
-      ${r.titulo_receber_id ? `<div><a href="contas-receber.html?titulo=${r.titulo_receber_id}" style="color:var(--destaque)">Título a receber #${r.titulo_receber_id}</a></div>` : ''}
+      ${r.titulo_receber_id ? `<div><a href="contas-receber.html?titulo=${r.titulo_receber_id}" style="color:var(--destaque)">Título a receber #${r.titulo_receber_id}</a> <button type="button" class="btn fino discreto" onclick="abrirRastreio('receber', ${r.titulo_receber_id})">Rastreio ›</button></div>` : ''}
+      ${r.pagamento_id ? `<div>Pagamento #${r.pagamento_id} <button type="button" class="btn fino discreto" onclick="abrirRastreio('pagamento', ${r.pagamento_id})">Rastreio do título ›</button></div>` : ''}
+      ${r.conciliado_por ? `<div>Conciliado por: <b>${esc(window.__nomesUsu?.[r.conciliado_por] || '')}</b></div>` : ''}
       ${r.categoria_financeira_id ? `<div>Categoria: <b>${esc(cat(r.categoria_financeira_id)?.codigo + ' ' + cat(r.categoria_financeira_id)?.nome)}</b></div>` : ''}
       ${r.tarifas ? `<div>Tarifas na linha: ${esc(Object.entries(r.tarifas).map(([k, v]) => `${k} ${reais(v)}`).join(' · '))}</div>` : ''}</div>
       ${r.linha_original ? `<details style="margin-top:8px"><summary class="sub">Linha original do arquivo</summary><pre style="font-size:11px;white-space:pre-wrap">${esc(JSON.stringify(r.linha_original, null, 1))}</pre></details>` : ''}`,

@@ -106,6 +106,7 @@ function htmlRastreio(r) {
     : r.origem === 'importacao' && ref.tiny_id ? `<span class="ok" title="${esc([ref.fornecedor_tiny, ref.categoria_tiny].filter(Boolean).join(' · '))}">Tiny #${esc(ref.tiny_id)}</span><i>›</i>`
     : `<span class="ok">${esc(ORIGENS.find(o => o.v === r.origem)?.n || 'Manual')}</span><i>›</i>`}
     ${etapa(true, 'Título')}<i>›</i>${etapa(pgs.length, pgs.length ? `Pago ${dataCurta(pgs.at(-1).data_pagamento)}` : 'Pagamento')}<i>›</i>${etapa(pgs.length && pgs.every(p => p.conciliado), 'Conciliado')}</div>
+    ${r.id ? `<p style="margin:6px 0 0"><button type="button" class="btn fino" onclick="abrirRastreio('pagar', ${r.id})">Ver rastreio completo · quem lançou, aprovações, pedido, pagamento, conciliação</button></p>` : ''}
     ${r.origem === 'pedido_compra' && r.projecao ? '<p class="sub" style="margin:6px 0 0;font-size:12px"><span class="tg pc">Projeção</span> Pedido aprovado aguardando a NF. Este título é ajustado pelo pedido (recebimento da NF, reabrir ou cancelar) O pagamento fica bloqueado até a NF ser registrada.</p>' : ''}`;
 }
 
