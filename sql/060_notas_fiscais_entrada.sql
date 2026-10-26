@@ -195,7 +195,6 @@ revoke execute on function public.nfe_marcar_lancada() from public, anon, authen
 
 -- =====================================================================
 -- 060 (parte 2) · Conferência antifraude
---  · ATENÇÃO: parte 2 AINDA NÃO APLICADA no banco (26/10) — aguardando confirmação do Paulo
 --  · Toda NF precisa de pedido de compra vinculado e conferido (fornecedor do pedido = emitente da NF).
 --  · NF sem pedido: quem conferiu pede aprovação, com motivo; só administrador (master) aprova.
 --  · Só NF conferida (com pedido) ou aprovada (sem pedido) vai para o contas a pagar.
@@ -262,8 +261,7 @@ begin
   return new;
 end $$;
 revoke execute on function public.pc_recebimento_estoque() from public, anon, authenticated;
-drop trigger if exists estoque_entrada on public.pedidos_compra_recebimentos;
-create trigger estoque_entrada after insert on public.pedidos_compra_recebimentos for each row execute function public.pc_recebimento_estoque();
+create or replace trigger estoque_entrada after insert on public.pedidos_compra_recebimentos for each row execute function public.pc_recebimento_estoque();
 
 -- Ações da tela (substitui a versão da parte 1)
 create or replace function public.nfe_acao(p_ids bigint[], p_acao text, p_valor text default null)
@@ -356,3 +354,6 @@ grant execute on function public.nfe_lancar_cp(bigint, bigint, bigint, jsonb) to
 
 -- Tela habilitada para compras (vincular NF ao pedido) e estoque/almoxarifado (ver)
 insert into public.permissoes (perfil_id, modulo_id, nivel) values ('compras', 'notas', 'alterar') on conflict do nothing;
+
+-- 060f · vincular NF a pedido exige a mesma empresa (CNPJ) — aplicado por replace em nfe_acao:
+--   if (select empresa_id from pedidos_compra where id = p_valor::bigint) <> r.empresa_id then raise exception 'O pedido é de outra empresa (CNPJ)…'

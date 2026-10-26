@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notas fiscais · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261016">
+<style>
+  .nf-cnpjs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 12px; }
+  .nf-cnpj { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
+  .nf-cnpj h3 { margin: 0 0 2px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+  .nf-cnpj .doc { font-size: 12px; color: var(--texto-suave); margin-bottom: 6px; }
+  .nf-cnpj .nums { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nf-cnpj .nums button { border: 1px solid var(--linha); background: var(--fundo); border-radius: 8px; padding: 4px 8px; font: 500 12px var(--fonte); cursor: pointer; }
+  .nf-cnpj .nums button b { font-size: 13px; }
+  .nf-cnpj .nums .erro { background: #fdeceb; color: var(--erro); border-color: #f3c3bf; }
+  .nf-cnpj .nums .alerta { background: #fff4e5; color: #b45309; border-color: #f6d7a7; }
+  .nf-cnpj .sefaz { font-size: 11.5px; color: var(--texto-suave); margin-top: 6px; }
+  .checagem { list-style: none; padding: 0; margin: 0 0 6px; font-size: 12.5px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2px 14px; }
+  .checagem li::before { content: '•'; margin-right: 6px; font-weight: 700; }
+  .checagem li.ok::before { content: '✓'; color: var(--ok); } .checagem li.erro { color: var(--erro); } .checagem li.erro::before { content: '✗'; }
+  .checagem li.alerta { color: #b45309; } .checagem li.alerta::before { content: '!'; }
+  .acoes-nf { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; align-items: center; }
+  .linha-vinc { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+  .linha-vinc select { max-width: 420px; }
+</style>
+</head>
+<body data-modulo="notas" data-titulo="Notas fiscais" data-empresa="sim">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610261016"></script>
+<script src="../../assets/js/ui.js?v=202610261016"></script>
+<script src="../../assets/js/auth.js?v=202610261016"></script>
+<script src="../../assets/js/layout.js?v=202610261016"></script>
+<script src="../../assets/js/cadastro.js?v=202610261016"></script>
+<script>
+/* =====================================================================
+   Notas fiscais de entrada (NF-e emitidas contra a NOX), separadas por CNPJ
+   Antifraude: toda NF precisa de pedido de compra vinculado e conferido. Sem pedido → aprovação do master.
+   Só NF conferida/aprovada vai para o contas a pagar e para o estoque:
+     · com pedido: "Registrar recebimento" no pedido de compra (a NF preenche o recebimento);
+     · sem pedido (aprovada pelo master): "Lançar no contas a pagar" aqui (parcelas = duplicatas da NF).
+   Entrada das notas: XML (agora) e SEFAZ / Distribuição DF-e (quando o certificado A1 de cada CNPJ for instalado).
+   ===================================================================== */
+const SIT = [{ v: 'nova', n: 'A conferir', cor: 'alerta' }, { v: 'conferida', n: 'Conferida · lançar no pedido', cor: 'ok' },
+  { v: 'aguardando_aprovacao', n: 'Sem pedido · aguardando master', cor: 'erro' }, { v: 'aprovada', n: 'Aprovada pelo master · lançar', cor: 'ok' },
+  { v: 'lancada', n: 'Lançada (CP e estoque)', cor: 'neutro' }, { v: 'ignorada', n: 'Ignorada', cor: 'neutro' }];
+const SEFAZ = [{ v: 'autorizada', n: 'Autorizada' }, { v: 'cancelada', n: 'Cancelada' }, { v: 'denegada', n: 'Denegada' }];
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtCnpj = d => (d || '').replace(/\D/g, '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
+let CTX = null, FORN = [], PEDS = [], CATS = [], CONTAS = [], EMPRESAS = [], CTRL = [], USU = {}, modalAtual = null;
+const forn = id => FORN.find(f => f.id === id);
+const ped = id => PEDS.find(p => p.id === id);
+const PORTAL_SEFAZ = 'https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx?tipoConsulta=resumo&tipoConteudo=7PhJ+gAVw2g=';
+
+/* ---------- Checagens antifraude (mostradas na nota) ---------- */
+function checagens(r) {
+  const emp = EMPRESAS.find(e => e.id === r.empresa_id), p = ped(r.pedido_compra_id), f = forn(r.fornecedor_id), c = [];
+  c.push(r.situacao_sefaz === 'autorizada' ? ['ok', 'Autorizada na SEFAZ' + (r.origem === 'sefaz' ? ' (veio da SEFAZ)' : ' · confira a chave no portal')]
+    : ['erro', `NF ${r.situacao_sefaz.toUpperCase()} na SEFAZ — não pagar`]);
+  c.push(['ok', `Destinatário: ${emp?.nome || 'empresa ' + r.empresa_id}`]);
+  c.push(f ? ['ok', `Emitente cadastrado: ${f.nome}`] : ['erro', `Emitente sem cadastro de fornecedor (CNPJ ${fmtCnpj(r.emitente_cnpj)})`]);
+  if (p) {
+    c.push(p.fornecedor_id === r.fornecedor_id ? ['ok', `Pedido ${p.numero} do mesmo fornecedor`] : ['erro', `Pedido ${p.numero} é de OUTRO fornecedor`]);
+    if (p.empresa_id !== r.empresa_id) c.push(['erro', `Pedido ${p.numero} é de outra empresa (CNPJ) — a NF veio para ${emp?.nome || ''}`]);
+    const saldo = Number(p.valor_total) - Number(p.valor_recebido), dif = Number(r.valor_total) - saldo;
+    c.push(Math.abs(dif) <= 0.05 ? ['ok', `Valor confere com o saldo do pedido (${reais(saldo)})`]
+      : [Math.abs(dif) > saldo * 0.05 ? 'erro' : 'alerta', `Valor da NF ${dif > 0 ? 'acima' : 'abaixo'} do saldo do pedido em ${reais(Math.abs(dif))} (saldo ${reais(saldo)})`]);
+    if (!['aprovado', 'enviado', 'recebido_parcial'].includes(p.situacao)) c.push(['erro', `Pedido ${p.numero} não está aprovado (${p.situacao})`]);
+  } else c.push(['erro', 'Sem pedido de compra vinculado']);
+  if (r.documento === 'resumo') c.push(['alerta', 'Só o resumo da SEFAZ: importe o XML para ver itens e duplicatas']);
+  return c;
+}
+
+function secaoNF(r) {
+  if (!r.id) return '';
+  const itens = r.itens || [], dups = r.duplicatas || [], podeAlt = CTX.pode('notas', 'alterar') || CTX.pode('compras', 'alterar');
+  const pedsForn = PEDS.filter(p => (!r.fornecedor_id || p.fornecedor_id === r.fornecedor_id) && p.empresa_id === r.empresa_id && ['aprovado', 'enviado', 'recebido_parcial'].includes(p.situacao));
+  const btn = (a, t, cls = '') => `<button type="button" class="btn ${cls}" data-nf="${a}">${t}</button>`, ac = [];
+  if (podeAlt && r.situacao === 'nova') { if (r.pedido_compra_id) ac.push(btn('conferida', 'Conferi · NF bate com o pedido', 'primario')); else ac.push(btn('pedir_aprovacao', 'NF sem pedido · pedir aprovação do master…')); }
+  if (r.situacao === 'aguardando_aprovacao' && CTX.admin) { ac.push(btn('aprovar', 'Aprovar (master)…', 'primario')); ac.push(btn('recusar', 'Recusar…')); }
+  if (r.situacao === 'conferida' && r.pedido_compra_id) ac.push(`<a class="btn primario" href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}">Registrar recebimento no pedido ${esc(ped(r.pedido_compra_id)?.numero || '')} ›</a>`);
+  if (r.situacao === 'aprovada' && CTX.pode('pagar', 'criar')) ac.push(btn('lancar', 'Lançar no contas a pagar e estoque…', 'primario'));
+  if (podeAlt && ['conferida', 'ignorada'].includes(r.situacao)) ac.push(btn('nova', 'Voltar para conferir', 'discreto'));
+  if (podeAlt && !['lancada', 'ignorada'].includes(r.situacao)) ac.push(btn('ignorada', 'Ignorar (não é compra)…', 'discreto'));
+  ac.push(btn('sefaz', 'Consultar na SEFAZ', 'discreto'));
+  if (r.xml) ac.push(btn('xml', 'Baixar XML', 'discreto'));
+  const quem = (id, em) => id ? `${esc(USU[id] || '')} · ${dataHoraBR(em)}` : '';
+  return `<div class="secao">Conferência antifraude</div>
+    <ul class="checagem">${checagens(r).map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join('')}</ul>
+    ${r.motivo_sem_pedido ? `<p class="sub" style="margin:0 0 4px">Sem pedido — motivo: <b>${esc(r.motivo_sem_pedido)}</b> (pedido por ${quem(r.aprovacao_pedida_por, r.aprovacao_pedida_em)})</p>` : ''}
+    ${r.conferida_por ? `<p class="sub" style="margin:0 0 4px">Conferida por ${quem(r.conferida_por, r.conferida_em)}</p>` : ''}
+    ${r.aprovada_por ? `<p class="sub" style="margin:0 0 4px">Aprovada pelo master: ${quem(r.aprovada_por, r.aprovada_em)}</p>` : ''}
+    ${podeAlt && !['lancada'].includes(r.situacao) ? `
+      ${!r.fornecedor_id ? `<div class="linha-vinc"><label class="sub">Fornecedor:</label><select id="nfForn"><option value="">— escolher —</option>${FORN.filter(f => f.situacao === 'ativo').map(f => `<option value="${f.id}">${esc(f.nome)}${f.cnpj ? ' · ' + esc(f.cnpj) : ''}</option>`).join('')}</select>
+        <button type="button" class="btn fino" data-nf="fornecedor">Vincular</button> <a class="sub" href="${RAIZ}pages/cadastros/fornecedores.html" style="color:var(--destaque)">cadastrar fornecedor ›</a></div>` : ''}
+      <div class="linha-vinc"><label class="sub">Pedido de compra:</label><select id="nfPed"><option value="">— sem pedido —</option>${pedsForn.concat(r.pedido_compra_id && !pedsForn.some(p => p.id === r.pedido_compra_id) ? [ped(r.pedido_compra_id)].filter(Boolean) : [])
+        .map(p => `<option value="${p.id}"${p.id === r.pedido_compra_id ? ' selected' : ''}>${esc(p.numero)} · ${dataCurta(p.data_pedido)} · saldo ${reais(Number(p.valor_total) - Number(p.valor_recebido))} · ${esc(forn(p.fornecedor_id)?.nome || '')}</option>`).join('')}</select>
+        <button type="button" class="btn fino" data-nf="pedido">Vincular</button>${!pedsForn.length && !r.pedido_compra_id ? ' <span class="sub">nenhum pedido aprovado deste fornecedor nesta empresa</span>' : ''}</div>` : ''}
+    <div class="acoes-nf">${ac.join('')}</div>
+    <div class="secao">Itens da NF</div>
+    ${itens.length ? `<table class="lista-mini"><thead><tr><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead><tbody>
+      ${itens.map(i => `<tr><td>${esc(i.codigo || '')}</td><td>${esc(i.descricao || '')}</td><td>${esc(i.ncm || '')}</td><td>${esc(i.cfop || '')}</td><td>${esc(i.unidade || '')}</td>
+        <td class="num">${Number(i.quantidade || 0).toLocaleString('pt-BR')}</td><td class="num">${reais(i.valor_unitario)}</td><td class="num">${reais(i.valor)}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub" style="margin:0">Sem itens (só o resumo). Importe o XML da nota.</p>'}
+    ${dups.length ? `<div class="secao">Duplicatas (parcelas)</div><table class="lista-mini"><thead><tr><th>Nº</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>
+      ${dups.map(d => `<tr><td>${esc(d.numero || '')}</td><td>${dataCurta(d.vencimento)}</td><td class="num">${reais(d.valor)}</td></tr>`).join('')}</tbody></table>` : ''}`;
+}
+
+/* ---------- Ações ---------- */
+function pedirTexto(titulo, rotulo, obrig = true, botao = 'Confirmar') {
+  return new Promise(res => {
+    const m = abrirModal(`<h2>${esc(titulo)}</h2><div class="campo"><label>${esc(rotulo)}</label><textarea id="pt" rows="3"></textarea></div>
+      <div class="acoes"><button class="btn" id="ptN">Voltar</button><button class="btn primario" id="ptS">${esc(botao)}</button></div>`);
+    m.querySelector('#pt').focus();
+    m.querySelector('#ptN').onclick = () => { m.remove(); res(null); };
+    m.querySelector('#ptS').onclick = () => { const v = m.querySelector('#pt').value.trim(); if (obrig && !v) return aviso('Preencha o campo', true); m.remove(); res(v); };
+  });
+}
+async function nfAcao(ids, acao, valor = null) {
+  const { error } = await db.rpc('nfe_acao', { p_ids: ids, p_acao: acao, p_valor: valor });
+  if (error) { aviso('Não deu: ' + error.message, true); return false; }
+  return true;
+}
+async function executar(r, a, m) {
+  const fim = t => { aviso(t); m.remove(); cfg.recarregar(); };
+  if (a === 'conferida') { if (await nfAcao([r.id], a)) fim('NF conferida · agora registre o recebimento no pedido'); }
+  else if (a === 'pedir_aprovacao') { const t = await pedirTexto('NF ' + r.numero + ' sem pedido de compra', 'Por que esta compra não tem pedido? (vai para o master aprovar)', true, 'Pedir aprovação'); if (t && await nfAcao([r.id], a, t)) fim('Pedido de aprovação enviado ao master'); }
+  else if (a === 'aprovar') { const t = await pedirTexto('Aprovar NF ' + r.numero + ' sem pedido', 'Comentário (opcional)', false, 'Aprovar'); if (t !== null && await nfAcao([r.id], a, t)) fim('NF aprovada · pode lançar no contas a pagar'); }
+  else if (a === 'recusar') { const t = await pedirTexto('Recusar NF ' + r.numero, 'Motivo', true, 'Recusar'); if (t && await nfAcao([r.id], a, t)) fim('NF recusada · voltou para conferir'); }
+  else if (a === 'ignorada') { const t = await pedirTexto('Ignorar NF ' + r.numero, 'Motivo (ex.: devolução, remessa, bonificação, nota de outra empresa)', true, 'Ignorar'); if (t && await nfAcao([r.id], a, t)) fim('NF ignorada'); }
+  else if (a === 'nova') { if (await nfAcao([r.id], a)) fim('NF voltou para conferir'); }
+  else if (a === 'pedido') { if (await nfAcao([r.id], a, m.querySelector('#nfPed').value)) fim('Pedido vinculado · confira e marque "Conferi"'); }
+  else if (a === 'fornecedor') { const v = m.querySelector('#nfForn').value; if (!v) return aviso('Escolha o fornecedor', true); if (await nfAcao([r.id], a, v)) fim('Fornecedor vinculado'); }
+  else if (a === 'sefaz') { try { await navigator.clipboard.writeText(r.chave); aviso('Chave copiada · cole no portal da SEFAZ'); } catch { prompt('Copie a chave:', r.chave); } window.open(PORTAL_SEFAZ, '_blank'); }
+  else if (a === 'xml') { const b = new Blob([r.xml], { type: 'application/xml' }), l = document.createElement('a'); l.href = URL.createObjectURL(b); l.download = `NFe${r.chave}.xml`; l.click(); }
+  else if (a === 'lancar') abrirLancar(r, m);
+}
+function abrirLancar(r, pai) {
+  const dups = (r.duplicatas || []).length ? r.duplicatas : [{ vencimento: String(r.data_emissao).slice(0, 10), valor: r.valor_total }];
+  const m = abrirModal(`<h2>Lançar NF ${esc(r.numero)} no contas a pagar</h2>
+    <p class="sub" style="margin:0 0 8px">NF sem pedido aprovada pelo master. Gera ${dups.length} título(s) pelas duplicatas e dá entrada no estoque dos itens ligados a produto pelo código do fornecedor.</p>
+    <div class="grade-campos">
+      <div class="campo l2"><label>Categoria financeira <span class="obrig">*</span></label><select id="lCat"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}">${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></div>
+      <div class="campo l2"><label>Conta prevista</label><select id="lConta"><option value="">—</option>${CONTAS.filter(c => c.empresa_id === r.empresa_id).map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
+    </div>
+    <table class="lista-mini"><thead><tr><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${dups.map(d => `<tr><td>${dataCurta(d.vencimento)}</td><td class="num">${reais(d.valor)}</td></tr>`).join('')}</tbody></table>
+    <div class="acoes"><button class="btn" id="lN">Voltar</button><button class="btn primario" id="lS">Lançar</button></div>`);
+  m.querySelector('#lN').onclick = () => m.remove();
+  m.querySelector('#lS').onclick = async () => {
+    const cat = Number(m.querySelector('#lCat').value); if (!cat) return aviso('Escolha a categoria', true);
+    m.querySelector('#lS').disabled = true;
+    const { data, error } = await db.rpc('nfe_lancar_cp', { p_id: r.id, p_categoria: cat, p_conta: Number(m.querySelector('#lConta').value) || null });
+    if (error) { m.querySelector('#lS').disabled = false; return aviso('Não lançou: ' + error.message, true); }
+    aviso(`${data} título(s) no contas a pagar`); m.remove(); pai.remove(); cfg.recarregar();
+  };
+}
+
+/* ---------- Importar XML (uma ou várias notas, dos dois CNPJs) ---------- */
+function importarXml() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xml,text/xml,application/xml'; inp.multiple = true;
+  inp.onchange = async () => {
+    let novas = 0, atual = 0; const erros = [];
+    for (const f of inp.files) {
+      const txt = await f.text();
+      const { data, error } = await db.rpc('nfe_importar_xml', { p_xml: txt });
+      if (error) erros.push(`${f.name}: ${error.message}`); else data.novo ? novas++ : atual++;
+    }
+    aviso(`${novas} NF(s) nova(s)${atual ? ` · ${atual} atualizada(s)` : ''}${erros.length ? ` · ${erros.length} com erro: ${erros.slice(0, 2).join(' | ')}` : ''}`, !!erros.length);
+    cfg.recarregar();
+  };
+  inp.click();
+}
+
+/* ---------- Quadro por CNPJ ---------- */
+function desenharCnpjs(linhas) {
+  let box = document.getElementById('nfCnpjs');
+  if (!box) { const alvo = document.querySelector('#cAbas')?.closest('div')?.parentElement || document.querySelector('#conteudo'); box = document.createElement('div'); box.id = 'nfCnpjs'; box.className = 'nf-cnpjs'; alvo.parentElement.insertBefore(box, alvo); }
+  const mes = new Date().toISOString().slice(0, 7);
+  box.innerHTML = EMPRESAS.filter(e => !CTX.empresa || e.id === CTX.empresa).map(e => {
+    const ls = linhas.filter(r => r.empresa_id === e.id), n = s => ls.filter(r => r.situacao === s).length, c = CTRL.find(x => x.empresa_id === e.id);
+    return `<div class="nf-cnpj"><h3>${etiquetaEmpresa(e.id, e.nome)}</h3>
+      <div class="doc">${e.cnpj ? 'CNPJ ' + esc(e.cnpj) : '<span style="color:var(--erro)">CNPJ não cadastrado — necessário para importar as notas desta empresa</span>'} · ${ls.filter(r => String(r.data_emissao || '').startsWith(mes)).length} NF(s) no mês · ${reais(ls.filter(r => String(r.data_emissao || '').startsWith(mes) && r.situacao !== 'ignorada').reduce((s, r) => s + Number(r.valor_total || 0), 0))}</div>
+      <div class="nums">
+        <button class="alerta" data-aba="nova"><b>${n('nova')}</b> a conferir</button>
+        <button class="erro" data-aba="aguardando_aprovacao"><b>${n('aguardando_aprovacao')}</b> sem pedido · master</button>
+        <button data-aba="lancar"><b>${n('conferida') + n('aprovada')}</b> prontas para lançar</button>
+        <button class="erro" data-aba="canceladas"><b>${ls.filter(r => r.situacao_sefaz !== 'autorizada' && r.situacao !== 'ignorada').length}</b> canceladas na SEFAZ</button>
+      </div>
+      <div class="sefaz">SEFAZ: ${c?.consultado_em ? `última busca ${dataHoraBR(c.consultado_em)} · ${esc(c.ultimo_status || '')}` : 'busca automática aguardando o certificado digital A1 deste CNPJ'}</div></div>`;
+  }).join('');
+  box.querySelectorAll('[data-aba]').forEach(b => b.onclick = () => document.querySelector(`#cAbas [data-v="${b.dataset.aba}"]`)?.click());
+  const novo = document.getElementById('cNovo');
+  if (novo && !document.getElementById('btnXml')) {
+    const b = document.createElement('button'); b.className = 'btn primario'; b.id = 'btnXml'; b.textContent = 'Importar XML'; b.onclick = importarXml;
+    novo.replaceWith(b);
+  }
+}
+
+const cfg = {
+  textoNovo: 'Importar XML',
+  tabela: 'nfe_entrada', modulo: 'notas', titulo: 'Notas fiscais', singular: 'nota', plural: 'notas',
+  subtitulo: 'NF-e emitidas contra a NOX, por CNPJ. Antifraude: só segue para o contas a pagar e o estoque a nota conferida com o pedido de compra — ou aprovada pelo master quando não houver pedido.',
+  dicaBusca: 'número, emitente, CNPJ, chave, item…', ordem: 'emissao_dia', revisao: false, porEmpresa: true,
+  abas: { campo: 'situacao', padrao: 'nova', opcoes: [
+    { v: 'nova', n: 'A conferir' }, { v: 'aguardando_aprovacao', n: 'Sem pedido · master' },
+    { v: 'lancar', n: 'Prontas para lançar', teste: r => ['conferida', 'aprovada'].includes(r.situacao) },
+    { v: 'lancada', n: 'Lançadas' }, { v: 'canceladas', n: 'Canceladas na SEFAZ', teste: r => r.situacao_sefaz !== 'autorizada' },
+    { v: 'ignorada', n: 'Ignoradas' }, { v: '', n: 'Todas' }] },
+  totais: ['valor_total'],
+  valorTotal: (r, c) => r.situacao === 'ignorada' || r.situacao_sefaz !== 'autorizada' ? 0 : r[c],
+  ordenarPor: { emissao_dia: r => String(9e15 - Date.parse(r.data_emissao || 0)) },
+  periodos: [{ campo: 'emissao_dia', label: 'Emissão' }, { campo: 'criado_em', label: 'Entrada no sistema' }],
+  campos: [
+    { id: 'emissao_dia', label: 'Emissão', tipo: 'data', somenteLeitura: true, lista: true },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', somenteLeitura: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })) },
+    { id: 'numero', label: 'NF nº', somenteLeitura: true, lista: true, listaHtml: r => esc(r.numero || '') + (r.serie ? `<small class="sub2">série ${esc(r.serie)}</small>` : '') },
+    { id: 'emitente_nome', label: 'Emitente', somenteLeitura: true, col: 2, lista: true,
+      listaHtml: r => `<span class="texto-curto" title="${esc(r.emitente_nome || '')}">${esc(r.emitente_nome || '')}</span>${r.fornecedor_id ? '' : ' <span class="tg erro">sem cadastro</span>'}` },
+    { id: 'emitente_cnpj', label: 'CNPJ emitente', somenteLeitura: true, listaHtml: r => fmtCnpj(r.emitente_cnpj) },
+    { id: 'valor_total', label: 'Valor (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true,
+      listaHtml: r => `<span class="tg ${sit(r.situacao).cor}">${esc(sit(r.situacao).n)}</span>${r.situacao_sefaz !== 'autorizada' ? ` <span class="tg erro">${esc(r.situacao_sefaz)} SEFAZ</span>` : ''}` },
+    { id: 'situacao_sefaz', label: 'SEFAZ', tipo: 'select', opcoes: SEFAZ, somenteLeitura: true, filtro: true },
+    { id: 'documento', label: 'Documento', tipo: 'select', opcoes: [{ v: 'completa', n: 'XML completo' }, { v: 'resumo', n: 'Só resumo' }], somenteLeitura: true, filtro: true },
+    { id: 'origem', label: 'Veio de', tipo: 'select', opcoes: [{ v: 'xml', n: 'XML importado' }, { v: 'sefaz', n: 'SEFAZ' }], somenteLeitura: true, filtro: true },
+    { id: 'natureza', label: 'Natureza da operação', somenteLeitura: true, col: 2 },
+    { id: 'chave', label: 'Chave de acesso', somenteLeitura: true, col: 4 },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 }
+  ],
+  async carregarExtra(linhas, ctx) {
+    CTX = ctx; linhas.forEach(r => r.emissao_dia = String(r.data_emissao || '').slice(0, 10));
+    const [f, p, c, cb, em, ct, us] = await Promise.all([
+      buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj, situacao').order('nome')),
+      buscarTodos(() => db.from('pedidos_compra').select('id, numero, empresa_id, fornecedor_id, data_pedido, situacao, valor_total, valor_recebido').order('id', { ascending: false })),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').order('codigo')),
+      ctx.pode('pagar') ? buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').eq('situacao', 'ativo').order('descricao')) : [],
+      db.from('empresas').select('id, nome, cnpj').order('id'),
+      db.from('sefaz_dfe_controle').select('*'),
+      db.rpc('usuarios_nomes')]);
+    FORN = f; PEDS = p; CATS = c; CONTAS = cb.filter(x => x.tipo !== 'historico'); EMPRESAS = em.data || []; CTRL = ct.data || [];
+    USU = Object.fromEntries((us.data || []).map(u => [u.id, u.nome]));
+    return {};
+  },
+  depoisCarregar: linhas => desenharCnpjs(linhas),
+  colunasExtras: [
+    { label: 'Pedido de compra', texto: r => ped(r.pedido_compra_id)?.numero || '',
+      html: r => r.pedido_compra_id ? `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}" onclick="event.stopPropagation()" style="color:var(--destaque)">${esc(ped(r.pedido_compra_id)?.numero || '#' + r.pedido_compra_id)}</a>` : '<span class="tg erro">sem pedido</span>' }
+  ],
+  textoBuscaExtra: r => [r.chave, r.emitente_cnpj, ped(r.pedido_compra_id)?.numero, ...(r.itens || []).flatMap(i => [i.codigo, i.descricao])].filter(Boolean).join(' '),
+  pendencias: [
+    { id: 'sem_pedido', nome: 'Sem pedido de compra', cor: 'erro', teste: r => !r.pedido_compra_id && ['nova', 'conferida'].includes(r.situacao) },
+    { id: 'sem_forn', nome: 'Emitente sem cadastro', cor: 'erro', teste: r => !r.fornecedor_id && r.situacao !== 'ignorada' },
+    { id: 'cancelada', nome: 'Cancelada na SEFAZ', cor: 'erro', teste: r => r.situacao_sefaz !== 'autorizada' && !['ignorada'].includes(r.situacao) },
+    { id: 'valor', nome: 'Valor diferente do pedido', cor: 'alerta', teste: r => { const p = ped(r.pedido_compra_id); return p && r.situacao === 'nova' && Math.abs(Number(r.valor_total) - (Number(p.valor_total) - Number(p.valor_recebido))) > 0.05; } },
+    { id: 'resumo', nome: 'Só resumo (falta XML)', cor: 'neutro', teste: r => r.documento === 'resumo' && r.situacao !== 'ignorada' }
+  ],
+  apagado: r => r.situacao === 'ignorada',
+  aoAbrir(m, r) { modalAtual = m; m.querySelectorAll('[data-nf]').forEach(b => b.onclick = () => executar(r, b.dataset.nf, m)); },
+  secaoExtra: r => secaoNF(r),
+  async salvar(dados, r) {
+    if (!r.id) throw new Error('Use "Importar XML" para incluir notas');
+    if ((dados.observacoes || '') !== (r.observacoes || '')) { const { error } = await db.rpc('nfe_acao', { p_ids: [r.id], p_acao: 'observacao', p_valor: dados.observacoes || null }); if (error) throw error; }
+    return r.id;
+  },
+  tituloRegistro: r => `NF ${r.numero || ''} · ${r.emitente_nome || ''}`,
+  chaveHistorico: r => r.chave
+};
+montarCadastro(cfg);
+</script>
+</body>
+</html>

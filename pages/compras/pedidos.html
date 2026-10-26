@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261012">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261016">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261012"></script>
-<script src="../../assets/js/ui.js?v=202610261012"></script>
-<script src="../../assets/js/auth.js?v=202610261012"></script>
-<script src="../../assets/js/layout.js?v=202610261012"></script>
-<script src="../../assets/js/cadastro.js?v=202610261012"></script>
+<script src="../../assets/js/supabase.js?v=202610261016"></script>
+<script src="../../assets/js/ui.js?v=202610261016"></script>
+<script src="../../assets/js/auth.js?v=202610261016"></script>
+<script src="../../assets/js/layout.js?v=202610261016"></script>
+<script src="../../assets/js/cadastro.js?v=202610261016"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -437,6 +437,17 @@ function abrirRecebimento(r, pai) {
   q('#rParc').addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); conferir(); } });
   q('#rParc').addEventListener('input', conferir);
   atualizar();
+  // NF importada e conferida na tela de Notas fiscais → preenche o recebimento (número, série, emissão, chave, valor e parcelas pelas duplicatas)
+  db.from('nfe_entrada').select('id, chave, numero, serie, data_emissao, valor_total, duplicatas, situacao').eq('pedido_compra_id', r.id).in('situacao', ['conferida', 'aprovada']).then(({ data: nfs }) => {
+    if (!nfs?.length) return;
+    q('.grade-campos').insertAdjacentHTML('beforebegin', `<div class="campo" style="margin-bottom:8px"><label>NF conferida em Notas fiscais</label><select id="rNfe" data-simples>
+      <option value="">— digitar manualmente —</option>${nfs.map(n => `<option value="${n.id}">NF ${esc(n.numero)}${n.serie ? '-' + esc(n.serie) : ''} · ${dataCurta(n.data_emissao)} · ${reais(n.valor_total)}</option>`).join('')}</select></div>`);
+    q('#rNfe').onchange = e => { const n = nfs.find(x => x.id === Number(e.target.value)); if (!n) return;
+      q('#rNf').value = n.numero || ''; q('#rSerie').value = n.serie || ''; q('#rEm').value = String(n.data_emissao || '').slice(0, 10); q('#rChave').value = n.chave;
+      q('#rValor').value = num(n.valor_total); valorEditado = true;
+      if ((n.duplicatas || []).length) { q('#rParc tbody').innerHTML = n.duplicatas.map((d, k) => linhaParc(k + 1, d.vencimento, d.valor)).join(''); conferir(); } else refazParcelas(); };
+    if (nfs.length === 1) { q('#rNfe').value = nfs[0].id; q('#rNfe').onchange({ target: q('#rNfe') }); }
+  });
   q('#rN').onclick = () => m.remove();
   q('#rS').onclick = async () => {
     const nf = { numero: q('#rNf').value.trim(), serie: q('#rSerie').value.trim(), data_emissao: q('#rEm').value, data_recebimento: q('#rRec').value, chave: q('#rChave').value.replace(/\D/g, ''), valor: lerNumero(q('#rValor').value) };
