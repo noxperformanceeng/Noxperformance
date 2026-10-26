@@ -9,6 +9,8 @@ const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html' },
     { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html' },
+    { id: 'perguntas_ml',  nome: 'Perguntas ML',      arquivo: 'pages/comercial/perguntas-ml.html' },
+    { id: 'perguntas_ml',  nome: 'Base de conhecimento (perguntas)', arquivo: 'pages/comercial/perguntas-conhecimento.html' },
     { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
   ]},

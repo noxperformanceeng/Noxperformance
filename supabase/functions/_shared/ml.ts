@@ -1,4 +1,4 @@
-// ERP NOX · funções comuns da integração com o Mercado Livre (somente leitura)
+// ERP NOX · funções comuns da integração com o Mercado Livre (leitura; a única escrita é responder perguntas, em perguntas.ts)
 // Os acessos (tokens) ficam na tabela ml_contas, que só o servidor lê. Nada disso vai para o navegador.
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2';
 

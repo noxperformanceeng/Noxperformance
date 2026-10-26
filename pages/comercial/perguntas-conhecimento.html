@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Base de conhecimento das perguntas · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610270320">
+</head>
+<body data-modulo="perguntas_ml" data-titulo="Base de conhecimento (perguntas)">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610270320"></script>
+<script src="../../assets/js/ui.js?v=202610270320"></script>
+<script src="../../assets/js/auth.js?v=202610270320"></script>
+<script src="../../assets/js/layout.js?v=202610270320"></script>
+<script src="../../assets/js/cadastro.js?v=202610270320"></script>
+<script>
+/* Base de conhecimento: o que a IA precisa saber para responder as perguntas do ML.
+   Regra geral (vale para tudo) ou só de um produto / anúncio / conta. Tem prioridade sobre o anúncio.
+   Ex.: garantia, prazo de fabricação, material (inox 304), o que vem no kit, compatibilidades confirmadas. */
+let CANAIS = [], PRODS = [];
+const prod = id => PRODS.find(p => p.id === id);
+
+montarCadastro({
+  textoNovo: '+ Nova regra',
+  tabela: 'ml_conhecimento', modulo: 'perguntas_ml', titulo: 'Base de conhecimento das perguntas', singular: 'regra', plural: 'regras',
+  subtitulo: 'O que a IA deve seguir ao responder no Mercado Livre. Sem produto/anúncio = vale para todos.',
+  dicaBusca: 'título, texto, produto, MLB…', ordem: 'titulo', revisao: true,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativas' }, { v: 'inativo', n: 'Inativas' }, { v: '', n: 'Todas' }] },
+  campos: [
+    { id: 'titulo', label: 'Assunto', obrig: true, lista: true, col: 2, placeholder: 'GARANTIA, PRAZO DE FABRICAÇÃO, MATERIAL…' },
+    { id: 'conteudo', label: 'O que a IA deve saber / responder', tipo: 'textarea', obrig: true, lista: true, col: 4 },
+    { id: 'produto_id', label: 'Só para o produto', tipo: 'select', col: 2, filtro: true,
+      opcoes: () => PRODS.map(p => ({ v: p.id, n: `${p.codigo || '—'} · ${p.descricao}` })), ajuda: 'Vazio = todos os produtos.' },
+    { id: 'anuncio_ref', label: 'Só para o anúncio (MLB)', placeholder: 'MLB1234567890' },
+    { id: 'canal_id', label: 'Só para a conta', tipo: 'select', filtro: true, opcoes: () => CANAIS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Vazio = ML 30 e ML 37.' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativa' }, { v: 'inativo', n: 'Inativa' }], obrig: true, padrao: 'ativo' }
+  ],
+  async carregarExtra() {
+    const [c, p] = await Promise.all([
+      db.from('canais_venda').select('id, nome').eq('plataforma', 'mercado_livre').order('nome'),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao').in('tipo', ['acabado', 'kit', 'semiacabado', 'componente']).eq('situacao', 'ativo').order('descricao'))
+    ]);
+    CANAIS = c.data || []; PRODS = p;
+    return {};
+  },
+  colunasExtras: [
+    { label: 'Vale para', texto: r => [prod(r.produto_id) ? `${prod(r.produto_id).codigo || ''} ${prod(r.produto_id).descricao}` : '', r.anuncio_ref, CANAIS.find(c => c.id === r.canal_id)?.nome].filter(Boolean).join(' · ') || 'Todos' }
+  ],
+  textoBuscaExtra: r => `${prod(r.produto_id)?.codigo || ''} ${prod(r.produto_id)?.descricao || ''}`,
+  antesSalvar: d => { d.produto_id = Number(d.produto_id) || null; d.canal_id = Number(d.canal_id) || null; d.anuncio_ref = (d.anuncio_ref || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() || null; },
+  validar: d => d.anuncio_ref && !/^MLB\d+$/.test(d.anuncio_ref) ? 'Anúncio deve ser no formato MLB seguido de números' : null,
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  tituloRegistro: r => r.titulo,
+  chaveHistorico: r => r.titulo
+});
+</script>
+</body>
+</html>
