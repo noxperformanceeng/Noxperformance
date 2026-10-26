@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261026">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261031">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -26,11 +26,11 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261026"></script>
-<script src="../../assets/js/ui.js?v=202610261026"></script>
-<script src="../../assets/js/auth.js?v=202610261026"></script>
-<script src="../../assets/js/layout.js?v=202610261026"></script>
-<script src="../../assets/js/cadastro.js?v=202610261026"></script>
+<script src="../../assets/js/supabase.js?v=202610261031"></script>
+<script src="../../assets/js/ui.js?v=202610261031"></script>
+<script src="../../assets/js/auth.js?v=202610261031"></script>
+<script src="../../assets/js/layout.js?v=202610261031"></script>
+<script src="../../assets/js/cadastro.js?v=202610261031"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -143,6 +143,14 @@ async function registrarPagamento(r) {
   if (!(p.valor > 0)) return aviso('Informe o valor pago', true);
   if (p.valor > Number(r.saldo) + 0.005) return aviso(`Valor maior que o saldo (${reais(r.saldo)})`, true);
   if (!p.conta_bancaria_id) return aviso('Escolha a conta de onde saiu o pagamento (cadastre em Contas bancárias)', true);
+  // a categoria escolhida na tela precisa estar gravada no título antes da baixa
+  const cat = Number(q('#f_categoria_financeira_id')?.value) || null, temRateio = (extraAtual.rateio[r.id] || []).length || lerRateio().length;
+  if (!cat && !temRateio) return aviso('Informe a categoria financeira do título antes de registrar o pagamento', true);
+  if (cat && cat !== r.categoria_financeira_id && !temRateio) {
+    const { error: e1 } = await db.from('titulos_pagar').update({ categoria_financeira_id: cat }).eq('id', r.id);
+    if (e1) return aviso('Não gravou a categoria: ' + e1.message, true);
+    r.categoria_financeira_id = cat;
+  }
   const { error } = await db.from('pagamentos').insert(p);
   if (error) return aviso('Não salvou: ' + error.message, true);
   aviso(p.valor >= Number(r.saldo) - 0.005 ? 'Título quitado' : 'Pagamento parcial registrado');
@@ -344,6 +352,8 @@ const cfg = {
     { nome: 'Pagar (baixa total)', executar: (sel, pronto) => {
         const abertos = sel.filter(r => ABERTOS.includes(r.situacao));
         if (!abertos.length) return aviso('Selecione títulos em aberto', true);
+        const semCat = abertos.filter(r => !r.categoria_financeira_id && !(extraAtual.rateio[r.id] || []).length);
+        if (semCat.length) return aviso(`${semCat.length} título(s) sem categoria financeira (${semCat.slice(0, 3).map(r => r.documento || '#' + r.id).join(', ')}…): informe a categoria antes de pagar`, true);
         const emp = [...new Set(abertos.map(r => r.empresa_id))];
         if (emp.length > 1) return aviso('Selecione títulos de uma empresa só (as contas são por empresa)', true);
         const total = abertos.reduce((s, r) => s + Number(r.saldo), 0);
