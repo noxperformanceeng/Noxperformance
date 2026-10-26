@@ -6,7 +6,7 @@
 <title>Categorias financeiras · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610261147">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610261156">
 <style>
   .arvore { white-space: nowrap; }
   .arvore.n1 { font-weight: 700; }
@@ -18,18 +18,18 @@
 <body data-modulo="categorias_fin" data-titulo="Categorias financeiras">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610261147"></script>
-<script src="../../assets/js/ui.js?v=202610261147"></script>
-<script src="../../assets/js/auth.js?v=202610261147"></script>
-<script src="../../assets/js/layout.js?v=202610261147"></script>
-<script src="../../assets/js/cadastro.js?v=202610261147"></script>
+<script src="../../assets/js/supabase.js?v=202610261156"></script>
+<script src="../../assets/js/ui.js?v=202610261156"></script>
+<script src="../../assets/js/auth.js?v=202610261156"></script>
+<script src="../../assets/js/layout.js?v=202610261156"></script>
+<script src="../../assets/js/cadastro.js?v=202610261156"></script>
 <script>
 const TIPOS = [{ v: 'receita', n: 'Receita' }, { v: 'deducao', n: 'Dedução da receita (impostos, taxas de marketplace, devoluções)' },
   { v: 'custo', n: 'Custo de produção / mercadoria' }, { v: 'despesa', n: 'Despesa operacional' }, { v: 'investimento', n: 'Investimento (máquinas, obras)' },
   { v: 'financeiro', n: 'Resultado financeiro (juros, tarifas)' }, { v: 'transferencia', n: 'Transferência entre contas / empresas' }];
 // Linhas do relatório de gestão (DRE gerencial)
 const DRE = ['Receita bruta', 'Deduções da receita', 'Custo dos produtos vendidos', 'Despesas com vendas', 'Despesas administrativas',
-  'Despesas com pessoal administrativo', 'Despesas de ocupação (galpão)', 'Resultado financeiro', 'Impostos sobre o lucro', 'Investimentos', 'Não entra no resultado'];
+  'Despesas com pessoal administrativo', 'Despesas de ocupação (galpão)', 'Despesas com desenvolvimento de produtos', 'Resultado financeiro', 'Impostos sobre o lucro', 'Investimentos', 'Não entra no resultado'];
 let TODAS = [];
 const nivel = c => String(c || '').split('.').length;
 const paiDe = r => TODAS.find(x => x.id === r.pai_id);
@@ -46,7 +46,8 @@ montarCadastro({
     { id: 'nome', label: 'Nome', obrig: true, col: 3 },
     { id: 'pai_id', label: 'Categoria pai (grupo)', tipo: 'select', col: 2, cadastro: false, opcoes: () => TODAS.filter(c => !c.aceita_lancamento).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })) },
     { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPOS, obrig: true, col: 2 },
-    { id: 'grupo_dre', label: 'Linha no relatório de gestão', tipo: 'select', opcoes: DRE, col: 2, filtro: true, filtroVazio: true },
+    { id: 'grupo_dre', label: 'Linha no relatório de gestão', tipo: 'select', opcoes: DRE, col: 2, filtro: true, filtroVazio: true,
+      ajuda: 'Linha do DRE gerencial (resultado do mês): receita − deduções − custo dos produtos − despesas = resultado. Define em que linha o gasto aparece no relatório de resultado.' },
     { id: 'natureza', label: 'Natureza', tipo: 'select', opcoes: [{ v: 'fixa', n: 'Fixa' }, { v: 'variavel', n: 'Variável' }], filtro: true, filtroVazio: true },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativa' }, { v: 'inativo', n: 'Inativa' }], obrig: true, padrao: 'ativo', filtro: true },
     { id: 'aceita_lancamento', label: 'Recebe lançamento', tipo: 'bool', padrao: true, textoBool: 'Sim (último nível)', filtro: true,
