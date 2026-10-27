@@ -6,7 +6,7 @@
 <title>Clientes · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610262031">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610270056">
 <style>
   .contatos-ed table { width: 100%; border-collapse: collapse; }
   .contatos-ed th { text-align: left; font-size: 12px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -18,11 +18,11 @@
 <body data-modulo="clientes" data-titulo="Clientes">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610262031"></script>
-<script src="../../assets/js/ui.js?v=202610262031"></script>
-<script src="../../assets/js/auth.js?v=202610262031"></script>
-<script src="../../assets/js/layout.js?v=202610262031"></script>
-<script src="../../assets/js/cadastro.js?v=202610262031"></script>
+<script src="../../assets/js/supabase.js?v=202610270056"></script>
+<script src="../../assets/js/ui.js?v=202610270056"></script>
+<script src="../../assets/js/auth.js?v=202610270056"></script>
+<script src="../../assets/js/layout.js?v=202610270056"></script>
+<script src="../../assets/js/cadastro.js?v=202610270056"></script>
 <script>
 const SIT = [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }, { v: 'bloqueado', n: 'Bloqueado' }];
 const TIPOS = [{ v: 'consumidor', n: 'Consumidor final' }, { v: 'revenda', n: 'Revenda / loja' }, { v: 'distribuidor', n: 'Distribuidor' },
@@ -62,7 +62,7 @@ function lerContatos() {
 montarCadastro({
   tabela: 'clientes', modulo: 'clientes', titulo: 'Clientes', singular: 'cliente', plural: 'clientes',
   subtitulo: 'Consumidores de marketplace, revendas, distribuidores e venda direta. Clientes do Mercado Livre não trazem telefone/e-mail.',
-  dicaBusca: 'nome, CPF/CNPJ, cidade, contato, ID Tiny…', ordem: 'nome', revisao: true,
+  dicaBusca: 'nome, nome fantasia, CPF/CNPJ, cidade, contato, ID Tiny…', ordem: 'nome', revisao: true,
   abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: 'bloqueado', n: 'Bloqueados' }, { v: '', n: 'Todos' }] },
   periodos: [{ campo: 'criado_em', label: 'Cadastro' }, { campo: 'atualizado_em', label: 'Última alteração' }],
   campos: [

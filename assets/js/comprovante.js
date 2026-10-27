@@ -1,7 +1,7 @@
 /* =====================================================================
    ERP NOX · comprovante.js — leitura automática de comprovante de pagamento
    lerComprovante(arquivo) → texto (PDF com texto pelo pdf.js; foto ou PDF escaneado pelo OCR Tesseract, em português)
-   conferirComprovante(texto, { valor, data, nome, doc }) → [{ item, ok, detalhe }]
+   conferirComprovante(texto, { valor, data, nome, fantasia, doc }) → [{ item, ok, detalhe }]
    Tudo roda no navegador: o arquivo não sai da máquina para ser lido.
    ===================================================================== */
 const _carregados = {};
@@ -36,7 +36,7 @@ async function lerComprovante(arquivo) {
 }
 const _norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 const _PALAVRAS_FRACAS = new Set(['LTDA', 'EIRELI', 'COMERCIO', 'INDUSTRIA', 'SERVICOS', 'PRODUTOS', 'DISTRIBUIDORA', 'EMPRESA', 'BRASIL', 'COM', 'IND', 'DOS', 'DAS', 'DE', 'DO', 'DA', 'E', 'ME', 'EPP', 'S/A', 'SA']);
-function conferirComprovante(texto, { valor, data, nome, doc }) {
+function conferirComprovante(texto, { valor, data, nome, fantasia, doc }) {
   const t = _norm(texto), soNum = t.replace(/\D/g, ''), out = [];
   // Valor: 1.234,56 · 1234,56 · 1234.56
   const v = Number(valor || 0), fixo = v.toFixed(2), br = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -47,14 +47,19 @@ function conferirComprovante(texto, { valor, data, nome, doc }) {
   const datas = [`${d}/${m}/${a}`, `${d}/${m}/${a?.slice(2)}`, `${d}.${m}.${a}`, `${d}-${m}-${a}`, `${a}-${m}-${d}`];
   const achouData = datas.some(x => t.includes(x));
   out.push({ item: 'Data do pagamento', ok: achouData, detalhe: achouData ? `${d}/${m}/${a} encontrada` : `${d}/${m}/${a} não encontrada (confira se foi agendado para outro dia)` });
-  // Fornecedor: CNPJ/CPF ou o nome (palavras principais)
+  // Fornecedor: CNPJ/CPF, a razão social ou o nome fantasia (palavras principais)
   const dg = String(doc || '').replace(/\D/g, '');
   let okForn = dg.length >= 11 && soNum.includes(dg), det = okForn ? 'CNPJ/CPF do fornecedor encontrado' : '';
   if (!okForn) {
-    const fortes = _norm(nome).split(/[^A-Z0-9]+/).filter(w => w.length >= 3 && !_PALAVRAS_FRACAS.has(w));
-    const achadas = fortes.filter(w => t.includes(w));
-    okForn = fortes.length > 0 && achadas.length >= Math.min(2, fortes.length);
-    det = okForn ? `nome encontrado (${achadas.slice(0, 3).join(' ')})` : `"${nome || '?'}" não encontrado${fortes.length ? '' : ' (fornecedor sem nome)'}`;
+    const nomes = [nome, fantasia].filter(Boolean), teste = n => {
+      const fortes = _norm(n).split(/[^A-Z0-9]+/).filter(w => w.length >= 3 && !_PALAVRAS_FRACAS.has(w));
+      const achadas = fortes.filter(w => t.includes(w));
+      return fortes.length > 0 && achadas.length >= Math.min(2, fortes.length) ? achadas : null;
+    };
+    const achou = nomes.map(n => [n, teste(n)]).find(([, a]) => a);
+    okForn = !!achou;
+    det = okForn ? `${achou[0] === nome ? 'nome' : 'nome fantasia'} encontrado (${achou[1].slice(0, 3).join(' ')})`
+      : `"${nomes.join('" / "') || '?'}" não encontrado${nomes.length ? '' : ' (fornecedor sem nome)'}`;
   }
   out.push({ item: 'Fornecedor', ok: okForn, detalhe: det });
   return out;

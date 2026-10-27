@@ -131,6 +131,13 @@ function semAcento(t) {
   return String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
+// Cliente/fornecedor com o nome fantasia junto: "ACME COMERCIO LTDA (ACME FILTROS)". Fica igual se não houver
+// fantasia ou se ela já estiver dentro da razão social. Serve para listas, selects (a busca acha pelos dois) e PDFs.
+function nomeComFantasia(x) {
+  const n = x?.nome || '', f = String(x?.nome_fantasia || '').trim();
+  return f && !semAcento(n).includes(semAcento(f)) ? `${n} (${f})` : n;
+}
+
 // Busca por palavras em qualquer ordem: "abr inox 25" encontra "ABRAÇADEIRA INOX - 25X44"
 function combinaBusca(texto, busca) {
   const t = semAcento(texto);
