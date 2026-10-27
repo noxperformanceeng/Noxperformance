@@ -447,7 +447,9 @@ async function gerarPdf(r, baixar) {
   doc.text('Favor informar o número deste pedido na nota fiscal.', 14, y); y += 8;
   doc.setFontSize(8); doc.setTextColor(110);
   doc.text([`Comprador: ${usu(r.comprador_id) || ''}`, aprov.length ? 'Aprovado por: ' + aprov.join('; ') : ''].filter(Boolean), 14, y);
-  const blob = doc.output('blob'), nome = `${r.numero}.pdf`;
+  // nome do arquivo: fornecedor + número da OC (ex.: "AÇOS SILVA - PC-000123.pdf")
+  const fo = forn(r.fornecedor_id), nomeForn = String(fo?.nome_fantasia || fo?.nome || 'FORNECEDOR').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  const blob = doc.output('blob'), nome = `${nomeForn} - ${r.numero}.pdf`;
   if (baixar) doc.save(nome);
   // guarda uma cópia (rastreio) e devolve o caminho
   const path = `${r.empresa_id}/${r.numero}/${r.numero}-${Date.now()}.pdf`;
