@@ -82,11 +82,11 @@ function gravarEmpresa(v) { try { v ? localStorage.setItem('nox_empresa', v) : l
 
 // Identidade visual da empresa: cada CNPJ tem uma cor que pinta a faixa do topo, a moldura das telas,
 // o ícone da aba do navegador e a tarja dos formulários — para ninguém lançar na empresa errada.
-const COR_EMPRESA = { 1: '#1d4fb8', 2: '#1f7a42', 3: '#7a3fb8' };
+const COR_EMPRESA = { 1: '#1f8196', 2: '#3a3f47', 3: '#7a3fb8' };
 function dadosEmpresa(ctx) {
   const e = ctx.empresa ? ctx.empresas.find(x => x.id === ctx.empresa) : null;
   const regime = { simples: 'Simples Nacional', presumido: 'Lucro Presumido', real: 'Lucro Real' }[e?.regime] || e?.regime || '';
-  return { e, curto: e ? String(e.nome).split('·')[0].trim() : 'Consolidado', cor: e ? (COR_EMPRESA[e.id] || '#8a5a00') : '#4b5160', regime };
+  return { e, curto: e ? String(e.nome).split('·')[0].trim() : 'Consolidado', cor: e ? (COR_EMPRESA[e.id] || '#7a3fb8') : '#7c5c1c', regime };
 }
 const curtoEmpresa = e => String(e.nome).split('·')[0].trim();
 function marcarEmpresa(ctx) {

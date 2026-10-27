@@ -327,15 +327,15 @@ a.ext::after { content: ' ↗'; font-size: 10px; }
 
 /* Empresa: etiqueta curta e colorida; barra de escolha (Consolidado / por empresa) no topo das telas */
 .tg-emp { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
-.tg-emp.e1 { background: #e6efff; color: #1d4fb8; }
-.tg-emp.e2 { background: #e9f7ee; color: #1f7a42; }
+.tg-emp.e1 { background: #e3f3f6; color: #1a6f81; }
+.tg-emp.e2 { background: #e8eaed; color: #3a3f47; }
 .tg-emp.e3 { background: #fff1e0; color: #a35a00; }
 .tg-emp.e0 { background: #f1e8ff; color: #6a2fb8; }
 .empresa-chips { display: flex; align-items: center; gap: 6px; padding: 8px 24px 0; font-size: 12px; color: var(--texto-suave); flex-wrap: wrap; }
 .empresa-chips button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 14px; padding: 4px 12px; font: 500 12.5px var(--fonte); cursor: pointer; color: var(--texto); }
 .empresa-chips button.on { background: var(--texto); color: #fff; border-color: var(--texto); }
-.empresa-chips button.on.e1 { background: #1d4fb8; border-color: #1d4fb8; }
-.empresa-chips button.on.e2 { background: #1f7a42; border-color: #1f7a42; }
+.empresa-chips button.on.e1 { background: #1f8196; border-color: #1f8196; }
+.empresa-chips button.on.e2 { background: #3a3f47; border-color: #3a3f47; }
 /* Lista mais enxuta: datas, valores e empresa não quebram linha; subtítulo da tela em uma linha */
 .tabela-rolagem td.nw { white-space: nowrap; }
 .cab-tela .sub.uma-linha { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70vw; }
@@ -604,9 +604,9 @@ a.kpi:hover { border-color: #d6d9df; box-shadow: 0 4px 14px rgba(16,24,40,.06); 
 /* =====================================================================
    Identidade por empresa (out/2026): cada CNPJ tem uma cor (--emp-cor) que pinta
    a faixa do topo, a moldura das telas e a tarja dos formulários.
-   NOX 30 = azul, NOX 37 = verde, Consolidado = grafite.
+   NOX 30 = azul petróleo claro, NOX 37 = cinza grafite, Consolidado = bronze.
    ===================================================================== */
-:root { --emp-cor: #4b5160; }
+:root { --emp-cor: #7c5c1c; }
 .faixa-empresa { display: flex; align-items: center; gap: 12px; padding: 7px 16px; background: var(--emp-cor); color: #fff; flex-shrink: 0; min-width: 0; transition: background-color .25s; }
 .faixa-empresa .fe-marca { display: grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px; background: rgba(255,255,255,.18); font: 700 15px var(--fonte); letter-spacing: .5px; }
 .faixa-empresa .fe-txt { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; font-size: 13px; }
