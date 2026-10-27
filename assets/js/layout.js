@@ -56,6 +56,7 @@ const MENU = [
   { grupo: 'Cadastros', icone: 'cadastros', gerenciar: true, itens: [
     { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
     { id: 'produtos',      nome: 'Grupos de produtos', arquivo: 'pages/cadastros/grupos-produtos.html' },
+    { id: 'compras',       nome: 'Serviços terceirizados', arquivo: 'pages/cadastros/servicos.html' },
     { id: 'clientes',      nome: 'Clientes',          arquivo: 'pages/cadastros/clientes.html' },
     { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
     { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' },

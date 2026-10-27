@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610270902">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610271117">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610270902"></script>
-<script src="../../assets/js/ui.js?v=202610270902"></script>
-<script src="../../assets/js/auth.js?v=202610270902"></script>
-<script src="../../assets/js/layout.js?v=202610270902"></script>
-<script src="../../assets/js/cadastro.js?v=202610270902"></script>
+<script src="../../assets/js/supabase.js?v=202610271117"></script>
+<script src="../../assets/js/ui.js?v=202610271117"></script>
+<script src="../../assets/js/auth.js?v=202610271117"></script>
+<script src="../../assets/js/layout.js?v=202610271117"></script>
+<script src="../../assets/js/cadastro.js?v=202610271117"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -70,15 +70,16 @@ const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 const hojeISO = () => new Date().toLocaleDateString('sv-SE');
 const somaDias = (iso, d) => { const x = new Date(iso + 'T12:00:00'); x.setDate(x.getDate() + d); return x.toLocaleDateString('sv-SE'); };
-let FORN = [], PRODS = [], CATS = [], CONDS = [], FORMAS = [], CONTAS = [], ALC = [], USU = [], EMPRESAS = [], PF = [], FICHAS = {}, ACOES = new Set(), CTX = null, modalAtual = null, ex = {}, sujo = false;
+let PAIS = [], SERVS = [], FORN = [], PRODS = [], CATS = [], CONDS = [], FORMAS = [], CONTAS = [], ALC = [], USU = [], EMPRESAS = [], PF = [], FICHAS = {}, ACOES = new Set(), CTX = null, modalAtual = null, ex = {}, sujo = false;
 const forn = id => FORN.find(f => f.id === id);
 const prod = id => PRODS.find(p => p.id === id);
+const serv = id => SERVS.find(s => s.id === id);
 const cat = id => CATS.find(c => c.id === id);
 const usu = id => USU.find(u => u.id === id)?.nome || '';
 const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
 const norm = t => String(t || '').trim().toLowerCase();
 // itens sem cadastro ainda não liberados pelo administrador (bloqueiam o envio para aprovação)
-const avulsosPendentes = r => (ex.itens?.[r.id] || []).filter(i => !i.produto_id && !((r.liberacao_avulso?.itens) || []).map(norm).includes(norm(i.descricao)));
+const avulsosPendentes = r => (ex.itens?.[r.id] || []).filter(i => !i.produto_id && !i.servico_id && !((r.liberacao_avulso?.itens) || []).map(norm).includes(norm(i.descricao)));
 const possoLiberar = () => CTX.admin || ACOES.has('compras.liberar_avulso');
 
 /* ---------- Escala de aprovação ---------- */
@@ -98,7 +99,17 @@ const quemAprova = (r, n) => n === 0 ? 'quem tem a ação "Aprovar pedidos de co
 /* ---------- Itens ---------- */
 const optProds = sel => '<option value="">— item sem cadastro —</option>' + PRODS.filter(p => (p.situacao === 'ativo' && (p.aprovacao || 'aprovado') === 'aprovado') || p.id === sel)
   .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo || '—') + ' · ' + p.descricao)}</option>`).join('');
-const optCats = sel => '<option value="">— categoria —</option>' + CATS.filter(c => c.ativo || c.id === sel).map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
+// categorias em ordem de código (1.2 antes de 1.10), agrupadas pela categoria-mãe: a lista tem busca por qualquer parte do nome
+const ordCod = c => String(c || '').split('.').map(n => n.padStart(4, '0')).join('.');
+function optCats(sel) {
+  const l = CATS.filter(c => c.ativo || c.id === sel).sort((a, b) => ordCod(a.codigo).localeCompare(ordCod(b.codigo)));
+  const grupos = {}; l.forEach(c => (grupos[c.codigo.split('.').slice(0, 2).join('.')] ||= []).push(c));
+  return '<option value="">— categoria —</option>' + Object.entries(grupos).map(([g, cs]) => {
+    const mae = PAIS.find(p => p.codigo === g);
+    const ops = cs.map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
+    return mae ? `<optgroup label="${esc(mae.codigo + ' ' + mae.nome)}">${ops}</optgroup>` : ops;
+  }).join('');
+}
 function ultimoPreco(produtoId, fornId) {
   const l = (ex.todosItens || []).filter(i => i.produto_id === produtoId && i.valor_unitario > 0)
     .map(i => ({ ...i, p: ex.porId[i.pedido_id] })).filter(i => i.p && i.p.situacao !== 'cancelado')
@@ -116,8 +127,29 @@ function calcMaterial(f, qtd, barra) {
   const pb = Math.floor(b / (comp + perda)); if (!(pb > 0)) return { pb: 0, barras: null, comp, perda };
   return { pb, barras: qtd > 0 ? Math.ceil(qtd / pb) : 0, comp, perda };
 }
+/* Cada linha do pedido é Produto (entra no estoque) ou Serviço (vem de Cadastros › Serviços terceirizados, não entra
+   no estoque). Serviço marcado como usinagem pede a peça que volta usinada e calcula o material a enviar. */
+const selTipo = t => `<select data-k="tipo_linha" data-simples title="Produto entra no estoque; serviço não">
+  <option value="produto"${t === 'produto' ? ' selected' : ''}>Produto</option><option value="servico"${t === 'servico' ? ' selected' : ''}>Serviço</option></select>`;
+const optServs = sel => '<option value="">— escolha o serviço —</option>' + SERVS.filter(s => s.situacao === 'ativo' || s.id === sel)
+  .map(s => `<option value="${s.id}"${s.id === sel ? ' selected' : ''}>${esc(s.nome)}</option>`).join('');
+const linkServ = () => CTX.pode('compras', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/servicos.html?novo=1" title="Abre o cadastro de serviços em outra aba; ao voltar, a lista é atualizada" style="white-space:nowrap">+ cadastrar serviço</a>` : '';
+const caixaServ = sel => `<div style="display:flex;gap:6px;align-items:center;margin-top:3px"><select data-k="servico_id" style="flex:1;min-width:0">${optServs(sel)}</select>${linkServ()}</div>`;
+const detalheServ = x => { const n = serv(x.servico_id)?.nome || ''; const d = x.descricao || ''; return d.toUpperCase().startsWith(n.toUpperCase() + ' · ') ? d.slice(n.length + 3) : d.toUpperCase() === n.toUpperCase() ? '' : d; };
+const linhaServ = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-tipo="servico">
+  <td style="min-width:220px">${selTipo('servico')}${caixaServ(x.servico_id)}
+    <input data-k="descricao" placeholder="Detalhe (opcional), ex.: desenho do suporte DF-068" value="${esc(detalheServ(x))}" style="margin-top:3px">
+    <div class="ro" data-k="info"><span class="tg neutro">serviço · não entra no estoque</span></div></td>
+  <td style="width:58px"><input data-k="unidade" value="${esc(x.unidade || serv(x.servico_id)?.unidade || '')}" placeholder="un"></td>
+  <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
+  <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
+  <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
+  <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id)}</select></td>
+  <td class="num" data-k="total"></td>
+  ${rec ? `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}</td>` : ''}
+  <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 const linhaServico = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-tipo="servico_usinagem">
-  <td style="min-width:220px"><span class="tg pc">serviço de usinagem</span>
+  <td style="min-width:220px">${selTipo('servico')}${caixaServ(x.servico_id || SERVS.find(s => s.usinagem && s.situacao === 'ativo')?.id)}
     <select data-k="produto_id" style="margin-top:3px">${optPecasUsi(x.produto_id)}</select>
     <input data-k="descricao" value="${esc(x.descricao || '')}" style="display:none">
     <label class="ro" style="display:flex;gap:6px;align-items:center;margin-top:3px">Barra enviada (mm)
@@ -127,7 +159,7 @@ const linhaServico = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
-  <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples>${optCats(x.categoria_financeira_id || CATS.find(c => c.codigo === CAT_USINAGEM)?.id)}</select></td>
+  <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id || CATS.find(c => c.codigo === CAT_USINAGEM)?.id)}</select></td>
   <td class="num" data-k="total"></td>
   ${rec ? `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}</td>` : ''}
   <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
@@ -202,8 +234,9 @@ function prazoLivre(m) {
   inp.addEventListener('input', () => { if (!inp.value.trim()) msg.textContent = ''; });
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aplicar(); } });
 }
-const linhaItem = (x = {}, rec = false) => x.tipo_item === 'servico_usinagem' ? linhaServico(x, rec) : `<tr data-id="${x.id || ''}">
-  <td style="min-width:220px"><select data-k="produto_id">${optProds(x.produto_id)}</select>
+const linhaItem = (x = {}, rec = false) => x.tipo_item === 'servico_usinagem' ? linhaServico(x, rec) : x.servico_id ? linhaServ(x, rec) : linhaProduto(x, rec);
+const linhaProduto = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
+  <td style="min-width:220px">${selTipo('produto')}<select data-k="produto_id" style="margin-top:3px">${optProds(x.produto_id)}</select>
     <input data-k="descricao" placeholder="Descrição do item (sem cadastro)" value="${esc(x.produto_id ? '' : x.descricao || '')}" style="margin-top:3px;${x.produto_id ? 'display:none' : ''}">
     <label class="ro" style="display:flex;gap:5px;align-items:center;margin-top:3px"><input type="checkbox" data-k="uso_consumo"${x.uso_consumo ? ' checked' : ''}> uso e consumo interno (manutenção, não entra no estoque)</label>
     <div class="ro" data-k="info">${!x.produto_id && x.id ? '<span class="tg alerta">sem cadastro · precisa de liberação do administrador</span>' : ''}</div></td>
@@ -211,27 +244,29 @@ const linhaItem = (x = {}, rec = false) => x.tipo_item === 'servico_usinagem' ? 
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
-  <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples${x.produto_id && !x.uso_consumo && prod(x.produto_id)?.categoria_financeira_id ? ' disabled title="Categoria do cadastro do produto"' : ''}>${optCats(x.categoria_financeira_id)}</select></td>
+  <td style="min-width:150px"><select data-k="categoria_financeira_id"${x.produto_id && !x.uso_consumo && prod(x.produto_id)?.categoria_financeira_id ? ' disabled title="Categoria do cadastro do produto"' : ''}>${optCats(x.categoria_financeira_id)}</select></td>
   <td class="num" data-k="total"></td>
   ${rec ? `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}</td>` : ''}
   <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 // categoria: item com produto usa a do cadastro (travada); uso e consumo interno libera a escolha
 function travarCategoria(tr) {
   const pid = Number(tr.querySelector('[data-k=produto_id]').value) || null, p = prod(pid), uso = tr.querySelector('[data-k=uso_consumo]')?.checked, c = tr.querySelector('[data-k=categoria_financeira_id]');
-  if (!c || tr.dataset.tipo === 'servico_usinagem') return;
+  if (!c || tr.dataset.tipo) return;
   if (p && !uso && p.categoria_financeira_id) { c.value = p.categoria_financeira_id; c.disabled = true; c.title = 'Categoria do cadastro do produto'; }
   else { c.disabled = false; c.title = uso ? 'Uso e consumo interno: escolha a categoria (ex.: manutenção)' : ''; }
 }
 function lerItens() {
   return [...(modalAtual?.querySelectorAll('#itens tbody tr') || [])].map(tr => {
     const g = k => tr.querySelector(`[data-k=${k}]`);
-    const pid = Number(g('produto_id').value) || null, srv = tr.dataset.tipo === 'servico_usinagem';
-    return { ...(srv ? { tipo_item: 'servico_usinagem', barra_mm: lerNumero(g('barra_mm').value) || null } : {}),
-      produto_id: pid, descricao: srv ? g('descricao').value.trim() : pid ? prod(pid)?.descricao : g('descricao').value.trim(), unidade: g('unidade').value.trim() || null,
+    const srv = tr.dataset.tipo === 'servico_usinagem', gen = tr.dataset.tipo === 'servico', pid = gen ? null : Number(g('produto_id').value) || null;
+    const sid = srv || gen ? Number(g('servico_id')?.value) || null : null, det = gen ? g('descricao').value.trim() : '';
+    return { ...(srv ? { tipo_item: 'servico_usinagem', barra_mm: lerNumero(g('barra_mm').value) || null } : {}), linha: gen ? 'servico' : srv ? 'usinagem' : 'produto',
+      produto_id: pid, servico_id: sid,
+      descricao: srv ? g('descricao').value.trim() : gen ? [serv(sid)?.nome, det].filter(Boolean).join(' · ') : pid ? prod(pid)?.descricao : g('descricao').value.trim(), unidade: g('unidade').value.trim() || null,
       quantidade: lerNumero(g('quantidade').value) || 0, valor_unitario: lerNumero(g('valor_unitario').value) || 0, desconto: lerNumero(g('desconto').value) || 0,
-      categoria_financeira_id: Number(g('categoria_financeira_id').value) || null, uso_consumo: !srv && !!g('uso_consumo')?.checked,
+      categoria_financeira_id: Number(g('categoria_financeira_id').value) || null, uso_consumo: !srv && !gen && !!g('uso_consumo')?.checked,
       codigo_fornecedor: pid ? PF.find(x => x.produto_id === pid && x.fornecedor_id === Number(modalAtual.querySelector('#f_fornecedor_id')?.value))?.codigo_fornecedor || null : null };
-  }).filter(x => x.produto_id || (x.descricao && x.tipo_item !== 'servico_usinagem') || x.valor_unitario);
+  }).filter(x => x.produto_id || x.servico_id || (x.descricao && x.linha === 'produto') || x.valor_unitario);
 }
 function recalcular() {
   if (!modalAtual) return;
@@ -246,6 +281,26 @@ function recalcular() {
   const total = t + v('frete') + v('outras_despesas') - v('desconto');
   const fTot = modalAtual.querySelector('#f_valor_total'); if (fTot) fTot.value = total.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   modalAtual.querySelector('#totPed').innerHTML = `<span>Itens <b>${reais(t)}</b></span><span>Frete + outras <b>${reais(v('frete') + v('outras_despesas'))}</b></span><span>Desconto <b>${reais(v('desconto'))}</b></span><span>Total do pedido <b>${reais(total)}</b></span>`;
+}
+function trocarLinha(tr, html) {   // refaz a linha mantendo quantidade e preço digitados
+  const q = tr.querySelector('[data-k=quantidade]')?.value, u = tr.querySelector('[data-k=valor_unitario]')?.value;
+  tr.insertAdjacentHTML('afterend', html); const n = tr.nextElementSibling; tr.remove();
+  if (q) n.querySelector('[data-k=quantidade]').value = q; if (u) n.querySelector('[data-k=valor_unitario]').value = u;
+  return n;
+}
+function aoMudarTipo(tr) {
+  const n = trocarLinha(tr, tr.querySelector('[data-k=tipo_linha]').value === 'servico' ? linhaServ() : linhaProduto());
+  n.querySelector('[data-k=servico_id], [data-k=produto_id]')?.focus();
+}
+function aoEscolherServ(tr) {
+  const s = serv(Number(tr.querySelector('[data-k=servico_id]').value));
+  if (s && s.usinagem !== (tr.dataset.tipo === 'servico_usinagem')) tr = trocarLinha(tr, s.usinagem ? linhaServico({ servico_id: s.id }) : linhaServ({ servico_id: s.id }));
+  if (!s) return recalcular();
+  const c = tr.querySelector('[data-k=categoria_financeira_id]'); if (c) c.value = s.categoria_financeira_id || '';
+  const un = tr.querySelector('[data-k=unidade]'); if (un && !un.value) un.value = s.unidade || '';
+  const vu = tr.querySelector('[data-k=valor_unitario]'); if (vu && !lerNumero(vu.value) && Number(s.preco_referencia)) vu.value = num(s.preco_referencia);
+  const sf = modalAtual.querySelector('#f_fornecedor_id'); if (sf && !sf.value && s.fornecedor_id) { sf.value = s.fornecedor_id; sf.dispatchEvent(new Event('change', { bubbles: true })); }
+  recalcular();
 }
 function aoEscolherProduto(tr) {
   const pid = Number(tr.querySelector('[data-k=produto_id]').value) || null, p = prod(pid), fid = Number(modalAtual.querySelector('#f_fornecedor_id')?.value);
@@ -306,7 +361,7 @@ function secaoPedido(r) {
   if (s === 'em_aprovacao') avisos.push(`<div class="aviso-box">Aguardando <b>${esc(nomeNivel(r, n))}</b> · aprova: ${esc(quemAprova(r, n))}</div>`);
   const pend = avulsosPendentes(r);
   if (pend.length && EDITAVEL.includes(s)) avisos.push(`<div class="aviso-box erro"><b>Item sem cadastro:</b> ${esc(pend.map(i => i.descricao).join(', '))}. Cadastre o produto e escolha-o no item, ou peça liberação ao administrador (compra ocasional, ex.: manutenção). Sem isso o pedido não vai para aprovação.</div>`);
-  else if (r.liberacao_avulso && (ex.itens[r.id] || []).some(i => !i.produto_id)) avisos.push(`<div class="aviso-box">Item sem cadastro <b>liberado</b> por ${esc(usu(r.liberacao_avulso.por) || 'administrador')} em ${dataHoraBR(r.liberacao_avulso.em)} · ${esc(r.liberacao_avulso.motivo || '')}</div>`);
+  else if (r.liberacao_avulso && (ex.itens[r.id] || []).some(i => !i.produto_id && !i.servico_id)) avisos.push(`<div class="aviso-box">Item sem cadastro <b>liberado</b> por ${esc(usu(r.liberacao_avulso.por) || 'administrador')} em ${dataHoraBR(r.liberacao_avulso.em)} · ${esc(r.liberacao_avulso.motivo || '')}</div>`);
   return `<div class="secao">Andamento</div>
     <div class="fluxo-pc">${etapas.join('<i>›</i>')}</div><div id="pcPend"></div>${avisos.join('')}
     <div class="acoes-pc">${acoes.join('')}</div>
@@ -442,7 +497,7 @@ Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. 
 
 /* ---------- Recebimento da NF ---------- */
 function abrirRecebimento(r, pai) {
-  const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem'), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
+  const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem' || i.servico_id), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
   const itens = (ex.itens[r.id] || []).map(i => ({ ...i, pend: Math.max(0, Number(i.quantidade) - Number(i.quantidade_recebida)) }));
   const fatorExtra = Number(r.valor_produtos) ? (Number(r.frete) + Number(r.outras_despesas) - Number(r.desconto)) / Number(r.valor_produtos) : 0;
   const cond = CONDS.find(c => c.id === r.condicao_pagamento_id);
@@ -654,7 +709,7 @@ const cfg = {
     { id: 'data_entrega_prevista', label: 'Entrega prevista', tipo: 'data', lista: true },
     { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
     { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Gera as parcelas previstas e as da NF. Sem condição: prazo padrão do fornecedor.' },
-    { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })), ajuda: 'Opcional. Se ainda não está definido (Pix ou boleto), deixe vazio: a forma é escolhida em cada parcela, na hora de pagar.' },
+    { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', cadastro: false, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })), ajuda: 'Obrigatória para enviar à aprovação: a forma combinada com o fornecedor no fechamento da compra (Pix, boleto…).' },
     { id: 'conta_bancaria_id', label: 'Conta prevista (pagar)', tipo: 'select', opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
     { id: 'frete', label: 'Frete (R$)', tipo: 'moeda', secao: 'Valores' },
     { id: 'outras_despesas', label: 'Outras despesas (R$)', tipo: 'moeda' },
@@ -669,10 +724,10 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     CTX = ctx;
-    const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi] = await Promise.all([
+    const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi, sv] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
       buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao').order('descricao')),
-      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao, aceita_lancamento').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').eq('situacao', 'ativo').order('descricao')),
@@ -685,11 +740,12 @@ const cfg = {
       db.from('empresas').select('id, nome, cnpj'),
       db.rpc('usuarios_nomes'),
       db.rpc('minhas_acoes'),
-      buscarTodos(() => db.from('produto_usinagem').select('produto_id, material, comprimento_mm, perda_mm, preco_servico, fornecedor_id'))
+      buscarTodos(() => db.from('produto_usinagem').select('produto_id, material, comprimento_mm, perda_mm, preco_servico, fornecedor_id')),
+      buscarTodos(() => db.from('servicos').select('id, nome, categoria_financeira_id, unidade, usinagem, fornecedor_id, preco_referencia, situacao').order('nome'))
     ]);
-    FICHAS = Object.fromEntries(fi.map(x => [x.produto_id, x]));
+    FICHAS = Object.fromEntries(fi.map(x => [x.produto_id, x])); SERVS = sv;
     SUG = ctx.pode('compras', 'criar') ? ((await db.rpc('sugestao_compra')).data || []) : [];
-    FORN = f; PRODS = p.filter(x => !['acabado', 'kit'].includes(x.tipo) || true); CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONDS = co; FORMAS = fo;
+    FORN = f; PRODS = p.filter(x => !['acabado', 'kit'].includes(x.tipo) || true); PAIS = c.filter(x => !x.aceita_lancamento); CATS = c.filter(x => x.aceita_lancamento).map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONDS = co; FORMAS = fo;
     CONTAS = cb.filter(x => x.tipo !== 'historico'); ALC = al; PF = pf; EMPRESAS = em.data || []; USU = (us.data || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); ACOES = new Set(ac.data || []);
     const itens = {}, eventos = {}, recebimentos = {}, titulos = {};
     it.forEach(x => (itens[x.pedido_id] ||= []).push(x));
@@ -705,7 +761,7 @@ const cfg = {
   colunasExtras: [
     { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${prod(i.produto_id)?.codigo || i.descricao}`).join(', '),
       html: (r, e) => { const l = e.itens[r.id] || [], t = l.map(i => `${num(i.quantidade)}× ${prod(i.produto_id)?.codigo || i.descricao}`).join(', ');
-        return `<span class="texto-curto" style="max-width:220px" title="${esc(t)}">${esc(t)}</span>${avulsosPendentes(r).length && EDITAVEL.includes(r.situacao) ? ' <span class="tg erro">sem cadastro · liberar</span>' : l.some(i => !i.produto_id) ? ' <span class="tg neutro">avulso liberado</span>' : ''}`; } },
+        return `<span class="texto-curto" style="max-width:220px" title="${esc(t)}">${esc(t)}</span>${avulsosPendentes(r).length && EDITAVEL.includes(r.situacao) ? ' <span class="tg erro">sem cadastro · liberar</span>' : l.some(i => !i.produto_id && !i.servico_id) ? ' <span class="tg neutro">avulso liberado</span>' : ''}`; } },
     { label: 'Comprador', texto: r => usu(r.comprador_id) },
     { label: 'Aprovação', texto: r => r.situacao === 'em_aprovacao' ? `${(r.niveis_aprovados || []).length}/${(r.niveis_exigidos || []).length} · ${nomeNivel(r, nivelAtual(r))}` : '' }
   ],
@@ -719,8 +775,9 @@ const cfg = {
     { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
     { id: 'nao_enviado', nome: 'Aprovado sem envio', cor: 'alerta', teste: r => r.situacao === 'aprovado' },
     { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista && r.origem !== 'tiny' },
+    { id: 'sem_forma', nome: 'Sem forma de pagamento (não vai para aprovação)', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && !r.forma_pagamento_id && r.origem !== 'tiny' },
     { id: 'sem_cond', nome: 'Sem condição de pagamento', cor: 'alerta', teste: r => !FINAL.includes(r.situacao) && !r.condicao_pagamento_id && r.origem !== 'tiny' },
-    { id: 'prod_sem_cat', nome: 'Produto sem categoria no cadastro', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => i.produto_id && !prod(i.produto_id)?.categoria_financeira_id && !i.uso_consumo) }
+    { id: 'prod_sem_cat', nome: 'Produto sem categoria no cadastro', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => i.produto_id && !i.servico_id && !prod(i.produto_id)?.categoria_financeira_id && !i.uso_consumo) }
   ],
   apagado: r => r.situacao === 'cancelado',
   aoAbrir(m, r, ctx) {
@@ -729,18 +786,17 @@ const cfg = {
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
     const box = document.createElement('div');
-    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Produto</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
+    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
-        ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${CTX.pode('produtos', 'criar') ? ` <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${Object.keys(FICHAS).length ? ' <button type="button" class="btn fino" id="addServ" style="margin-top:4px">+ Serviço de usinagem</button>' : ''}` : ''}
+        ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${CTX.pode('produtos', 'criar') ? ` <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''} ${linkServ()}` : ''}
         <div id="matBox" style="margin-top:8px"></div>
         <div class="tot-ped" id="totPed"></div></div>`;
     const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Valores');
     antes.parentNode.insertBefore(box, antes);
     if (editavel && podeEd) {
-      m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaItem()); };
-      const bs = m.querySelector('#addServ'); if (bs) bs.onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaServico()); };
+      m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaProduto()); };
       box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); recalcular(); } });
-      box.addEventListener('change', e => { if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else aoEscolherProduto(tr); } recalcular(); });
+      box.addEventListener('change', e => { if (e.target.dataset.k === 'tipo_linha') { aoMudarTipo(e.target.closest('tr')); return recalcular(); } if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else aoEscolherProduto(tr); } recalcular(); });
       box.addEventListener('input', recalcular);
       ['frete', 'outras_despesas', 'desconto'].forEach(id => m.querySelector('#f_' + id)?.addEventListener('input', recalcular));
       prazoLivre(m);
@@ -768,6 +824,7 @@ const cfg = {
     const itens = lerItens();
     if (!itens.length) return 'Inclua pelo menos um item';
     if (itens.some(i => !(i.quantidade > 0))) return 'Item com quantidade zerada';
+    if (itens.some(i => i.linha === 'servico' && !i.servico_id)) return 'Escolha o serviço (ou cadastre em "+ cadastrar serviço")';
     if (itens.some(i => !i.produto_id && !i.descricao)) return 'Item sem cadastro precisa de descrição';
     if (itens.some(i => i.tipo_item === 'servico_usinagem' && !i.produto_id)) return 'Serviço de usinagem: escolha a peça que volta usinada';
     const c = CONTAS.find(x => x.id === d.conta_bancaria_id); if (c && c.empresa_id !== d.empresa_id) return 'A conta prevista é de outra empresa';
@@ -783,7 +840,8 @@ const cfg = {
   },
   // Voltou do "+ cadastrar": refaz a lista de produtos de cada item sem perder o que foi escolhido
   aoRecarregarListas(m) {
-    m.querySelectorAll('[data-k=produto_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optProds(Number(v) || null); sel.value = v; });
+    m.querySelectorAll('tr:not([data-tipo]) [data-k=produto_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optProds(Number(v) || null); sel.value = v; });
+    m.querySelectorAll('[data-k=servico_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optServs(Number(v) || null); sel.value = v; });
   },
   tituloRegistro: r => `${r.origem === 'tiny' ? 'TINY ' + r.numero_tiny + ' (' + r.numero + ')' : r.numero} · ${nomeComFantasia(forn(r.fornecedor_id))}`,
   chaveHistorico: r => r.numero

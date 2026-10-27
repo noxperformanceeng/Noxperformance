@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Serviços terceirizados · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610271117">
+</head>
+<body data-modulo="compras" data-titulo="Serviços terceirizados">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610271117"></script>
+<script src="../../assets/js/ui.js?v=202610271117"></script>
+<script src="../../assets/js/auth.js?v=202610271117"></script>
+<script src="../../assets/js/layout.js?v=202610271117"></script>
+<script src="../../assets/js/cadastro.js?v=202610271117"></script>
+<script>
+/* Serviços terceirizados: o que se compra de terceiro e não entra no estoque (usinagem, desenho técnico, pintura…).
+   No pedido de compra a linha "Serviço" escolhe daqui; a categoria financeira do serviço vai para a despesa. */
+let CATS = [], FORN = [];
+const ordCod = c => String(c || '').split('.').map(n => n.padStart(4, '0')).join('.');
+montarCadastro({
+  textoNovo: '+ Novo serviço',
+  tabela: 'servicos', modulo: 'compras', titulo: 'Serviços terceirizados', singular: 'serviço', plural: 'serviços',
+  subtitulo: 'Serviços comprados de terceiros. Não têm SKU e não entram no estoque: no pedido de compra, escolha a linha "Serviço". A categoria daqui vai para a despesa.',
+  dicaBusca: 'nome do serviço…', ordem: 'nome', revisao: true,
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: '', n: 'Todos' }] },
+  campos: [
+    { id: 'nome', label: 'Nome do serviço', obrig: true, col: 2, lista: true, placeholder: 'ex.: DESENHO TÉCNICO, PINTURA ELETROSTÁTICA' },
+    { id: 'unidade', label: 'Unidade', obrig: true, padrao: 'SV', lista: true, placeholder: 'SV, PÇ, H…', ajuda: 'SV = serviço (valor fechado), PÇ = por peça, H = por hora' },
+    { id: 'usinagem', label: 'Usinagem', tipo: 'bool', textoBool: 'Pede a peça que volta usinada', ajuda: 'Marque só para usinagem: no pedido aparece a peça, o material e as barras a enviar' },
+    { id: 'categoria_financeira_id', label: 'Categoria financeira *', tipo: 'select', col: 2, lista: true, cadastro: false,
+      opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Para onde vai a despesa deste serviço' },
+    { id: 'fornecedor_id', label: 'Fornecedor de costume', tipo: 'select', col: 2, opcoes: () => FORN.map(f => ({ v: f.id, n: nomeComFantasia(f) })), ajuda: 'Opcional: já vem preenchido no pedido quando ele está sem fornecedor' },
+    { id: 'preco_referencia', label: 'Preço de referência (R$)', tipo: 'moeda', ajuda: 'Opcional: já vem preenchido no pedido' },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo' },
+    { id: 'descricao', label: 'Observações', tipo: 'textarea', col: 4 }
+  ],
+  async carregarExtra() {
+    const [c, f] = await Promise.all([
+      buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, situacao, aprovacao').order('codigo')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao').order('nome'))]);
+    CATS = c.filter(x => x.aceita_lancamento && x.situacao === 'ativo' && x.aprovacao === 'aprovado').sort((a, b) => ordCod(a.codigo).localeCompare(ordCod(b.codigo)));
+    FORN = f.filter(x => x.situacao === 'ativo');
+    return {};
+  },
+  colunasExtras: [{ label: 'Usinagem', texto: r => r.usinagem ? 'sim' : '' }],
+  antesSalvar: d => {
+    d.nome = (d.nome || '').trim().toUpperCase(); d.unidade = (d.unidade || 'SV').trim().toUpperCase();
+    ['categoria_financeira_id', 'fornecedor_id'].forEach(k => d[k] = d[k] ? Number(d[k]) : null);
+  },
+  validar: d => d.categoria_financeira_id ? null : 'Escolha a categoria financeira do serviço',
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo',
+  tituloRegistro: r => r.nome,
+  msgDuplicado: 'Já existe um serviço com este nome'
+});
+</script>
+</body>
+</html>
