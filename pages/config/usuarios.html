@@ -36,7 +36,7 @@
       <div><label>até</label><input type="date" id="fAte"></div>
       <div class="limpar"><button class="btn discreto fino" type="button" id="btnLimpar">Limpar filtros</button></div>
     </div>
-    <div class="barra-lista"><span id="contagem"></span><small class="nao-imprimir" style="margin-left:auto">Novo usuário: Supabase → Authentication → Users → Add user (marque "Auto Confirm User").</small></div>
+    <div class="barra-lista"><span id="contagem"></span><button class="btn primario nao-imprimir" type="button" id="novoUsuario" style="margin-left:auto">+ Novo usuário</button></div>
     <div class="cartao tabela-rolagem">
       <table>
         <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Telas extras</th><th>Situação</th><th>Cadastro</th><th></th></tr></thead>
@@ -103,6 +103,7 @@ const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, inc
     linhas: usuariosFiltrados().map(u => [u.nome, u.email, perfis.find(p => p.id === u.perfil_id)?.nome || 'Sem perfil',
       resumoAjustes(u.id), u.ativo ? 'Ativo' : 'Inativo', dataBR(u.criado_em)])
   }));
+  const bnu = document.getElementById('novoUsuario'); bnu.hidden = !ctx.admin; bnu.onclick = novoUsuario;
   await carregar();
   // Vindo do cadastro de funcionário: abre direto o usuário
   const alvo = new URLSearchParams(location.search).get('usuario');
@@ -216,9 +217,16 @@ function editarUsuario(id) {
         <select data-acao="${a.id}" ${ctx.admin ? '' : 'disabled'}><option value="">Padrão do perfil: ${doPerf ? 'pode' : 'não pode'}</option>
         <option value="sim"${v === 'sim' ? ' selected' : ''}>Liberar para esta pessoa</option><option value="nao"${v === 'nao' ? ' selected' : ''}>Bloquear para esta pessoa</option></select></td></tr>`;
     }).join('')}</table></div>` : ''}
-    <div class="acoes"><button class="btn" id="mCancelar">Cancelar</button><button class="btn primario" id="mSalvar">Salvar</button></div>`);
+    <div class="acoes"><button class="btn" id="mLink" style="margin-right:auto" title="Gera um link para a pessoa criar ou trocar a senha">Link de nova senha</button><button class="btn" id="mCancelar">Cancelar</button><button class="btn primario" id="mSalvar">Salvar</button></div>`);
   modal.querySelector('.modal').style.maxWidth = '640px';
   modal.querySelector('#mCancelar').onclick = () => modal.remove();
+  modal.querySelector('#mLink').onclick = async e => {
+    e.target.disabled = true;
+    const { data, error } = await chamarAdmin({ acao: 'link', usuario_id: id });
+    e.target.disabled = false;
+    if (error) return aviso(error, true);
+    modal.remove(); mostrarLink(u.nome, u.email, data.link, false);
+  };
 
   modal.querySelector('#mSalvar').onclick = async () => {
     const r1 = await db.from('usuarios').update({ nome: modal.querySelector('#mNome').value.trim(), ativo: modal.querySelector('#mAtivo').value === '1' }).eq('id', id);
@@ -236,6 +244,50 @@ function editarUsuario(id) {
     if (erro) return aviso('Não salvou: ' + erro.message, true);
     modal.remove(); aviso('Usuário salvo'); carregar();
   };
+}
+
+/* ---------- NOVO USUÁRIO ----------
+   Cria o login direto daqui (função usuarios-admin, só administrador). Ninguém digita senha: o sistema gera um
+   link para a própria pessoa criar a senha dela — é só mandar por WhatsApp ou e-mail. */
+async function chamarAdmin(corpo) {
+  const { data, error } = await db.functions.invoke('usuarios-admin', { body: { ...corpo, site: location.href } });
+  if (error) { let m = error.message; try { m = (await error.context.json()).erro || m; } catch {} return { error: m }; }
+  if (data?.erro) return { error: data.erro };
+  return { data };
+}
+function novoUsuario() {
+  const m = abrirModal(`<h2>Novo usuário</h2>
+    <div class="campo"><label>Nome <span class="obrig">*</span></label><input id="nuNome" placeholder="como aparece no sistema"></div>
+    <div class="campo"><label>E-mail <span class="obrig">*</span></label><input id="nuEmail" type="email" placeholder="e-mail que a pessoa usa para entrar"></div>
+    <div class="campo"><label>Perfil</label><select id="nuPerfil"><option value="">— sem perfil (não vê nada até definir) —</option>${perfis.map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></div>
+    <p class="sub" style="margin:6px 0 0">Depois de criar, aparece um link para a pessoa criar a própria senha. Telas a mais ou a menos para ela: botão Editar na lista.</p>
+    <div class="acoes" style="margin-top:14px"><button class="btn" id="nuX">Cancelar</button><button class="btn primario" id="nuOk">Criar usuário</button></div>`);
+  m.querySelector('.modal').classList.add('form');
+  m.querySelector('#nuX').onclick = () => m.remove();
+  m.querySelector('#nuOk').onclick = async e => {
+    const nome = m.querySelector('#nuNome').value.trim(), email = m.querySelector('#nuEmail').value.trim().toLowerCase(), perfil_id = m.querySelector('#nuPerfil').value || null;
+    if (!nome) return aviso('Informe o nome', true);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return aviso('E-mail inválido', true);
+    if (perfil_id === 'admin' && !confirm('Administrador vê e altera TUDO, inclusive folha, financeiro e acessos. Confirmar?')) return;
+    e.target.disabled = true; e.target.textContent = 'Criando…';
+    const { data, error } = await chamarAdmin({ acao: 'criar', nome, email, perfil_id });
+    e.target.disabled = false; e.target.textContent = 'Criar usuário';
+    if (error) return aviso(error, true);
+    m.remove(); await carregar(); mostrarLink(nome, email, data.link, !data.ja_existia);
+  };
+  m.querySelector('#nuNome').focus();
+}
+function mostrarLink(nome, email, link, novo) {
+  const msg = `Olá, ${nome.split(' ')[0].charAt(0).toUpperCase() + nome.split(' ')[0].slice(1).toLowerCase()}! ${novo ? 'Seu acesso ao sistema da NOX foi criado' : 'Segue o link para criar uma nova senha no sistema da NOX'}.\nEntre por este link e crie sua senha: ${link}\nDepois, acesse com o e-mail ${email}: https://noxperformanceeng.github.io/Noxperformance/`;
+  const m = abrirModal(`<h2>${novo ? 'Usuário criado' : 'Link de nova senha'}</h2>
+    <p style="margin:0 0 8px">Mande este link para <b>${esc(nome)}</b>. Ele vale por pouco tempo e só pode ser usado uma vez — se vencer, gere outro em <b>Editar › Link de nova senha</b>.</p>
+    <textarea id="lkTexto" rows="6" style="width:100%" readonly>${esc(msg)}</textarea>
+    <div class="acoes" style="margin-top:10px"><a class="btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(msg)}">Enviar por WhatsApp</a>
+      <a class="btn" href="mailto:${esc(email)}?subject=${encodeURIComponent('Acesso ao sistema NOX')}&body=${encodeURIComponent(msg)}">Enviar por e-mail</a>
+      <button class="btn" id="lkCopiar">Copiar</button><button class="btn primario" id="lkOk">Fechar</button></div>`);
+  m.querySelector('.modal').style.maxWidth = '560px';
+  m.querySelector('#lkCopiar').onclick = async () => { try { await navigator.clipboard.writeText(msg); aviso('Copiado'); } catch { m.querySelector('#lkTexto').select(); } };
+  m.querySelector('#lkOk').onclick = () => m.remove();
 }
 
 /* ---------- PERFIS ---------- */
