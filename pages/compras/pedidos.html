@@ -110,9 +110,46 @@ function optCats(sel) {
     return mae ? `<optgroup label="${esc(mae.codigo + ' ' + mae.nome)}">${ops}</optgroup>` : ops;
   }).join('');
 }
+/* ---------- Histórico de preços ----------
+   Compras do mesmo produto/serviço em pedidos aprovados, enviados ou recebidos (qualquer fornecedor), mais recente primeiro.
+   Usinagem conta separado da compra da peça (mesma peça + serviço de usinagem). */
+const PAGOS = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'];
+let PED_ATUAL = null;
+function historico(pid, sid, todos = false, exceto = PED_ATUAL) {
+  if (!pid && !sid) return [];
+  return (ex.todosItens || []).filter(i => (i.produto_id || null) === (pid || null) && (i.servico_id || null) === (sid || null) && Number(i.valor_unitario) > 0 && i.pedido_id !== exceto)
+    .map(i => ({ ...i, p: ex.porId[i.pedido_id] })).filter(i => i.p && (todos ? i.p.situacao !== 'cancelado' : PAGOS.includes(i.p.situacao)))
+    .sort((a, b) => b.p.data_pedido.localeCompare(a.p.data_pedido) || b.p.id - a.p.id);
+}
+const chaveLinha = tr => { const t = tr.dataset.tipo, g = k => Number(tr.querySelector(`[data-k=${k}]`)?.value) || null;
+  return { pid: t === 'servico' ? null : g('produto_id'), sid: t ? g('servico_id') : null }; };
+// alerta de preço na linha: compara o unitário digitado com a última compra
+function checarPreco(tr) {
+  const el = tr.querySelector('[data-k=preco]'); if (!el) return;
+  const { pid, sid } = chaveLinha(tr), h = historico(pid, sid), u = h[0], vu = lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0;
+  const todos = historico(pid, sid, true);
+  const link = todos.length ? ` <button type="button" data-hist title="Ver as compras anteriores deste item" style="background:none;border:0;padding:0;color:var(--destaque-texto);cursor:pointer;font:inherit;text-decoration:underline">histórico de preços (${todos.length})</button>` : '';
+  if (!u) { el.innerHTML = (pid || sid) ? `<span class="sub">sem compra anterior aprovada</span>${link}` : ''; return; }
+  const ult = Number(u.valor_unitario), pct = vu && ult ? (vu / ult - 1) * 100 : 0, ref = `última ${reais(ult)} · ${esc(u.p.numero)} · ${dataCurta(u.p.data_pedido)} · ${esc(nomeComFantasia(forn(u.p.fornecedor_id)) || '')}`;
+  el.innerHTML = (vu && pct > 0.05 ? `<span class="tg erro" title="${ref}">▲ ${pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% acima da última compra</span> `
+    : vu && pct < -0.05 ? `<span class="tg ok" title="${ref}">▼ ${Math.abs(pct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% abaixo da última</span> ` : '')
+    + `<span class="sub">${ref}</span>${link}`;
+}
+function mostrarHistorico(tr) {
+  const prox = tr.nextElementSibling; if (prox?.classList.contains('hist-precos')) return prox.remove();
+  const { pid, sid } = chaveLinha(tr), h = historico(pid, sid, true).slice(0, 20), cols = tr.children.length;
+  const vals = h.filter(i => PAGOS.includes(i.p.situacao)).map(i => Number(i.valor_unitario));
+  const resumo = vals.length ? `Menor ${reais(Math.min(...vals))} · maior ${reais(Math.max(...vals))} · média ${reais(vals.reduce((a, b) => a + b, 0) / vals.length)} (${vals.length} compra(s) aprovadas)` : 'Nenhuma compra aprovada ainda';
+  tr.insertAdjacentHTML('afterend', `<tr class="hist-precos"><td colspan="${cols}"><div class="sub-ed" style="margin:0 0 6px;padding:8px 10px;background:var(--fundo);border-radius:8px">
+    <b>Histórico de preços</b> <span class="sub">· ${resumo}</span>
+    <table class="lista-mini" style="margin-top:4px"><thead><tr><th>Data</th><th>Pedido</th><th>Fornecedor</th><th>Situação</th><th class="num">Qtd</th><th>Un</th><th class="num">Unitário</th></tr></thead><tbody>
+    ${h.map(i => `<tr><td>${dataCurta(i.p.data_pedido)}</td><td>${esc(i.p.numero || '')}</td><td>${esc(nomeComFantasia(forn(i.p.fornecedor_id)) || '')}</td>
+      <td><span class="tg ${sit(i.p.situacao).cor}">${esc(sit(i.p.situacao).n)}</span></td><td class="num">${num(i.quantidade)}</td><td>${esc(i.unidade || '')}</td><td class="num"><b>${reais(i.valor_unitario)}</b></td></tr>`).join('')}
+    </tbody></table>${h.length === 20 ? '<div class="sub">Mostrando as 20 mais recentes.</div>' : ''}</div></td></tr>`);
+}
 function ultimoPreco(produtoId, fornId) {
-  const l = (ex.todosItens || []).filter(i => i.produto_id === produtoId && i.valor_unitario > 0)
-    .map(i => ({ ...i, p: ex.porId[i.pedido_id] })).filter(i => i.p && i.p.situacao !== 'cancelado')
+  const l = (ex.todosItens || []).filter(i => i.produto_id === produtoId && !i.servico_id && i.valor_unitario > 0 && i.pedido_id !== PED_ATUAL)
+    .map(i => ({ ...i, p: ex.porId[i.pedido_id] })).filter(i => i.p && PAGOS.includes(i.p.situacao))
     .sort((a, b) => (b.p.fornecedor_id === fornId) - (a.p.fornecedor_id === fornId) || b.p.data_pedido.localeCompare(a.p.data_pedido));
   return l[0] ? { v: Number(l[0].valor_unitario), d: l[0].p.data_pedido, n: l[0].p.numero, f: l[0].p.fornecedor_id } : null;
 }
@@ -139,7 +176,7 @@ const detalheServ = x => { const n = serv(x.servico_id)?.nome || ''; const d = x
 const linhaServ = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-tipo="servico">
   <td style="min-width:220px">${selTipo('servico')}${caixaServ(x.servico_id)}
     <input data-k="descricao" placeholder="Detalhe (opcional), ex.: desenho do suporte DF-068" value="${esc(detalheServ(x))}" style="margin-top:3px">
-    <div class="ro" data-k="info"><span class="tg neutro">serviço · não entra no estoque</span></div></td>
+    <div class="ro" data-k="info"><span class="tg neutro">serviço · não entra no estoque</span></div><div class="ro" data-k="preco"></div></td>
   <td style="width:58px"><input data-k="unidade" value="${esc(x.unidade || serv(x.servico_id)?.unidade || '')}" placeholder="un"></td>
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
@@ -154,7 +191,7 @@ const linhaServico = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-
     <input data-k="descricao" value="${esc(x.descricao || '')}" style="display:none">
     <label class="ro" style="display:flex;gap:6px;align-items:center;margin-top:3px">Barra enviada (mm)
       <input data-k="barra_mm" inputmode="decimal" value="${num(x.barra_mm || BARRA_PADRAO)}" style="width:70px"></label>
-    <div class="ro" data-k="info"></div></td>
+    <div class="ro" data-k="info"></div><div class="ro" data-k="preco"></div></td>
   <td style="width:58px"><input data-k="unidade" value="${esc(x.unidade || 'PÇ')}"></td>
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
@@ -239,7 +276,7 @@ const linhaProduto = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
   <td style="min-width:220px">${selTipo('produto')}<select data-k="produto_id" style="margin-top:3px">${optProds(x.produto_id)}</select>
     <input data-k="descricao" placeholder="Descrição do item (sem cadastro)" value="${esc(x.produto_id ? '' : x.descricao || '')}" style="margin-top:3px;${x.produto_id ? 'display:none' : ''}">
     <label class="ro" style="display:flex;gap:5px;align-items:center;margin-top:3px"><input type="checkbox" data-k="uso_consumo"${x.uso_consumo ? ' checked' : ''}> uso e consumo interno (manutenção, não entra no estoque)</label>
-    <div class="ro" data-k="info">${!x.produto_id && x.id ? '<span class="tg alerta">sem cadastro · precisa de liberação do administrador</span>' : ''}</div></td>
+    <div class="ro" data-k="info">${!x.produto_id && x.id ? '<span class="tg alerta">sem cadastro · precisa de liberação do administrador</span>' : ''}</div><div class="ro" data-k="preco"></div></td>
   <td style="width:58px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
@@ -256,7 +293,7 @@ function travarCategoria(tr) {
   else { c.disabled = false; c.title = uso ? 'Uso e consumo interno: escolha a categoria (ex.: manutenção)' : ''; }
 }
 function lerItens() {
-  return [...(modalAtual?.querySelectorAll('#itens tbody tr') || [])].map(tr => {
+  return [...(modalAtual?.querySelectorAll('#itens > table > tbody > tr:not(.hist-precos)') || [])].map(tr => {
     const g = k => tr.querySelector(`[data-k=${k}]`);
     const srv = tr.dataset.tipo === 'servico_usinagem', gen = tr.dataset.tipo === 'servico', pid = gen ? null : Number(g('produto_id').value) || null;
     const sid = srv || gen ? Number(g('servico_id')?.value) || null : null, det = gen ? g('descricao').value.trim() : '';
@@ -271,10 +308,11 @@ function lerItens() {
 function recalcular() {
   if (!modalAtual) return;
   let t = 0;
-  modalAtual.querySelectorAll('#itens tbody tr').forEach(tr => {
+  modalAtual.querySelectorAll('#itens > table > tbody > tr:not(.hist-precos)').forEach(tr => {
     const q = lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, u = lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0, d = lerNumero(tr.querySelector('[data-k=desconto]').value) || 0;
     const v = Math.round((q * u - d) * 100) / 100; t += v; tr.querySelector('[data-k=total]').textContent = reais(v);
     if (tr.dataset.tipo === 'servico_usinagem') atualizarServico(tr);
+    checarPreco(tr);
   });
   resumoMaterial();
   const v = id => lerNumero(modalAtual.querySelector('#f_' + id)?.value) || 0;
@@ -284,6 +322,7 @@ function recalcular() {
 }
 function trocarLinha(tr, html) {   // refaz a linha mantendo quantidade e preço digitados
   const q = tr.querySelector('[data-k=quantidade]')?.value, u = tr.querySelector('[data-k=valor_unitario]')?.value;
+  if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove();
   tr.insertAdjacentHTML('afterend', html); const n = tr.nextElementSibling; tr.remove();
   if (q) n.querySelector('[data-k=quantidade]').value = q; if (u) n.querySelector('[data-k=valor_unitario]').value = u;
   return n;
@@ -784,12 +823,14 @@ const cfg = {
     { id: 'nao_enviado', nome: 'Aprovado sem envio', cor: 'alerta', teste: r => r.situacao === 'aprovado' },
     { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista && r.origem !== 'tiny' },
     { id: 'sem_forma', nome: 'Sem forma de pagamento (não vai para aprovação)', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && !r.forma_pagamento_id && r.origem !== 'tiny' },
+    { id: 'aumento', nome: 'Preço acima da última compra', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && r.origem !== 'tiny' && (e.itens[r.id] || []).some(i => {
+        const u = historico(i.produto_id, i.servico_id, false, r.id)[0]; return u && Number(i.valor_unitario) > Number(u.valor_unitario) + 0.005; }) },
     { id: 'sem_cond', nome: 'Sem condição de pagamento', cor: 'alerta', teste: r => !FINAL.includes(r.situacao) && !r.condicao_pagamento_id && r.origem !== 'tiny' },
     { id: 'prod_sem_cat', nome: 'Produto sem categoria no cadastro', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => i.produto_id && !i.servico_id && !prod(i.produto_id)?.categoria_financeira_id && !i.uso_consumo) }
   ],
   apagado: r => r.situacao === 'cancelado',
   aoAbrir(m, r, ctx) {
-    modalAtual = m; sujo = false;
+    modalAtual = m; sujo = false; PED_ATUAL = r.id || null;
     if (r.id && r.origem !== 'tiny') mostrarPendencias(m, r);
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
@@ -799,11 +840,12 @@ const cfg = {
         ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${CTX.pode('produtos', 'criar') ? ` <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''} ${linkServ()}` : ''}
         <div id="matBox" style="margin-top:8px"></div>
         <div class="tot-ped" id="totPed"></div></div>`;
+    box.addEventListener('click', e => { const b = e.target.closest('[data-hist]'); if (b) { e.preventDefault(); mostrarHistorico(b.closest('tr')); } });
     const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Valores');
     antes.parentNode.insertBefore(box, antes);
     if (editavel && podeEd) {
       m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaProduto()); };
-      box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); recalcular(); } });
+      box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { const tr = e.target.closest('tr'); if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove(); tr.remove(); recalcular(); } });
       box.addEventListener('change', e => { if (e.target.dataset.k === 'tipo_linha') { aoMudarTipo(e.target.closest('tr')); return recalcular(); } if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else aoEscolherProduto(tr); } recalcular(); });
       box.addEventListener('input', recalcular);
       ['frete', 'outras_despesas', 'desconto'].forEach(id => m.querySelector('#f_' + id)?.addEventListener('input', recalcular));
