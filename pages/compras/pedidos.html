@@ -170,6 +170,38 @@ function atualizarServico(tr) {
   if (!Number(f.preco_servico)) linhas.push('<span class="tg neutro">ficha sem preço do serviço</span>');
   info.innerHTML = linhas.join('<br>');
 }
+// Condição combinada na hora (ex.: 30/60/90): reaproveita a igual ou cria e já seleciona no pedido
+function prazoLivre(m) {
+  const sel = m.querySelector('#f_condicao_pagamento_id'); if (!sel) return;
+  const box = document.createElement('div'); box.className = 'prazo-livre'; box.style.marginTop = '4px';
+  box.innerHTML = `<input id="cpLivre" placeholder="ou digite os prazos: 30/60/90" inputmode="numeric" title="Dias a partir da entrega, separados por / ou espaço. Ex.: 30/60/90 ou 0/30 (entrada + 30 dias)">
+    <div class="sub" id="cpLivreMsg" style="margin-top:2px"></div>`;
+  sel.after(box);
+  const inp = box.querySelector('#cpLivre'), msg = box.querySelector('#cpLivreMsg');
+  const aplicar = async () => {
+    const t = inp.value.trim(); if (!t) { msg.textContent = ''; return; }
+    const dias = t.split(/[^\d]+/).filter(Boolean).map(Number);
+    if (!dias.length || /[^\d\s/;,.+\-]/.test(t.replace(/dias?|dd/gi, ''))) { msg.innerHTML = '<span style="color:var(--erro,#c02626)">Use só números de dias, ex.: 30/60/90</span>'; return; }
+    msg.textContent = 'Conferindo…';
+    const { data: id, error } = await db.rpc('condicao_pagamento_garantir', { p_dias: dias });
+    if (error) { msg.innerHTML = `<span style="color:var(--erro,#c02626)">${esc(error.message)}</span>`; return; }
+    if (!CONDS.some(c => c.id === id)) {
+      const { data: c } = await db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('id', id).single();
+      const ds = [...new Set(dias)].sort((a, b) => a - b);
+      CONDS.push(c?.id === id ? c : { id, nome: ds.join('/') + (ds.length === 1 ? ' dias' : ''), dias: ds, situacao: 'ativo' });
+      CONDS.sort((a, b) => a.nome.localeCompare(b.nome));
+    }
+    const v = String(id);
+    sel.innerHTML = '<option value="">—</option>' + CONDS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
+    sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); sel.dispatchEvent(new Event('input', { bubbles: true }));
+    const c = CONDS.find(x => x.id === id);
+    msg.textContent = `✓ ${c?.nome || ''} · ${(c?.dias || dias).length} parcela(s), dias contados da entrega/NF`;
+    inp.value = '';
+  };
+  inp.addEventListener('change', aplicar);
+  inp.addEventListener('input', () => { if (!inp.value.trim()) msg.textContent = ''; });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aplicar(); } });
+}
 const linhaItem = (x = {}, rec = false) => x.tipo_item === 'servico_usinagem' ? linhaServico(x, rec) : `<tr data-id="${x.id || ''}">
   <td style="min-width:220px"><select data-k="produto_id">${optProds(x.produto_id)}</select>
     <input data-k="descricao" placeholder="Descrição do item (sem cadastro)" value="${esc(x.produto_id ? '' : x.descricao || '')}" style="margin-top:3px;${x.produto_id ? 'display:none' : ''}">
@@ -622,7 +654,7 @@ const cfg = {
     { id: 'data_entrega_prevista', label: 'Entrega prevista', tipo: 'data', lista: true },
     { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
     { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Gera as parcelas previstas e as da NF. Sem condição: prazo padrão do fornecedor.' },
-    { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
+    { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })), ajuda: 'Opcional. Se ainda não está definido (Pix ou boleto), deixe vazio: a forma é escolhida em cada parcela, na hora de pagar.' },
     { id: 'conta_bancaria_id', label: 'Conta prevista (pagar)', tipo: 'select', opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
     { id: 'frete', label: 'Frete (R$)', tipo: 'moeda', secao: 'Valores' },
     { id: 'outras_despesas', label: 'Outras despesas (R$)', tipo: 'moeda' },
@@ -711,6 +743,7 @@ const cfg = {
       box.addEventListener('change', e => { if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else aoEscolherProduto(tr); } recalcular(); });
       box.addEventListener('input', recalcular);
       ['frete', 'outras_despesas', 'desconto'].forEach(id => m.querySelector('#f_' + id)?.addEventListener('input', recalcular));
+      prazoLivre(m);
       // fornecedor → contato, e-mail e WhatsApp do cadastro
       m.querySelector('#f_fornecedor_id')?.addEventListener('change', e => { const f = forn(Number(e.target.value)); if (!f) return;
         [['contato_fornecedor', f.contato], ['email_fornecedor', f.email], ['whatsapp_fornecedor', f.telefone]].forEach(([k, v]) => { const el = m.querySelector('#f_' + k); if (el && !el.value && v) el.value = v; }); });
