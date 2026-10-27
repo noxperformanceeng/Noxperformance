@@ -350,8 +350,11 @@ function aoEscolherProduto(tr) {
   travarCategoria(tr);
   const up = ultimoPreco(pid, fid), vu = tr.querySelector('[data-k=valor_unitario]');
   if (up && !lerNumero(vu.value)) vu.value = num(up.v);
-  const cf = PF.find(x => x.produto_id === pid && x.fornecedor_id === fid)?.codigo_fornecedor;
-  info.innerHTML = [p.categoria_financeira_id ? '' : '<span class="tg alerta">produto sem categoria financeira no cadastro</span>', cf ? 'cód. fornecedor ' + esc(cf) : '', up ? `último preço ${reais(up.v)} (${esc(up.n)} · ${dataCurta(up.d)}${up.f !== fid ? ' · outro fornecedor' : ''})` : ''].filter(Boolean).join(' · ');
+  const pf = PF.find(x => x.produto_id === pid && x.fornecedor_id === fid), cf = pf?.codigo_fornecedor;
+  // sem compra anterior: usa a cotação gravada no cadastro do produto (vínculo com este fornecedor)
+  if (!up && pf?.preco != null && !lerNumero(vu.value)) vu.value = num(pf.preco);
+  const cot = pf?.preco != null ? `cotação ${reais(pf.preco)}${pf.unidade_compra ? '/' + esc(pf.unidade_compra) : ''}${Number(pf.ipi_pct) ? ' + IPI ' + num(pf.ipi_pct) + '%' : ''}${pf.cotacao_data ? ' (' + dataCurta(pf.cotacao_data) + ')' : ''}` : '';
+  info.innerHTML = [p.categoria_financeira_id ? '' : '<span class="tg alerta">produto sem categoria financeira no cadastro</span>', cf ? 'cód. fornecedor ' + esc(cf) : '', cot, up ? `último preço ${reais(up.v)} (${esc(up.n)} · ${dataCurta(up.d)}${up.f !== fid ? ' · outro fornecedor' : ''})` : ''].filter(Boolean).join(' · ');
   recalcular();
 }
 
@@ -783,7 +786,7 @@ const cfg = {
       buscarTodos(() => db.from('pedidos_compra_eventos').select('*').order('id')),
       buscarTodos(() => db.from('pedidos_compra_recebimentos').select('*').order('id')),
       ctx.pode('pagar') ? buscarTodos(() => db.from('titulos_pagar').select('id, pedido_compra_id, documento, valor, valor_pago, situacao, data_vencimento, projecao').not('pedido_compra_id', 'is', null).order('data_vencimento')) : [],
-      buscarTodos(() => db.from('produto_fornecedores').select('produto_id, fornecedor_id, codigo_fornecedor')),
+      buscarTodos(() => db.from('produto_fornecedores').select('produto_id, fornecedor_id, codigo_fornecedor, preco, ipi_pct, cotacao_data, unidade_compra')),
       db.from('empresas').select('id, nome, cnpj'),
       db.rpc('usuarios_nomes'),
       db.rpc('minhas_acoes'),

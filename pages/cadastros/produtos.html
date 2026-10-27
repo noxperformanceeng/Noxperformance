@@ -36,7 +36,8 @@
   .info b { color: var(--texto); font-weight: 500; }
   .conv { font-size: 12.5px; color: var(--texto-suave); margin: -6px 0 10px; }
   .conv b { color: var(--texto); }
-  .add-forn { display: grid; grid-template-columns: 2fr 1fr 0.8fr 0.8fr auto auto; gap: 8px; align-items: end; margin-top: 8px; }
+  .add-forn { display: grid; grid-template-columns: 2fr 1fr 0.8fr 0.8fr auto; gap: 8px; align-items: end; margin-top: 8px; }
+  .add-forn.preco { grid-template-columns: 1fr 0.6fr 0.6fr 0.9fr 1.6fr auto; margin-top: 6px; }
   .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto); margin: 0; }
   @media (max-width: 860px) { .grade-campos { grid-template-columns: 1fr 1fr; } .grade-campos .l4 { grid-column: span 2; } .cab-tela { flex-direction: column; } .add-forn { grid-template-columns: 1fr; } }
 </style>
@@ -173,7 +174,7 @@ async function carregar() {
   try {
     const [lista, vinc, forn, nm, dp] = await Promise.all([
       buscarTodos(() => db.from('produtos').select('*').neq('tipo', 'despesa').order('id')),
-      buscarTodos(() => db.from('produto_fornecedores').select('id, produto_id, fornecedor_id, codigo_fornecedor, preferencial, unidade_compra, fator_compra').order('id')),
+      buscarTodos(() => db.from('produto_fornecedores').select('id, produto_id, fornecedor_id, codigo_fornecedor, preferencial, unidade_compra, fator_compra, preco, ipi_pct, icms_pct, cotacao_data, cotacao_ref, observacao').order('id')),
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, situacao').order('nome')),
       db.rpc('usuarios_nomes'),
       db.rpc('produtos_duplicados')
@@ -543,7 +544,13 @@ function abrirProduto(p) {
       <div><label>Cód. no fornecedor</label><input id="nfCod" placeholder="como vem na NF"></div>
       <div><label>Un. na NF</label><select id="nfUn"><option value="">Padrão</option>${unidades.map(u => `<option>${u}</option>`).join('')}</select></div>
       <div><label>Fator</label><input id="nfFator" inputmode="decimal" placeholder="padrão"></div>
-      <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="nfPref"> Preferencial</label>
+      <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="nfPref"> Preferencial</label></div>
+    <div class="add-forn preco">
+      <div><label>Preço R$ / un. compra</label><input id="nfPreco" inputmode="decimal" placeholder="ex.: 7,12"></div>
+      <div><label>IPI %</label><input id="nfIpi" inputmode="decimal"></div>
+      <div><label>ICMS %</label><input id="nfIcms" inputmode="decimal"></div>
+      <div><label>Data da cotação</label><input id="nfData" type="date"></div>
+      <div><label>Orçamento / observação</label><input id="nfRef" placeholder="ex.: orçamento 2425 · FOB"></div>
       <button class="btn" type="button" id="nfAdd">Adicionar</button></div>` : ''}
 
     <div id="blDup"></div>
@@ -723,13 +730,25 @@ function abrirProduto(p) {
     carregarEstr();
   }
 
+  let editForn = null;
+  const reaisF = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 });
   const desenharForn = () => {
     $('#pForn').innerHTML = vinc.length ? vinc.map((v, i) => `<tr>
       <td><b>${esc(v.nome)}</b>${v.preferencial ? ' <span class="tg ok">preferencial</span>' : ''}</td>
-      <td style="color:var(--texto-suave)">${[v.codigo_fornecedor ? 'cód. ' + esc(v.codigo_fornecedor) : '', v.unidade_compra ? `vende em ${esc(v.unidade_compra)}${v.fator_compra ? ' (×' + fmtN(v.fator_compra) + ')' : ''}` : ''].filter(Boolean).join(' · ')}</td>
-      <td style="text-align:right">${podeEditar ? `<button class="btn discreto" data-rm="${i}">remover</button>` : ''}</td></tr>`).join('')
+      <td style="color:var(--texto-suave)">${[v.codigo_fornecedor ? 'cód. ' + esc(v.codigo_fornecedor) : '', v.unidade_compra ? `vende em ${esc(v.unidade_compra)}${v.fator_compra ? ' (×' + fmtN(v.fator_compra) + ')' : ''}` : ''].filter(Boolean).join(' · ')}
+        ${v.preco != null ? `<div><b style="color:var(--texto)">${reaisF(v.preco)}${v.unidade_compra ? ' / ' + esc(v.unidade_compra) : ''}</b>${[v.ipi_pct != null ? 'IPI ' + fmtN(v.ipi_pct) + '%' : '', v.icms_pct != null ? 'ICMS ' + fmtN(v.icms_pct) + '%' : '',
+          v.ipi_pct ? 'com IPI ' + reaisF(v.preco * (1 + v.ipi_pct / 100)) : '', v.cotacao_data ? 'cotação ' + v.cotacao_data.split('-').reverse().join('/') : ''].filter(Boolean).map(t => ' · ' + t).join('')}</div>` : ''}
+        ${v.cotacao_ref || v.observacao ? `<div class="sub">${esc([v.cotacao_ref, v.observacao].filter(Boolean).join(' · '))}</div>` : ''}</td>
+      <td style="text-align:right;white-space:nowrap">${podeEditar ? `<button class="btn discreto" data-ed="${i}">editar</button> <button class="btn discreto" data-rm="${i}">remover</button>` : ''}</td></tr>`).join('')
       : `<tr><td class="sub" style="padding:6px 0">${COMPRADOS.includes($('#pTipo').value) ? 'Nenhum fornecedor vinculado — sem ele, compras não consegue repor este item.' : 'Nenhum fornecedor vinculado.'}</td></tr>`;
-    m.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const [r] = vinc.splice(+b.dataset.rm, 1); if (r.id) removidos.push(r.id); desenharForn(); });
+    m.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const [r] = vinc.splice(+b.dataset.rm, 1); if (r.id) removidos.push(r.id); editForn = null; desenharForn(); });
+    m.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => {   // carrega no formulário de baixo para alterar
+      const v = vinc[+b.dataset.ed]; editForn = +b.dataset.ed;
+      $('#nfNome').value = v.nome; $('#nfCod').value = v.codigo_fornecedor || ''; $('#nfUn').value = v.unidade_compra || ''; $('#nfFator').value = v.fator_compra ? fmtN(v.fator_compra) : '';
+      $('#nfPref').checked = !!v.preferencial; $('#nfPreco').value = v.preco != null ? fmtN(v.preco) : ''; $('#nfIpi').value = v.ipi_pct != null ? fmtN(v.ipi_pct) : '';
+      $('#nfIcms').value = v.icms_pct != null ? fmtN(v.icms_pct) : ''; $('#nfData').value = v.cotacao_data || ''; $('#nfRef').value = v.cotacao_ref || '';
+      $('#nfAdd').textContent = 'Atualizar'; $('#nfNome').focus();
+    });
   };
   desenharForn();
 
@@ -737,14 +756,22 @@ function abrirProduto(p) {
     $('#nfAdd').onclick = () => {
       const nome = $('#nfNome').value.trim();
       if (!nome) return aviso('Informe o fornecedor', true);
-      if (vinc.some(v => semAcento(v.nome) === semAcento(nome))) return aviso('Fornecedor já vinculado', true);
+      if (vinc.some((v, k) => k !== editForn && semAcento(v.nome) === semAcento(nome))) return aviso('Fornecedor já vinculado (use "editar" na linha dele)', true);
       const f = fornecedores.find(x => semAcento(x.nome) === semAcento(nome));
       if ($('#nfPref').checked) vinc.forEach(v => v.preferencial = false);
       const fF = lerFator($('#nfFator').value);
       if ($('#nfFator').value && !(fF > 0)) return aviso('Fator do fornecedor inválido', true);
-      vinc.push({ fornecedor_id: f?.id, nome: f?.nome || nome, codigo_fornecedor: $('#nfCod').value.trim() || null, preferencial: $('#nfPref').checked || vinc.length === 0,
-        unidade_compra: $('#nfUn').value || null, fator_compra: fF, novoForn: !f });
-      $('#nfNome').value = ''; $('#nfCod').value = ''; $('#nfUn').value = ''; $('#nfFator').value = ''; $('#nfPref').checked = false; desenharForn();
+      const pct = id => { const t = $(id).value.trim(); if (!t) return null; const n = lerNumero(t); return n >= 0 && n <= 100 ? n : NaN; };
+      const preco = $('#nfPreco').value.trim() ? lerNumero($('#nfPreco').value) : null, ipi = pct('#nfIpi'), icms = pct('#nfIcms');
+      if (preco != null && !(preco >= 0)) return aviso('Preço inválido', true);
+      if (Number.isNaN(ipi) || Number.isNaN(icms)) return aviso('IPI e ICMS: percentual entre 0 e 100', true);
+      const novoV = { fornecedor_id: f?.id, nome: f?.nome || nome, codigo_fornecedor: $('#nfCod').value.trim() || null, preferencial: $('#nfPref').checked || vinc.length === 0,
+        unidade_compra: $('#nfUn').value || null, fator_compra: fF, novoForn: !f, preco, ipi_pct: ipi, icms_pct: icms, cotacao_data: $('#nfData').value || null,
+        cotacao_ref: $('#nfRef').value.trim() || null };
+      if (editForn != null) { const ant = vinc[editForn]; if (ant.id && ant.fornecedor_id !== novoV.fornecedor_id) removidos.push(ant.id); vinc[editForn] = { ...ant, ...novoV, id: ant.fornecedor_id === novoV.fornecedor_id ? ant.id : undefined }; }
+      else vinc.push(novoV);
+      editForn = null; $('#nfAdd').textContent = 'Adicionar';
+      ['#nfNome', '#nfCod', '#nfUn', '#nfFator', '#nfPreco', '#nfIpi', '#nfIcms', '#nfData', '#nfRef'].forEach(x => $(x).value = ''); $('#nfPref').checked = false; desenharForn();
     };
     $('#pGerar').onclick = async () => {
       const { data, error } = await db.rpc('produtos_proximo_codigo', { p_tipo: $('#pTipo').value });
@@ -840,7 +867,8 @@ function abrirProduto(p) {
       if (vinc.length) {
         const { error } = await db.from('produto_fornecedores').upsert(vinc.map(v => ({ produto_id: id, fornecedor_id: v.fornecedor_id,
           codigo_fornecedor: v.codigo_fornecedor || null, preferencial: !!v.preferencial,
-          unidade_compra: v.unidade_compra || null, fator_compra: v.fator_compra || null })), { onConflict: 'produto_id,fornecedor_id' });
+          unidade_compra: v.unidade_compra || null, fator_compra: v.fator_compra || null, preco: v.preco ?? null, ipi_pct: v.ipi_pct ?? null, icms_pct: v.icms_pct ?? null,
+          cotacao_data: v.cotacao_data || null, cotacao_ref: v.cotacao_ref || null })), { onConflict: 'produto_id,fornecedor_id' });
         if (error) throw error;
       }
       {   // ficha de usinagem
