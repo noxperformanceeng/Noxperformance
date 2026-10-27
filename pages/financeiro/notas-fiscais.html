@@ -63,7 +63,7 @@ function checagens(r) {
   c.push(r.situacao_sefaz === 'autorizada' ? ['ok', 'Autorizada na SEFAZ' + (r.origem === 'sefaz' ? ' (veio da SEFAZ)' : ' · confira a chave no portal')]
     : ['erro', `NF ${r.situacao_sefaz.toUpperCase()} na SEFAZ — não pagar`]);
   c.push(['ok', `Destinatário: ${emp?.nome || 'empresa ' + r.empresa_id}`]);
-  c.push(f ? ['ok', `Emitente cadastrado: ${f.nome}`] : ['erro', `Emitente sem cadastro de fornecedor (CNPJ ${fmtCnpj(r.emitente_cnpj)})`]);
+  c.push(f ? ['ok', `Emitente cadastrado: ${nomeComFantasia(f)}`] : ['erro', `Emitente sem cadastro de fornecedor (CNPJ ${fmtCnpj(r.emitente_cnpj)})`]);
   if (p) {
     c.push(p.fornecedor_id === r.fornecedor_id ? ['ok', `Pedido ${p.numero} do mesmo fornecedor`] : ['erro', `Pedido ${p.numero} é de OUTRO fornecedor`]);
     if (p.empresa_id !== r.empresa_id) c.push(['erro', `Pedido ${p.numero} é de outra empresa (CNPJ) — a NF veio para ${emp?.nome || ''}`]);
@@ -97,10 +97,10 @@ function secaoNF(r) {
     ${r.conferida_por ? `<p class="sub" style="margin:0 0 4px">Conferida por ${quem(r.conferida_por, r.conferida_em)}</p>` : ''}
     ${r.aprovada_por ? `<p class="sub" style="margin:0 0 4px">Aprovada pelo master: ${quem(r.aprovada_por, r.aprovada_em)}</p>` : ''}
     ${podeAlt && !['lancada'].includes(r.situacao) ? `
-      ${!r.fornecedor_id ? `<div class="linha-vinc"><label class="sub">Fornecedor:</label><select id="nfForn"><option value="">— escolher —</option>${FORN.filter(f => f.situacao === 'ativo').map(f => `<option value="${f.id}">${esc(f.nome)}${f.cnpj ? ' · ' + esc(f.cnpj) : ''}</option>`).join('')}</select>
+      ${!r.fornecedor_id ? `<div class="linha-vinc"><label class="sub">Fornecedor:</label><select id="nfForn"><option value="">— escolher —</option>${FORN.filter(f => f.situacao === 'ativo').map(f => `<option value="${f.id}">${esc(nomeComFantasia(f))}${f.cnpj ? ' · ' + esc(f.cnpj) : ''}</option>`).join('')}</select>
         <button type="button" class="btn fino" data-nf="fornecedor">Vincular</button> <a class="sub" href="${RAIZ}pages/cadastros/fornecedores.html" style="color:var(--destaque)">cadastrar fornecedor ›</a></div>` : ''}
       <div class="linha-vinc"><label class="sub">Pedido de compra:</label><select id="nfPed"><option value="">— sem pedido —</option>${pedsForn.concat(r.pedido_compra_id && !pedsForn.some(p => p.id === r.pedido_compra_id) ? [ped(r.pedido_compra_id)].filter(Boolean) : [])
-        .map(p => `<option value="${p.id}"${p.id === r.pedido_compra_id ? ' selected' : ''}>${esc(nomePed(p))} · ${dataCurta(p.data_pedido)} · saldo ${reais(Number(p.valor_total) - Number(p.valor_recebido))} · ${esc(forn(p.fornecedor_id)?.nome || '')}</option>`).join('')}</select>
+        .map(p => `<option value="${p.id}"${p.id === r.pedido_compra_id ? ' selected' : ''}>${esc(nomePed(p))} · ${dataCurta(p.data_pedido)} · saldo ${reais(Number(p.valor_total) - Number(p.valor_recebido))} · ${esc(nomeComFantasia(forn(p.fornecedor_id)))}</option>`).join('')}</select>
         <button type="button" class="btn fino" data-nf="pedido">Vincular</button>${!pedsForn.length && !r.pedido_compra_id ? ' <span class="sub">nenhum pedido aprovado deste fornecedor nesta empresa</span>' : ''}
         ${['nova', 'conferida'].includes(r.situacao) && r.fornecedor_id ? ' <button type="button" class="btn fino" data-nf="tiny">Ordem de compra do Tiny…</button>' : ''}</div>` : ''}
     <div class="acoes-nf">${ac.join('')}</div>
@@ -262,7 +262,7 @@ const cfg = {
   async carregarExtra(linhas, ctx) {
     CTX = ctx; linhas.forEach(r => r.emissao_dia = String(r.data_emissao || '').slice(0, 10));
     const [f, p, c, cb, em, ct, us] = await Promise.all([
-      buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj, situacao').order('nome')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, situacao').order('nome')),
       buscarTodos(() => db.from('pedidos_compra').select('id, numero, numero_tiny, origem, empresa_id, fornecedor_id, data_pedido, situacao, valor_total, valor_recebido').order('id', { ascending: false })),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').eq('situacao', 'ativo').order('codigo')),
       ctx.pode('pagar') ? buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').eq('situacao', 'ativo').order('descricao')) : [],
@@ -279,7 +279,7 @@ const cfg = {
     { label: 'Pedido de compra', texto: r => nomePed(ped(r.pedido_compra_id)),
       html: r => r.pedido_compra_id ? `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}" onclick="event.stopPropagation()" style="color:var(--destaque)">${esc(nomePed(ped(r.pedido_compra_id)) || '#' + r.pedido_compra_id)}</a>` : '<span class="tg erro">sem pedido</span>' }
   ],
-  textoBuscaExtra: r => [r.chave, r.emitente_cnpj, ped(r.pedido_compra_id)?.numero, ...(r.itens || []).flatMap(i => [i.codigo, i.descricao])].filter(Boolean).join(' '),
+  textoBuscaExtra: r => [r.chave, r.emitente_cnpj, forn(r.fornecedor_id)?.nome_fantasia, ped(r.pedido_compra_id)?.numero, ...(r.itens || []).flatMap(i => [i.codigo, i.descricao])].filter(Boolean).join(' '),
   pendencias: [
     { id: 'no_tiny', nome: 'Já está no Tiny (não lançar de novo)', cor: 'alerta', teste: r => !!NO_TINY[r.id] && !['lancada', 'ignorada'].includes(r.situacao) },
     { id: 'sem_pedido', nome: 'Sem pedido de compra', cor: 'erro', teste: r => !r.pedido_compra_id && ['nova', 'conferida'].includes(r.situacao) },

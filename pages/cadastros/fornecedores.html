@@ -24,7 +24,7 @@ const CATEGORIAS = ['Matéria-prima', 'Usinagem (terceiro)', 'Corte a laser (ter
 montarCadastro({
   tabela: 'fornecedores', modulo: 'fornecedores', titulo: 'Fornecedores', singular: 'fornecedor', plural: 'fornecedores',
   subtitulo: 'Quem fornece cada item. O vínculo com os produtos é feito na tela de Produtos.',
-  dicaBusca: 'nome, CNPJ, cidade, contato, produto…', ordem: 'nome', revisao: true,
+  dicaBusca: 'nome, nome fantasia, CNPJ, cidade, contato, produto…', ordem: 'nome', revisao: true,
   abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: '', n: 'Todos' }] },
   periodos: [{ campo: 'atualizado_em', label: 'Última alteração' }, { campo: 'criado_em', label: 'Cadastro' }],
   campos: [

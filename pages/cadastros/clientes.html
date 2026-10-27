@@ -62,7 +62,7 @@ function lerContatos() {
 montarCadastro({
   tabela: 'clientes', modulo: 'clientes', titulo: 'Clientes', singular: 'cliente', plural: 'clientes',
   subtitulo: 'Consumidores de marketplace, revendas, distribuidores e venda direta. Clientes do Mercado Livre não trazem telefone/e-mail.',
-  dicaBusca: 'nome, CPF/CNPJ, cidade, contato, ID Tiny…', ordem: 'nome', revisao: true,
+  dicaBusca: 'nome, nome fantasia, CPF/CNPJ, cidade, contato, ID Tiny…', ordem: 'nome', revisao: true,
   abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: 'bloqueado', n: 'Bloqueados' }, { v: '', n: 'Todos' }] },
   periodos: [{ campo: 'criado_em', label: 'Cadastro' }, { campo: 'atualizado_em', label: 'Última alteração' }],
   campos: [

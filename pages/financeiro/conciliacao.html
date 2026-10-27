@@ -257,8 +257,8 @@ async function lancarTitulo(linhas, pronto) {
   if (ls.some(r => (r.valor < 0) !== saida)) return aviso('Selecione só saídas (contas a pagar) ou só entradas (contas a receber)', true);
   if (!CTX.pode(saida ? 'pagar' : 'receber', 'criar')) return aviso('Sem permissão no contas a ' + (saida ? 'pagar' : 'receber'), true);
   if (!PESSOAS) {
-    const [f, c] = await Promise.all([buscarTodos(() => db.from('fornecedores').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
-      CTX.pode('clientes') ? buscarTodos(() => db.from('clientes').select('id, nome, situacao').neq('situacao', 'inativo').order('nome')) : []]);
+    const [f, c] = await Promise.all([buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao').eq('situacao', 'ativo').order('nome')),
+      CTX.pode('clientes') ? buscarTodos(() => db.from('clientes').select('id, nome, nome_fantasia, situacao').neq('situacao', 'inativo').order('nome')) : []]);
     PESSOAS = { f, c };
   }
   const pessoas = saida ? PESSOAS.f : PESSOAS.c, tipos = [...new Set(ls.map(r => r.tipo))], total = ls.reduce((s, r) => s + Math.abs(Number(r.valor)), 0);
@@ -267,7 +267,7 @@ async function lancarTitulo(linhas, pronto) {
     <p class="sub" style="margin:0 0 8px">Cria ${ls.length > 1 ? 'um título por linha' : 'o título'} já ${saida ? 'pago' : 'recebido'} na data do extrato e concilia a linha. Ex.: transferência do Mercado Pago para outro banco, tarifa, antecipação.</p>
     <div class="grade-campos">
       <div class="campo l2"><label>${saida ? 'Fornecedor *' : 'Cliente (opcional)'} <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/${saida ? 'fornecedores' : 'clientes'}.html?novo=1">+ cadastrar</a></label>
-        <select id="ltP"><option value="">— ${saida ? 'escolher fornecedor' : 'sem cliente'} —</option>${pessoas.map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></div>
+        <select id="ltP"><option value="">— ${saida ? 'escolher fornecedor' : 'sem cliente'} —</option>${pessoas.map(p => `<option value="${p.id}">${esc(nomeComFantasia(p))}</option>`).join('')}</select></div>
       <div class="campo l2"><label>Categoria financeira *</label><select id="ltC"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}"${c.id === sug ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></div>
       <div class="campo l2"><label>Documento</label><input id="ltD" placeholder="em branco: EXTRATO + ID da operação"></div>
       <div class="campo l2"><label>Descrição / histórico</label><input id="ltH" value="${esc(tipos.length === 1 ? DESC_SUGERIDA[tipos[0]] || '' : '')}" placeholder="em branco: tipo e descrição da linha"></div>

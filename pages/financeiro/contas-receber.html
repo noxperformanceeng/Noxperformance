@@ -177,7 +177,7 @@ const cfg = {
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx;
     const [cl, cn, c, cb, fp, rc, ra, pv, ext] = await Promise.all([
-      buscarTodos(() => db.from('clientes').select('id, nome, situacao').order('nome')),
+      buscarTodos(() => db.from('clientes').select('id, nome, nome_fantasia, situacao').order('nome')),
       buscarTodos(() => db.from('canais_venda').select('id, nome, plataforma, link_pedido').order('nome')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
@@ -188,7 +188,7 @@ const cfg = {
       buscarTodos(() => db.from('extrato_lancamentos').select('id, titulo_receber_id, id_operacao').not('titulo_receber_id', 'is', null))
     ]);
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
-    CLI = cl.filter(x => x.situacao !== 'inativo' || linhas.some(r => r.cliente_id === x.id)).map(x => ({ v: x.id, n: x.nome }));
+    CLI = cl.filter(x => x.situacao !== 'inativo' || linhas.some(r => r.cliente_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x) }));
     CANAIS = cn; CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONTAS = cb; FORMAS = fp.filter(x => x.situacao === 'ativo');
     PEDIDOS = Object.fromEntries(pv.map(p => [p.id, p]));
     const receb = {}, rateio = {}, extrato = {};
