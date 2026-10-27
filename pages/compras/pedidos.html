@@ -419,6 +419,12 @@ async function gerarPdf(r, baixar) {
   const emp = EMPRESAS.find(e => e.id === r.empresa_id) || {}, f = forn(r.fornecedor_id) || {}, itens = ex.itens[r.id] || [];
   const cond = CONDS.find(c => c.id === r.condicao_pagamento_id)?.nome, forma = FORMAS.find(x => x.id === r.forma_pagamento_id)?.nome;
   const aprov = (ex.eventos[r.id] || []).filter(e => e.acao === 'aprovado_nivel').map(e => `${usu(e.por)} (${dataHoraBR(e.em)})`);
+  // logomarca no canto superior direito (se não carregar, o PDF sai sem ela)
+  try {
+    const b = await (await fetch(RAIZ + 'assets/img/logo-nox-pdf.jpg')).blob();
+    const url = await new Promise((ok, erro) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = erro; fr.readAsDataURL(b); });
+    doc.addImage(url, 'JPEG', 144, 9, 52, 52 * 196 / 900);
+  } catch {}
   doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('PEDIDO DE COMPRA ' + r.numero, 14, 16);
   doc.setFontSize(9); doc.setFont('helvetica', 'normal');
   doc.text([`${emp.nome || 'NOX'}${emp.cnpj ? ' · CNPJ ' + emp.cnpj : ''}`, `Data do pedido: ${dataCurta(r.data_pedido)}    Entrega prevista: ${dataCurta(r.data_entrega_prevista) || 'a combinar'}`], 14, 22);
