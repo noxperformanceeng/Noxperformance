@@ -80,6 +80,52 @@ const MENU = [
 function lerEmpresa() { try { const v = localStorage.getItem('nox_empresa'); return v ? Number(v) : null; } catch { return null; } }
 function gravarEmpresa(v) { try { v ? localStorage.setItem('nox_empresa', v) : localStorage.removeItem('nox_empresa'); } catch {} }
 
+// Identidade visual da empresa: cada CNPJ tem uma cor que pinta a faixa do topo, a moldura das telas,
+// o ícone da aba do navegador e a tarja dos formulários — para ninguém lançar na empresa errada.
+const COR_EMPRESA = { 1: '#1d4fb8', 2: '#1f7a42', 3: '#7a3fb8' };
+function dadosEmpresa(ctx) {
+  const e = ctx.empresa ? ctx.empresas.find(x => x.id === ctx.empresa) : null;
+  const regime = { simples: 'Simples Nacional', presumido: 'Lucro Presumido', real: 'Lucro Real' }[e?.regime] || e?.regime || '';
+  return { e, curto: e ? String(e.nome).split('·')[0].trim() : 'Consolidado', cor: e ? (COR_EMPRESA[e.id] || '#8a5a00') : '#4b5160', regime };
+}
+const curtoEmpresa = e => String(e.nome).split('·')[0].trim();
+function marcarEmpresa(ctx) {
+  const d = dadosEmpresa(ctx);
+  document.documentElement.style.setProperty('--emp-cor', d.cor);
+  document.body.dataset.emp = ctx.empresa || 0;
+  return d;
+}
+function iconeEmpresa(d) {      // ícone da aba do navegador: quadrado na cor da empresa com o número do CNPJ
+  const l = document.querySelector('link[rel="icon"]'); if (!l) return;
+  if (!d.e) { l.href = RAIZ + 'assets/img/favicon.png'; return; }
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = d.cor; g.beginPath(); g.roundRect ? g.roundRect(0, 0, 64, 64, 14) : g.rect(0, 0, 64, 64); g.fill();
+  g.fillStyle = '#fff'; g.font = 'bold 36px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(d.curto.replace(/\D/g, '').slice(0, 2) || 'N', 32, 35);
+  l.href = c.toDataURL();
+}
+function anunciarEmpresa(d) {   // aviso grande na troca (some sozinho em 1,6 s; clique ou Esc fecham antes)
+  document.querySelector('.troca-empresa')?.remove();
+  const o = document.createElement('div'); o.className = 'troca-empresa'; o.setAttribute('role', 'status');
+  o.innerHTML = `<div class="te-cartao"><small>Agora você está ${d.e ? 'na' : 'no'}</small><b>${esc(d.e ? d.curto : 'Consolidado')}</b>
+    <span>${d.e ? esc(d.regime) + ' · CNPJ ' + esc(d.e.cnpj || '') : 'As empresas somadas, só para acompanhar'}</span></div>`;
+  document.body.appendChild(o);
+  const fim = () => { document.removeEventListener('keydown', tecla); o.classList.add('saindo'); setTimeout(() => o.remove(), 220); };
+  const tecla = e => { if (e.key === 'Escape') { clearTimeout(t); fim(); } };
+  const t = setTimeout(fim, 1600); o.onclick = () => { clearTimeout(t); fim(); };
+  document.addEventListener('keydown', tecla);
+}
+function desenharFaixa(ctx) {   // faixa colorida no topo: em qual empresa estou + botões para trocar
+  const f = document.getElementById('faixaEmpresa'); if (!f) return;
+  const d = marcarEmpresa(ctx);
+  f.innerHTML = `<span class="fe-marca">${esc(d.e ? d.curto.replace(/\D/g, '') || d.curto : 'Σ')}</span>
+    <span class="fe-txt">${d.e ? `Você está na <b>${esc(d.curto)}</b>` : '<b>Consolidado</b>'}
+      <small>${d.e ? esc(d.regime) + ' · CNPJ ' + esc(d.e.cnpj || '') : ctx.empresas.map(curtoEmpresa).map(esc).join(' + ') + ' somadas'}</small></span>
+    <span class="fe-comum">Esta tela é comum às empresas</span>
+    <span class="fe-trocar" role="group" aria-label="Trocar de empresa">${[...ctx.empresas, { id: null, nome: 'Consolidado' }].map(e =>
+      `<button type="button" data-emp="${e.id ?? ''}" aria-pressed="${(e.id ?? null) === (ctx.empresa ?? null)}" title="${esc(e.nome)}">${esc(e.id ? curtoEmpresa(e) : e.nome)}</button>`).join('')}</span>`;
+}
+
 // Grupos do menu abertos (o grupo da tela atual abre sozinho)
 function lerAbertos() { try { return JSON.parse(localStorage.getItem('nox_menu_abertos') || '[]'); } catch { return []; } }
 function gravarAbertos(v) { try { localStorage.setItem('nox_menu_abertos', JSON.stringify(v)); } catch {} }
@@ -167,6 +213,12 @@ async function iniciarTela() {
       <header class="topo"><button class="btn-menu" id="btnMenu" aria-label="Abrir menu">${icone('menu', 22)}</button><b>${esc(document.body.dataset.titulo || 'NOX')}</b></header>
     </div>`;
   document.body.prepend(app);
+  if (ctx.empresas.length > 1 && (usaEmpresa || ehShell)) {
+    const faixa = document.createElement('div'); faixa.className = 'faixa-empresa nao-imprimir'; faixa.id = 'faixaEmpresa';
+    app.querySelector('.principal').appendChild(faixa);
+    faixa.addEventListener('click', e => { const b = e.target.closest('[data-emp]'); if (b) trocarEmpresa(b.dataset.emp ? Number(b.dataset.emp) : null); });
+  }
+  desenharFaixa(ctx); marcarEmpresa(ctx);
   // Aprovações pendentes: contador no menu (atualiza a cada 2 min)
   const contarAprov = async () => {
     const { data } = await db.rpc('minhas_aprovacoes');
@@ -216,12 +268,20 @@ async function iniciarTela() {
     b.setAttribute('aria-expanded', String(!g.classList.contains('fechado')));
     gravarAbertos([...app.querySelectorAll('.grupo:not(.fechado)')].map(x => x.dataset.grupo));
   }));
-  document.getElementById('seletorEmpresa')?.addEventListener('change', e => {
-    ctx.empresa = e.target.value ? Number(e.target.value) : null;
+  // Troca de empresa (seletor do menu, faixa do topo, botões das telas): todos passam por aqui
+  function trocarEmpresa(v) {
+    if ((v ?? null) === (ctx.empresa ?? null)) return;
+    ctx.empresa = v;
     gravarEmpresa(ctx.empresa);
+    const sel = document.getElementById('seletorEmpresa'); if (sel) sel.value = v ? String(v) : '';
+    const d = marcarEmpresa(ctx); desenharFaixa(ctx); iconeEmpresa(d); anunciarEmpresa(d);
     window.dispatchEvent(new CustomEvent('empresa', { detail: ctx.empresa }));
     document.querySelectorAll('.telas iframe').forEach(f => f.contentWindow?.postMessage({ nox: 'empresa', valor: ctx.empresa }, location.origin));
-  });
+  }
+  ctx.trocarEmpresa = trocarEmpresa;
+  document.getElementById('seletorEmpresa')?.addEventListener('change', e => trocarEmpresa(e.target.value ? Number(e.target.value) : null));
+  iconeEmpresa(dadosEmpresa(ctx));
+  if (!ehShell && ctx.empresa) document.title = dadosEmpresa(ctx).curto + ' · ' + document.title;
   const menu = document.getElementById('menu');
   document.getElementById('btnMenu').addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('aberto'); });
   document.addEventListener('click', e => { if (!menu.contains(e.target)) menu.classList.remove('aberto'); });
@@ -266,6 +326,8 @@ function montarBarraTelas(ctx, app) {
   const info = {};        // caminho → { empresa: bool, titulo }
   try { const g = JSON.parse(localStorage.getItem(chave) || '{}'); abas = (g.abas || []).filter(a => a.caminho?.startsWith('pages/')); ativa = g.ativa || ''; } catch {}
   const guardar = () => { try { localStorage.setItem(chave, JSON.stringify({ abas, ativa })); } catch {} };
+  // Tela que não separa por empresa (cadastros, produção…): a faixa fica discreta e avisa que é comum às empresas
+  const marcarNeutra = () => principal.classList.toggle('emp-neutra', !!ativa && info[ativa] !== undefined && !info[ativa].empresa);
   const painel = c => [...telas.children].find(p => p.dataset.caminho === c);
   const iframeDe = c => painel(c)?.querySelector('iframe');
 
@@ -296,7 +358,8 @@ function montarBarraTelas(ctx, app) {
     const bi = document.getElementById('barraInfo'); if (bi) bi.innerHTML = `<b>${esc(c ? abas.find(a => a.caminho === c).titulo : 'Visão geral')}</b><span>NOX Peças · ${esc(nomeEmp)}</span>`;
     const usa = !!(c && info[c]?.empresa);
     const me = document.getElementById('menuEmpresa'); if (me) me.hidden = !usa;
-    document.title = (c ? abas.find(a => a.caminho === c).titulo : 'Visão geral') + ' · NOX ERP';
+    marcarNeutra();
+    document.title = (ctx.empresa ? dadosEmpresa(ctx).curto + ' · ' : '') + (c ? abas.find(a => a.caminho === c).titulo : 'Visão geral') + ' · NOX ERP';
     desenharBarra(); guardar();
     if (c) iframeDe(c)?.contentWindow?.postMessage({ nox: 'ativa' }, location.origin);
     else window.dispatchEvent(new CustomEvent('inicio-ativo'));
@@ -353,8 +416,7 @@ function montarBarraTelas(ctx, app) {
     const c = f?.parentElement.dataset.caminho;
     if (e.data.nox === 'abrir') return abrir(caminhoTela(e.data.url));
     if (e.data.nox === 'empresa-escolher') {     // botões de empresa no topo da tela → mesmo efeito do seletor do menu
-      const sel = document.getElementById('seletorEmpresa');
-      if (sel) { sel.value = e.data.valor ? String(e.data.valor) : ''; sel.dispatchEvent(new Event('change')); }
+      ctx.trocarEmpresa?.(e.data.valor ? Number(e.data.valor) : null);
       return;
     }
     if (!c) return;
@@ -362,7 +424,7 @@ function montarBarraTelas(ctx, app) {
       info[c] = { empresa: !!e.data.empresa };
       const a = abas.find(x => x.caminho === c);
       if (a && e.data.titulo && a.titulo !== e.data.titulo) { a.titulo = e.data.titulo; desenharBarra(); guardar(); }
-      if (c === ativa) { const me = document.getElementById('menuEmpresa'); if (me) me.hidden = !info[c].empresa; }
+      if (c === ativa) { const me = document.getElementById('menuEmpresa'); if (me) me.hidden = !info[c].empresa; marcarNeutra(); }
     }
     if (e.data.nox === 'endereco') {              // a tela limpou/mudou o próprio endereço (ex.: retorno do ML)
       const novo = caminhoTela(e.data.url); const a = abas.find(x => x.caminho === c);
@@ -388,7 +450,9 @@ function montarEmbutido(ctx, usaEmpresa) {
     <div class="info" id="infoImpressao"></div>`;
   conteudo.prepend(cab);
   window.addEventListener('beforeprint', () => {
-    document.getElementById('infoImpressao').innerHTML = `Emitido em ${new Date().toLocaleString('pt-BR')}<br>por ${esc(ctx.usuario.nome)}`;
+    const de = dadosEmpresa(ctx);
+    document.getElementById('infoImpressao').innerHTML = `Emitido em ${new Date().toLocaleString('pt-BR')}<br>por ${esc(ctx.usuario.nome)}` +
+      (usaEmpresa ? `<br>Empresa: ${de.e ? esc(de.curto) + ' · CNPJ ' + esc(de.e.cnpj || '') : 'Consolidado'}` : '');
     document.querySelectorAll('.filtros-impressao').forEach(x => x.remove());
     document.querySelectorAll('.filtros').forEach(f => {
       if (f.closest('[hidden]')) return;
@@ -407,15 +471,27 @@ function montarEmbutido(ctx, usaEmpresa) {
   // Telas com dados das duas empresas: botões Consolidado / NOX 30 / NOX 37 no topo (separação visível)
   if (usaEmpresa && ctx.empresas.length > 1) {
     const barra = document.createElement('div'); barra.className = 'empresa-chips nao-imprimir';
-    const desenhar = () => { barra.innerHTML = '<span>Empresa:</span>' + [{ id: null, nome: 'Consolidado' }, ...ctx.empresas].map(e =>
-      `<button type="button" data-emp="${e.id ?? ''}" class="${(e.id ?? null) === (ctx.empresa ?? null) ? 'on' : ''} e${e.id ? e.id % 4 : ''}" title="${esc(e.nome)}">${esc(e.id ? String(e.nome).split('·')[0].trim() : e.nome)}</button>`).join(''); };
+    const desenhar = () => { const d = marcarEmpresa(ctx);
+      barra.innerHTML = '<span>Empresa:</span>' + [{ id: null, nome: 'Consolidado' }, ...ctx.empresas].map(e =>
+      `<button type="button" data-emp="${e.id ?? ''}" class="${(e.id ?? null) === (ctx.empresa ?? null) ? 'on' : ''} e${e.id ? e.id % 4 : ''}" title="${esc(e.nome)}">${esc(e.id ? String(e.nome).split('·')[0].trim() : e.nome)}</button>`).join('') +
+      `<span class="ec-info">${d.e ? `Lançamentos e consultas desta tela: <b>${esc(d.curto)}</b> · CNPJ ${esc(d.e.cnpj || '')}` : 'Mostrando as empresas somadas'}</span>`; };
     desenhar();
     barra.addEventListener('click', ev => { const b = ev.target.closest('[data-emp]'); if (!b) return;
       const v = b.dataset.emp ? Number(b.dataset.emp) : null;
       window.top.postMessage({ nox: 'empresa-escolher', valor: v }, location.origin); });
     window.addEventListener('empresa', desenhar);
     document.body.insertBefore(barra, document.getElementById('conteudo'));
+    // Formulários (janelas) desta tela ganham uma tarja na cor da empresa escolhida
+    new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => {
+      const modal = n.nodeType === 1 && n.classList.contains('modal-fundo') && n.querySelector('.modal'); if (!modal) return;
+      const d = dadosEmpresa(ctx), t = document.createElement('div'); t.className = 'modal-emp' + (d.e ? '' : ' consolidado');
+      t.innerHTML = d.e ? `<span class="fe-marca">${esc(d.curto.replace(/\D/g, '') || d.curto)}</span><span><b>${esc(d.curto)}</b> · CNPJ ${esc(d.e.cnpj || '')}</span>`
+        : '<span>Você está no <b>Consolidado</b>: confira a empresa deste lançamento</span>';
+      modal.prepend(t);
+    }))).observe(document.body, { childList: true });
   }
+  marcarEmpresa(ctx);
+  window.addEventListener('empresa', () => marcarEmpresa(ctx));
   // Se a tela limpar o próprio endereço (history.replaceState), a aba acompanha
   const rs = history.replaceState.bind(history);
   history.replaceState = (...a) => { rs(...a); window.top.postMessage({ nox: 'endereco', url: location.href }, location.origin); };

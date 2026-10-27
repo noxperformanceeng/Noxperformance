@@ -6,7 +6,7 @@
 <title>NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/style.css?v=202610270056">
+<link rel="stylesheet" href="assets/css/style.css?v=202610270856">
 </head>
 <body data-modulo="" data-titulo="Visão geral" data-shell="sim">
 <main id="conteudo" class="painel" aria-live="polite">
@@ -36,10 +36,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/supabase.js?v=202610270056"></script>
-<script src="assets/js/ui.js?v=202610270056"></script>
-<script src="assets/js/auth.js?v=202610270056"></script>
-<script src="assets/js/layout.js?v=202610270056"></script>
+<script src="assets/js/supabase.js?v=202610270856"></script>
+<script src="assets/js/ui.js?v=202610270856"></script>
+<script src="assets/js/auth.js?v=202610270856"></script>
+<script src="assets/js/layout.js?v=202610270856"></script>
 <script>
 /* Visão do gestor — todos os números vêm de public.painel_gestor() (um bloco por permissão). */
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -237,7 +237,7 @@ async function carregar() {
 
 function desenharEmpresas() {
   const op = [{ id: null, nome: 'Consolidado' }, ...CTX.empresas];
-  $('segEmpresa').hidden = CTX.empresas.length < 2;
+  $('segEmpresa').hidden = CTX.empresas.length < 2 || !!document.getElementById('faixaEmpresa');   // a faixa colorida do topo já troca
   $('segEmpresa').innerHTML = op.map(e => `<button type="button" data-emp="${e.id ?? ''}" aria-pressed="${(e.id ?? null) === (CTX.empresa ?? null)}" title="${esc(e.nome)}">${esc(e.id ? String(e.nome).split('·')[0].trim() : e.nome)}</button>`).join('');
 }
 

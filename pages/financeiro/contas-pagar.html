@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610270056">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610270856">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -26,12 +26,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610270056"></script>
-<script src="../../assets/js/ui.js?v=202610270056"></script>
-<script src="../../assets/js/auth.js?v=202610270056"></script>
-<script src="../../assets/js/layout.js?v=202610270056"></script>
-<script src="../../assets/js/cadastro.js?v=202610270056"></script>
-<script src="../../assets/js/comprovante.js?v=202610270056"></script>
+<script src="../../assets/js/supabase.js?v=202610270856"></script>
+<script src="../../assets/js/ui.js?v=202610270856"></script>
+<script src="../../assets/js/auth.js?v=202610270856"></script>
+<script src="../../assets/js/layout.js?v=202610270856"></script>
+<script src="../../assets/js/cadastro.js?v=202610270856"></script>
+<script src="../../assets/js/comprovante.js?v=202610270856"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -208,7 +208,7 @@ async function registrarPagamento(r) {
   const comp = [...(q('#pgComp')?.files || [])];
   if (!comp.length) return aviso('Anexe o comprovante do pagamento (obrigatório)', true);
   const forn = FORN.find(f => f.v === r.fornecedor_id);
-  const conf = await conferirComTela(comp[0], { valor: p.valor + p.juros - p.desconto, data: p.data_pagamento, nome: forn?.nome || r.origem_ref?.fornecedor_tiny || '', fantasia: forn?.fantasia, doc: forn?.doc });
+  const conf = await conferirComTela(comp[0], { valor: p.valor + p.juros - p.desconto, data: p.data_pagamento, nome: forn?.n || r.origem_ref?.fornecedor_tiny || '', doc: forn?.doc });
   if (!conf) return;
   if (conf.justificativa) p.observacoes = 'Comprovante com divergência: ' + conf.justificativa;
   const { data: pg, error } = await db.from('pagamentos').insert(p).select('id').single();
@@ -227,7 +227,7 @@ async function conferirComTela(arquivo, esperado) {
   const tudo = itens.every(x => x.ok), br = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   return new Promise(res => {
     m.querySelector('.modal').innerHTML = `<h2>${tudo ? '✓ Comprovante confere' : '⚠ Comprovante com divergência'}</h2>
-      <p class="sub" style="margin:0 0 8px">Esperado: ${esc([esperado.nome, esperado.fantasia].filter(Boolean).join(' / ') || '?')} · ${br(esperado.valor)} · ${String(esperado.data).split('-').reverse().join('/')}</p>
+      <p class="sub" style="margin:0 0 8px">Esperado: ${esc(esperado.nome || '?')} · ${br(esperado.valor)} · ${String(esperado.data).split('-').reverse().join('/')}</p>
       <ul class="checagem">${itens.map(x => `<li class="${x.ok ? 'ok' : 'erro'}"><b>${esc(x.item)}:</b> ${esc(x.detalhe)}</li>`).join('')}</ul>
       ${tudo ? '' : `<div class="campo"><label>Justificativa para registrar mesmo assim *</label><textarea id="cfJ" rows="2" placeholder="ex.: pago pelo app com o nome fantasia; valor com juros do banco"></textarea></div>`}
       ${texto ? `<details style="margin-top:6px"><summary class="sub">Texto lido do comprovante</summary><pre style="font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto">${esc(texto.slice(0, 3000))}</pre></details>` : ''}
@@ -303,7 +303,7 @@ const cfg = {
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx;
     const [f, c, cb, fp, pg, ra, an] = await Promise.all([
-      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao, cnpj').order('nome')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, situacao, cnpj').order('nome')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, aplica_produtos, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, exige_codigo, situacao').order('nome')),
@@ -312,7 +312,7 @@ const cfg = {
       buscarTodos(() => db.from('titulos_anexos').select('*').eq('tipo', 'pagar').order('id'))
     ]);
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
-    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x), nome: x.nome, fantasia: x.nome_fantasia, doc: x.cnpj }));
+    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: x.nome, doc: x.cnpj }));
     CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' }));
     CONTAS = cb; FORMAS = fp.filter(x => x.situacao === 'ativo');
     const pagamentos = {}, rateio = {};
@@ -455,7 +455,7 @@ const cfg = {
           if (!data || !contaId) { aviso('Informe data e conta', true); return false; }
           const arq = m.querySelector('#jComp').files[0]; if (!arq) { aviso('Anexe o comprovante (obrigatório)', true); return false; }
           const fs = [...new Set(abertos.map(r => r.fornecedor_id))], f1 = fs.length === 1 ? FORN.find(f => f.v === fs[0]) : null;
-          const conf = await conferirComTela(arq, { valor: total, data, nome: f1?.nome || '', fantasia: f1?.fantasia, doc: f1?.doc });
+          const conf = await conferirComTela(arq, { valor: total, data, nome: f1?.n || '', doc: f1?.doc });
           if (!conf) return false;
           const { data: pgs, error } = await db.from('pagamentos').insert(abertos.map(r => ({ titulo_id: r.id, data_pagamento: data, valor: Number(r.saldo), conta_bancaria_id: contaId,
             forma_pagamento_id: formaId, observacoes: conf.justificativa ? 'Comprovante com divergência: ' + conf.justificativa : 'Pago em lote com ' + abertos.length + ' título(s)' }))).select('id, titulo_id');

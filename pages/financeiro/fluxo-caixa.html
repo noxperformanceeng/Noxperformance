@@ -6,7 +6,7 @@
 <title>Fluxo de caixa · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610270056">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610270856">
 <style>
   .fc-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
   .fc-filtros > div { display: flex; flex-direction: column; }
@@ -62,10 +62,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610270056"></script>
-<script src="../../assets/js/ui.js?v=202610270056"></script>
-<script src="../../assets/js/auth.js?v=202610270056"></script>
-<script src="../../assets/js/layout.js?v=202610270056"></script>
+<script src="../../assets/js/supabase.js?v=202610270856"></script>
+<script src="../../assets/js/ui.js?v=202610270856"></script>
+<script src="../../assets/js/auth.js?v=202610270856"></script>
+<script src="../../assets/js/layout.js?v=202610270856"></script>
 <script>
 let ctx, CATS = [], dados = null, visao = 'mes', modo = 'ambos', fechados = new Set();
 const ORIG = { rec: 'Recebimento', rec_ajuste: 'Ajuste no recebimento', pag: 'Pagamento', pag_juros: 'Juros/multa pagos', extrato: 'Extrato classificado', prev_rec: 'Previsto a receber', prev_pag: 'Previsto a pagar', prev_pag_pc: 'Pedido de compra aprovado · aguardando NF' };
@@ -204,7 +204,7 @@ async function detalhe(cats, k) {
   const lote = (ids, f) => ids.length ? Promise.all(Array.from({ length: Math.ceil(ids.length / 300) }, (_, i) => f(ids.slice(i * 300, i * 300 + 300)))).then(r => r.flatMap(x => x.data || [])) : [];
   const [tr, tp, pv] = await Promise.all([
     lote(tits, ids => db.from('titulos_receber').select('id, documento, descricao, numero_externo').in('id', ids)),
-    lote(titp, ids => db.from('titulos_pagar').select('id, documento, descricao, fornecedores(nome, nome_fantasia)').in('id', ids)),
+    lote(titp, ids => db.from('titulos_pagar').select('id, documento, descricao, fornecedores(nome)').in('id', ids)),
     lote(peds, ids => db.from('pedidos_venda').select('id, numero_externo, cliente_nome').in('id', ids))]);
   const TR = Object.fromEntries(tr.map(x => [x.id, x])), TP = Object.fromEntries(tp.map(x => [x.id, x])), PV = Object.fromEntries(pv.map(x => [x.id, x]));
   const tot = ls.reduce((s, x) => s + Number(x.v), 0);
@@ -215,7 +215,7 @@ async function detalhe(cats, k) {
     ${ls.slice(0, 1500).map(x => {
       const ehRec = x.o.includes('rec'), t = ehRec ? TR[x.t] : TP[x.t], p = PV[x.p], c0 = cat(x.c);
       const linkT = x.t ? `<a href="${RAIZ}pages/financeiro/${ehRec ? 'contas-receber' : 'contas-pagar'}.html?abrir=${x.t}" style="color:var(--destaque)">${esc(t?.documento || t?.numero_externo || '#' + x.t)}</a>` : (x.o === 'extrato' ? `<a href="${RAIZ}pages/financeiro/conciliacao.html?abrir=${x.r}" style="color:var(--destaque)">linha #${x.r}</a>` : '');
-      const quem = p ? `<a href="${RAIZ}pages/comercial/pedidos-venda.html?abrir=${p.id}" style="color:var(--destaque)">${esc(p.numero_externo || '#' + p.id)}</a> ${esc(p.cliente_nome || '')}` : esc(nomeComFantasia(t?.fornecedores) || t?.descricao || '');
+      const quem = p ? `<a href="${RAIZ}pages/comercial/pedidos-venda.html?abrir=${p.id}" style="color:var(--destaque)">${esc(p.numero_externo || '#' + p.id)}</a> ${esc(p.cliente_nome || '')}` : esc(t?.fornecedores?.nome || t?.descricao || '');
       return `<tr><td>${x.d.split("-").reverse().join("/")}${x.atrasado ? ' <small style="color:var(--alerta)">(atrasado)</small>' : ''}</td><td>${ORIG[x.o] || x.o}</td><td>${linkT}</td><td>${quem}</td>
         <td>${esc(c0 ? c0.codigo : '')}</td><td class="num${x.v < 0 ? ' valor-neg' : ''}">${reais(Number(x.v))}</td><td>${x.t ? `<button type="button" class="btn fino discreto" title="Quem lançou, aprovações, pedido, pagamento e conciliação" onclick="abrirRastreio('${ehRec ? 'receber' : 'pagar'}', ${x.t})">Rastreio ›</button>` : ''}</td></tr>`; }).join('')}
     </tbody></table></div>${ls.length > 1500 ? '<p class="sub">Mostrando 1.500 linhas. Use um período menor ou a visão diária.</p>' : ''}
