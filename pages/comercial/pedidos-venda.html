@@ -6,7 +6,7 @@
 <title>Pedidos de venda · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610262031">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610270056">
 <style>
   .tot-ped { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 8px; }
   .tot-ped b { font-variant-numeric: tabular-nums; }
@@ -17,11 +17,11 @@
 <body data-modulo="pedidos" data-titulo="Pedidos de venda" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610262031"></script>
-<script src="../../assets/js/ui.js?v=202610262031"></script>
-<script src="../../assets/js/auth.js?v=202610262031"></script>
-<script src="../../assets/js/layout.js?v=202610262031"></script>
-<script src="../../assets/js/cadastro.js?v=202610262031"></script>
+<script src="../../assets/js/supabase.js?v=202610270056"></script>
+<script src="../../assets/js/ui.js?v=202610270056"></script>
+<script src="../../assets/js/auth.js?v=202610270056"></script>
+<script src="../../assets/js/layout.js?v=202610270056"></script>
+<script src="../../assets/js/cadastro.js?v=202610270056"></script>
 <script>
 /* =====================================================================
    Pedidos de venda — uma lista só para marketplace e distribuidores
@@ -265,9 +265,9 @@ const cfg = {
     { id: 'numero_externo', label: 'Nº da venda', lista: true, ajuda: 'Número da venda na plataforma (marketplace) ou do pedido do cliente.' },
     { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPOS, obrig: true, padrao: 'distribuidor', filtro: true },
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
-    { id: 'cliente_id', label: 'Cliente', tipo: 'select', col: 2, filtro: true, opcoes: () => CLIENTES.filter(c => c.situacao !== 'inativo' && c.tipo_cliente !== 'representante').map(c => ({ v: c.id, n: c.nome + (c.tipo_cliente !== 'consumidor' ? ` (${c.tipo_cliente})` : '') })) },
+    { id: 'cliente_id', label: 'Cliente', tipo: 'select', col: 2, filtro: true, opcoes: () => CLIENTES.filter(c => c.situacao !== 'inativo' && c.tipo_cliente !== 'representante').map(c => ({ v: c.id, n: nomeComFantasia(c) + (c.tipo_cliente !== 'consumidor' ? ` (${c.tipo_cliente})` : '') })) },
     { id: 'cliente_nome', label: 'Comprador (como veio)', col: 2, ajuda: 'Nome do comprador na plataforma quando ainda não há cadastro.' },
-    { id: 'representante_id', label: 'Representante', tipo: 'select', filtro: true, opcoes: () => CLIENTES.filter(c => c.tipo_cliente === 'representante').map(c => ({ v: c.id, n: c.nome })) },
+    { id: 'representante_id', label: 'Representante', tipo: 'select', filtro: true, opcoes: () => CLIENTES.filter(c => c.tipo_cliente === 'representante').map(c => ({ v: c.id, n: nomeComFantasia(c) })) },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, lista: true, filtro: true, padrao: 'aberto', ajuda: 'Cancelar: botão "Cancelar pedido" (cancela também os títulos em aberto).' },
     { id: 'etapa', label: 'Etapa (ML)', tipo: 'select', opcoes: ETAPAS, lista: true, filtro: true, somenteLeitura: true, ajuda: 'Vem do Mercado Livre: pago, pronto para envio, enviado, entregue ou devolvido.' },
     { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
@@ -301,7 +301,7 @@ const cfg = {
     window.__ctxNox = ctx;
     const [c, cl, p, ca, te, co, fo, it, en, ti, rc, pe, pei] = await Promise.all([
       buscarTodos(() => db.from('canais_venda').select('*').order('nome')),
-      buscarTodos(() => db.from('clientes').select('id, nome, tipo_cliente, situacao, representante_id').order('nome')),
+      buscarTodos(() => db.from('clientes').select('id, nome, nome_fantasia, tipo_cliente, situacao, representante_id').order('nome')),
       buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao, aprovacao, unidade').in('tipo', ['acabado', 'kit', 'semiacabado', 'componente']).order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('encargos_tipos').select('*').order('nome')),
@@ -330,12 +330,12 @@ const cfg = {
     return ex;
   },
   colunasExtras: [
-    { label: 'Cliente', texto: r => cli(r.cliente_id)?.nome || r.cliente_nome || '' },
+    { label: 'Cliente', texto: r => nomeComFantasia(cli(r.cliente_id)) || r.cliente_nome || '' },
     { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${Number(i.quantidade).toLocaleString('pt-BR')}× ${prod(i.produto_id)?.codigo || i.sku || i.descricao || '?'}`).join(', ') },
     { label: 'Recebimento', texto: (r, e) => recebStatus(r, e), html: (r, e) => { const s = recebStatus(r, e); return s ? `<span class="tg ${s === 'recebido' ? 'ok' : 'neutro'}">${s}</span>` : ''; } },
     { label: 'Venda', texto: r => linkVenda(r) || '', html: r => linkVenda(r) ? `<a class="ext" href="${esc(linkVenda(r))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">abrir</a>` : '' }
   ],
-  textoBuscaExtra: (r, e) => [r.pack_id, r.envio_id, r.codigo_rastreio, r.nf_numero, r.nf_chave, cli(r.cliente_id)?.nome,
+  textoBuscaExtra: (r, e) => [r.pack_id, r.envio_id, r.codigo_rastreio, r.nf_numero, r.nf_chave, nomeComFantasia(cli(r.cliente_id)),
     ...(e.itens[r.id] || []).flatMap(i => [i.sku, i.anuncio_id, i.descricao, prod(i.produto_id)?.codigo, prod(i.produto_id)?.descricao])].filter(Boolean).join(' '),
   subtituloLinha: r => [TIPOS.find(t => t.v === r.tipo)?.n, r.entrega_parcial ? 'entrega parcial' : '', r.pack_id && r.pack_id !== r.numero_externo ? 'pacote ' + r.pack_id : '', r.nf_numero ? 'NF ' + r.nf_numero : ''].filter(Boolean).join(' · '),
   pendencias: [

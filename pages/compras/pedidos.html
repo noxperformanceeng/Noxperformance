@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610262031">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610270056">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610262031"></script>
-<script src="../../assets/js/ui.js?v=202610262031"></script>
-<script src="../../assets/js/auth.js?v=202610262031"></script>
-<script src="../../assets/js/layout.js?v=202610262031"></script>
-<script src="../../assets/js/cadastro.js?v=202610262031"></script>
+<script src="../../assets/js/supabase.js?v=202610270056"></script>
+<script src="../../assets/js/ui.js?v=202610270056"></script>
+<script src="../../assets/js/auth.js?v=202610270056"></script>
+<script src="../../assets/js/layout.js?v=202610270056"></script>
+<script src="../../assets/js/cadastro.js?v=202610270056"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -166,7 +166,7 @@ function atualizarServico(tr) {
   if (!c) linhas.push('<span class="tg alerta">ficha sem comprimento da peça — não dá para calcular o material</span>');
   else if (!c.pb) linhas.push(`<span class="tg erro">a peça (${num(c.comp)} + ${num(c.perda)} mm) não cabe na barra de ${num(barra)} mm</span>`);
   else linhas.push(`<b>Material a enviar: ${num(c.barras)} barra(s) de ${num(barra)} mm</b> · ${esc(f.material || 'material não informado na ficha')} · ${num(c.pb)} peça(s)/barra (peça ${num(c.comp)} mm + perda ${num(c.perda)} mm)`);
-  if (f.fornecedor_id && fid && f.fornecedor_id !== fid) linhas.push(`<span class="tg alerta">a ficha desta peça é do fornecedor ${esc(forn(f.fornecedor_id)?.nome || '')}</span>`);
+  if (f.fornecedor_id && fid && f.fornecedor_id !== fid) linhas.push(`<span class="tg alerta">a ficha desta peça é do fornecedor ${esc(nomeComFantasia(forn(f.fornecedor_id)))}</span>`);
   if (!Number(f.preco_servico)) linhas.push('<span class="tg neutro">ficha sem preço do serviço</span>');
   info.innerHTML = linhas.join('<br>');
 }
@@ -336,7 +336,7 @@ async function gerarPdf(r, baixar) {
   doc.setFontSize(9); doc.setFont('helvetica', 'normal');
   doc.text([`${emp.nome || 'NOX'}${emp.cnpj ? ' · CNPJ ' + emp.cnpj : ''}`, `Data do pedido: ${dataCurta(r.data_pedido)}    Entrega prevista: ${dataCurta(r.data_entrega_prevista) || 'a combinar'}`], 14, 22);
   doc.setFont('helvetica', 'bold'); doc.text('Fornecedor', 14, 33); doc.setFont('helvetica', 'normal');
-  doc.text([`${f.nome || ''}${f.cnpj ? ' · CNPJ ' + f.cnpj : ''}`, [r.contato_fornecedor || f.contato, r.email_fornecedor || f.email, r.whatsapp_fornecedor || f.telefone].filter(Boolean).join(' · '),
+  doc.text([`${nomeComFantasia(f)}${f.cnpj ? ' · CNPJ ' + f.cnpj : ''}`, [r.contato_fornecedor || f.contato, r.email_fornecedor || f.email, r.whatsapp_fornecedor || f.telefone].filter(Boolean).join(' · '),
     [f.endereco, f.numero, f.bairro, f.cidade && (f.cidade + (f.uf ? '/' + f.uf : ''))].filter(Boolean).join(', ')].filter(Boolean), 14, 38);
   doc.autoTable({ startY: 52, head: [['#', 'Código', 'Descrição', 'Un', 'Qtd', 'Unitário', 'Desconto', 'Total']],
     body: itens.map((i, k) => [k + 1, i.codigo_fornecedor || prod(i.produto_id)?.codigo || '', i.descricao, i.unidade || '', num(i.quantidade), reais(i.valor_unitario), i.desconto ? reais(i.desconto) : '', reais(i.valor_total)]),
@@ -375,7 +375,7 @@ function abrirEnvio(r, pai) {
   const f = forn(r.fornecedor_id) || {}, email = r.email_fornecedor || f.email || '', zap = (r.whatsapp_fornecedor || f.telefone || '').replace(/\D/g, '');
   const contato = r.contato_fornecedor || f.contato || '';
   const m = abrirModal(`<h2>Enviar ${esc(r.numero)} ao fornecedor</h2>
-    <p class="sub" style="margin:0 0 8px">${esc(f.nome || '')} · total ${reais(r.valor_total)}. O sistema gera o PDF, cria um link seguro (válido por 30 dias) e abre o seu e-mail ou WhatsApp com a mensagem pronta. O envio fica registrado no histórico.</p>
+    <p class="sub" style="margin:0 0 8px">${esc(nomeComFantasia(f))} · total ${reais(r.valor_total)}. O sistema gera o PDF, cria um link seguro (válido por 30 dias) e abre o seu e-mail ou WhatsApp com a mensagem pronta. O envio fica registrado no histórico.</p>
     <div class="grade-campos">
       <div class="campo"><label>Enviar por</label><select id="eVia" data-simples><option value="whatsapp">WhatsApp</option><option value="email"${!zap && email ? ' selected' : ''}>E-mail</option></select></div>
       <div class="campo l2"><label>Para</label><input id="ePara" value="${esc(!zap && email ? email : zap)}"></div>
@@ -531,7 +531,7 @@ function abrirSugestao() {
     ${!SUG.length ? '<p class="sub">Nenhum produto abaixo do mínimo. Para entrar aqui, o produto precisa ter <b>estoque mínimo</b> no cadastro.</p>' : `
     <div class="campo" style="max-width:280px"><label>Empresa dos pedidos</label><select id="sgEmp" data-simples>${EMPRESAS.map(e => `<option value="${e.id}"${e.id === (CTX.empresa || EMPRESAS[0]?.id) ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div>
     <div class="sub-ed" style="max-height:52vh;overflow:auto"><table><thead><tr><th></th><th>Produto</th><th class="num">Saldo</th><th class="num">Mínimo</th><th class="num">Em pedido</th><th>Comprar</th><th>Último preço</th></tr></thead><tbody>
-    ${Object.entries(grupos).map(([fid, ls]) => `<tr><td colspan="7" style="padding-top:8px"><b>${esc(forn(Number(fid))?.nome || 'Sem fornecedor definido')}</b></td></tr>
+    ${Object.entries(grupos).map(([fid, ls]) => `<tr><td colspan="7" style="padding-top:8px"><b>${esc(nomeComFantasia(forn(Number(fid))) || 'Sem fornecedor definido')}</b></td></tr>
       ${ls.map(x => `<tr data-p="${x.produto_id}" data-f="${fid}"><td><input type="checkbox" data-ok checked></td><td>${esc((x.codigo || '') + ' · ' + x.descricao)}${x.inventariado ? '' : ' <span class="tg alerta">não apurado</span>'}</td>
         <td class="num">${num(x.saldo)} ${esc(x.unidade || '')}</td><td class="num">${num(x.minimo)}</td><td class="num">${num(x.em_pedido)}</td>
         <td style="width:120px"><input data-q inputmode="decimal" value="${num(x.sugerido_compra)}"> <small>${esc(x.unidade_compra || '')}</small></td>
@@ -551,7 +551,7 @@ function abrirSugestao() {
     for (const [fid, its] of Object.entries(porF)) {
       const { error } = await db.rpc('pedido_compra_salvar', { p_pedido: { empresa_id: emp, fornecedor_id: Number(fid), observacoes_internas: 'Gerado pela sugestão de compra (abaixo do estoque mínimo)' },
         p_itens: its.map(i => ({ produto_id: i.x.produto_id, descricao: i.x.descricao, unidade: i.x.unidade_compra, quantidade: i.q, valor_unitario: i.x.ultimo_preco || 0, categoria_financeira_id: i.x.categoria_financeira_id })) });
-      if (error) erros.push(`${forn(Number(fid))?.nome}: ${error.message}`); else n++;
+      if (error) erros.push(`${nomeComFantasia(forn(Number(fid)))}: ${error.message}`); else n++;
     }
     aviso(`${n} pedido(s) em rascunho criado(s) — confira preços e envie para aprovação` + (erros.length ? ` · erro: ${erros.join(' | ')}` : ''), !!erros.length);
     m.remove(); cfg.recarregar();
@@ -617,8 +617,8 @@ const cfg = {
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'rascunho',
       listaHtml: r => `<span class="tg ${sit(r.situacao).cor}">${esc(sit(r.situacao).n)}</span>${r.situacao === 'em_aprovacao' && possoAprovar(r) ? ' <span class="tg erro">sua vez</span>' : ''}` },
-    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN.filter(f => f.situacao === 'ativo').map(f => ({ v: f.id, n: f.nome })),
-      listaHtml: r => `<span class="texto-curto" title="${esc(forn(r.fornecedor_id)?.nome || '')}">${esc(forn(r.fornecedor_id)?.nome || '')}</span>` },
+    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN.filter(f => f.situacao === 'ativo').map(f => ({ v: f.id, n: nomeComFantasia(f) })),
+      listaHtml: r => `<span class="texto-curto" title="${esc(nomeComFantasia(forn(r.fornecedor_id)))}">${esc(nomeComFantasia(forn(r.fornecedor_id)))}</span>` },
     { id: 'data_entrega_prevista', label: 'Entrega prevista', tipo: 'data', lista: true },
     { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
     { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Gera as parcelas previstas e as da NF. Sem condição: prazo padrão do fornecedor.' },
@@ -638,7 +638,7 @@ const cfg = {
   async carregarExtra(linhas, ctx) {
     CTX = ctx;
     const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi] = await Promise.all([
-      buscarTodos(() => db.from('fornecedores').select('id, nome, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
       buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
@@ -677,7 +677,7 @@ const cfg = {
     { label: 'Comprador', texto: r => usu(r.comprador_id) },
     { label: 'Aprovação', texto: r => r.situacao === 'em_aprovacao' ? `${(r.niveis_aprovados || []).length}/${(r.niveis_exigidos || []).length} · ${nomeNivel(r, nivelAtual(r))}` : '' }
   ],
-  textoBuscaExtra: (r, e) => [forn(r.fornecedor_id)?.nome, ...(e.itens[r.id] || []).flatMap(i => [i.descricao, i.codigo_fornecedor, prod(i.produto_id)?.codigo]),
+  textoBuscaExtra: (r, e) => [nomeComFantasia(forn(r.fornecedor_id)), ...(e.itens[r.id] || []).flatMap(i => [i.descricao, i.codigo_fornecedor, prod(i.produto_id)?.codigo]),
     ...(e.recebimentos[r.id] || []).map(x => 'NF ' + x.nf_numero)].filter(Boolean).join(' '),
   subtituloLinha: r => [r.enviado_em ? `enviado ${dataCurta(r.enviado_em)} por ${r.enviado_via || ''}` : '', Number(r.valor_recebido) ? 'recebido ' + reais(r.valor_recebido) : ''].filter(Boolean).join(' · '),
   pendencias: [
@@ -752,7 +752,7 @@ const cfg = {
   aoRecarregarListas(m) {
     m.querySelectorAll('[data-k=produto_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optProds(Number(v) || null); sel.value = v; });
   },
-  tituloRegistro: r => `${r.origem === 'tiny' ? 'TINY ' + r.numero_tiny + ' (' + r.numero + ')' : r.numero} · ${forn(r.fornecedor_id)?.nome || ''}`,
+  tituloRegistro: r => `${r.origem === 'tiny' ? 'TINY ' + r.numero_tiny + ' (' + r.numero + ')' : r.numero} · ${nomeComFantasia(forn(r.fornecedor_id))}`,
   chaveHistorico: r => r.numero
 };
 montarCadastro(cfg);
