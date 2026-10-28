@@ -15,7 +15,8 @@ const resp = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo
 const SITES = ['https://noxperformanceeng.github.io/Noxperformance/', 'http://localhost:8000/'];
 
 Deno.serve(async req => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  // pré-checagem do navegador: libera os cabeçalhos que ele pedir (o supabase-js manda alguns além dos básicos)
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...cors, 'Access-Control-Allow-Headers': req.headers.get('access-control-request-headers') ?? cors['Access-Control-Allow-Headers'], 'Access-Control-Max-Age': '600' } });
   try {
     const usuario = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } });
     const { data: admin } = await usuario.rpc('eh_admin');
