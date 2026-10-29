@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Criar senha · NOX ERP</title>
+<meta name="robots" content="noindex">
+<meta name="description" content="Convite para criar sua senha no sistema de gestão da NOX.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css?v=202610271117">
+<link rel="icon" href="assets/img/favicon.png">
+</head>
+<body>
+<!-- Convite do administrador (Usuários e acessos › Novo usuário / Link de nova senha).
+     Abrir esta página não gasta o convite: ele só é usado ao clicar em "Criar minha senha". Vale 48 horas. -->
+<div class="login-pagina">
+  <div class="login cartao">
+    <div class="marca"><img src="assets/img/logo-nox.png" alt="NOX Performance Engineering"><span>Sistema de gestão</span></div>
+
+    <form id="formSenha" hidden>
+      <h2 style="margin:0 0 4px">Criar sua senha</h2>
+      <p class="sub" id="quem" style="margin:0 0 12px"></p>
+      <div class="campo"><label for="s1">Nova senha (mínimo 8 caracteres)</label><input id="s1" type="password" minlength="8" autocomplete="new-password" required></div>
+      <div class="campo"><label for="s2">Repita a senha</label><input id="s2" type="password" minlength="8" autocomplete="new-password" required></div>
+      <label class="chk" style="margin:-4px 0 10px;font-size:13px"><input type="checkbox" id="ver"> mostrar a senha</label>
+      <button class="btn primario" id="btnCriar">Criar minha senha</button>
+    </form>
+
+    <div class="msg" id="msg">Conferindo o convite…</div>
+    <a class="link" id="linkEntrar" href="index.html">Ir para a tela de entrada</a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/supabase.js?v=202610271117"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const msg = (t, erro) => { $('msg').textContent = t; $('msg').style.color = erro ? 'var(--erro)' : 'var(--texto-suave)'; };
+  const convite = new URLSearchParams(location.search).get('c') || '';
+  let email = '';
+  const chamar = async corpo => {
+    const { data, error } = await db.functions.invoke('usuarios-admin', { body: { ...corpo, convite } });
+    if (error) { let m = 'Não foi possível falar com o sistema. Tente de novo.'; try { m = (await error.context.json()).erro || m; } catch {} return { erro: m }; }
+    return data?.erro ? { erro: data.erro } : (data || { erro: 'O sistema não respondeu. Tente de novo.' });
+  };
+  const falhou = t => { msg(t, true); $('formSenha').hidden = true; $('linkEntrar').hidden = false; };
+
+  (async () => {
+    if (!convite) return falhou('Link incompleto. Copie o link inteiro que você recebeu ou peça um novo ao administrador.');
+    const r = await chamar({ acao: 'ver_convite' });
+    if (r.erro) return falhou(r.erro);
+    email = r.email;
+    $('quem').textContent = `Olá, ${(r.nome || '').split(' ')[0]}! Seu acesso é o e-mail ${r.email}. Este convite vale até ${new Date(r.expira_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.`;
+    $('formSenha').hidden = false; msg(''); $('s1').focus();
+  })();
+
+  $('ver').addEventListener('change', e => { $('s1').type = $('s2').type = e.target.checked ? 'text' : 'password'; });
+
+  $('formSenha').addEventListener('submit', async e => {
+    e.preventDefault();
+    const s1 = $('s1').value, s2 = $('s2').value;
+    if (s1.length < 8) return msg('A senha precisa ter pelo menos 8 caracteres.', true);
+    if (s1 !== s2) return msg('As duas senhas não estão iguais.', true);
+    $('btnCriar').disabled = true; msg('Gravando…');
+    const r = await chamar({ acao: 'definir_senha', senha: s1 });
+    if (r.erro) { $('btnCriar').disabled = false; return msg(r.erro, true); }
+    msg('Senha criada! Entrando no sistema…');
+    const { error } = await db.auth.signInWithPassword({ email, password: s1 });
+    if (error) { msg('Senha criada. Agora entre com seu e-mail e a senha nova.'); $('formSenha').hidden = true; $('linkEntrar').hidden = false; return; }
+    location.href = 'inicio.html';
+  });
+</script>
+</body>
+</html>

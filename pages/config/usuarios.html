@@ -278,9 +278,9 @@ function novoUsuario() {
   m.querySelector('#nuNome').focus();
 }
 function mostrarLink(nome, email, link, novo) {
-  const msg = `Olá, ${nome.split(' ')[0].charAt(0).toUpperCase() + nome.split(' ')[0].slice(1).toLowerCase()}! ${novo ? 'Seu acesso ao sistema da NOX foi criado' : 'Segue o link para criar uma nova senha no sistema da NOX'}.\nEntre por este link e crie sua senha: ${link}\nDepois, acesse com o e-mail ${email}: https://noxperformanceeng.github.io/Noxperformance/`;
+  const msg = `Olá, ${nome.split(' ')[0].charAt(0).toUpperCase() + nome.split(' ')[0].slice(1).toLowerCase()}! ${novo ? 'Seu acesso ao sistema da NOX foi criado' : 'Segue o link para criar uma nova senha no sistema da NOX'}.\nAbra este link e clique em "Criar minha senha" (vale por 48 horas): ${link}\nDepois, para entrar no sistema, use o e-mail ${email} e a sua senha em: https://noxperformanceeng.github.io/Noxperformance/`;
   const m = abrirModal(`<h2>${novo ? 'Usuário criado' : 'Link de nova senha'}</h2>
-    <p style="margin:0 0 8px">Mande este link para <b>${esc(nome)}</b>. Ele vale por pouco tempo e só pode ser usado uma vez — se vencer, gere outro em <b>Editar › Link de nova senha</b>.</p>
+    <p style="margin:0 0 8px">Mande este link para <b>${esc(nome)}</b>. Ele vale por <b>48 horas</b> e pode ser aberto quantas vezes for preciso (a prévia do WhatsApp não gasta): só é usado quando a pessoa cria a senha. Se vencer, gere outro em <b>Editar › Link de nova senha</b> — o anterior deixa de valer.</p>
     <textarea id="lkTexto" rows="6" style="width:100%" readonly>${esc(msg)}</textarea>
     <div class="acoes" style="margin-top:10px"><a class="btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(msg)}">Enviar por WhatsApp</a>
       <a class="btn" href="mailto:${esc(email)}?subject=${encodeURIComponent('Acesso ao sistema NOX')}&body=${encodeURIComponent(msg)}">Enviar por e-mail</a>
