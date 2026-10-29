@@ -472,7 +472,7 @@ function abrirProduto(p) {
     <div id="avisoDup"></div>
     <div class="grade-campos">
       <div class="campo"><label>Tipo</label><select id="pTipo" ${ro}>${TIPOS.map(t => `<option value="${t.id}"${t.id === p.tipo ? ' selected' : ''}>${t.nome}</option>`).join('')}</select></div>
-      <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre do tipo">Gerar</button>' : ''}</div></div>
+      <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre pela família: matéria-prima e componente comprado 4000xxx; semiacabado de usinagem NX; outros semiacabados 2000xxx; ferramenta F. Escolha o tipo e o grupo antes.">Gerar</button>' : ''}</div></div>
       <div class="campo"><label>Situação</label><select id="pSit" ${ro}><option value="ativo"${p.situacao === 'ativo' ? ' selected' : ''}>Ativo</option><option value="inativo"${p.situacao === 'inativo' ? ' selected' : ''}>Inativo</option></select></div>
       <div class="campo"><label>Unid. de estoque / uso</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
       <div class="campo l4"><label>Descrição</label><input id="pDesc" value="${esc(p.descricao || '')}" ${ro}></div>
@@ -774,7 +774,7 @@ function abrirProduto(p) {
       ['#nfNome', '#nfCod', '#nfUn', '#nfFator', '#nfPreco', '#nfIpi', '#nfIcms', '#nfData', '#nfRef'].forEach(x => $(x).value = ''); $('#nfPref').checked = false; desenharForn();
     };
     $('#pGerar').onclick = async () => {
-      const { data, error } = await db.rpc('produtos_proximo_codigo', { p_tipo: $('#pTipo').value });
+      const { data, error } = await db.rpc('produtos_proximo_codigo', { p_tipo: $('#pTipo').value, p_grupo: $('#pGrupo').value || null });
       if (error || !data) return aviso('Este tipo não tem sequência automática; informe o código.', true);
       $('#pCodigo').value = data;
     };
