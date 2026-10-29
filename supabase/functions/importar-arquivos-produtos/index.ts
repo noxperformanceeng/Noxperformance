@@ -1,10 +1,11 @@
 // ERP NOX · importar-arquivos-produtos — anexa desenhos (PDF/DXF) do Dropbox aos produtos e gera a foto
-// a partir da 1ª página do PDF. Uso interno (chave x-nox-chave); só aceita links temporários do Dropbox.
+// a partir da 1ª página do PDF. Uso interno (chave x-nox-chave); só aceita links temporários do Dropbox
+// ou da pasta temporária _envio do site (foto enviada no chat), ou o arquivo embutido (base64). tipo 'foto' vira a foto principal se o produto não tiver.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as mupdf from 'npm:mupdf@1';
 
 const resp = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { 'Content-Type': 'application/json' } });
-type Item = { produto_id: number; url: string; nome: string; tipo: 'desenho' | 'outro'; caminho: string; mime?: string;
+type Item = { produto_id: number; url?: string; base64?: string; nome: string; tipo: 'desenho' | 'outro' | 'foto'; caminho: string; mime?: string;
   revisao_data?: string | null; foto?: { caminho: string; nome: string } };
 
 async function renderizar(pdf: Uint8Array): Promise<Uint8Array> {
@@ -24,18 +25,27 @@ Deno.serve(async req => {
   const out: unknown[] = [];
   for (const it of itens) {
     try {
-      const u = new URL(it.url);
-      if (u.protocol !== 'https:' || !u.hostname.endsWith('.dropboxusercontent.com')) throw new Error('url não permitida');
+      if (!it.base64) {
+        const u = new URL(it.url || '');
+        if (u.protocol !== 'https:' || !(u.hostname.endsWith('.dropboxusercontent.com') || (u.hostname === 'noxperformanceeng.github.io' && u.pathname.startsWith('/Noxperformance/_envio/')))) throw new Error('url não permitida');
+      }
       if (!it.caminho.startsWith(`${it.produto_id}/`) || it.caminho.includes('..')) throw new Error('caminho inválido');
       const { data: ja } = await db.from('produto_arquivos').select('id').eq('produto_id', it.produto_id).eq('caminho', it.caminho).maybeSingle();
       if (ja) { out.push({ nome: it.nome, ok: 'já existia' }); continue; }
-      const r = await fetch(it.url); if (!r.ok) throw new Error('download ' + r.status);
-      const bytes = new Uint8Array(await r.arrayBuffer());
+      let bytes: Uint8Array;
+      if (it.base64) bytes = Uint8Array.from(atob(it.base64), c => c.charCodeAt(0));
+      else { const r = await fetch(it.url!); if (!r.ok) throw new Error('download ' + r.status); bytes = new Uint8Array(await r.arrayBuffer()); }
+      if (bytes.length > 15e6) throw new Error('arquivo grande demais');
       const mime = it.mime || (it.nome.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
       const up = await db.storage.from('produtos').upload(it.caminho, bytes, { contentType: mime, upsert: true });
       if (up.error) throw new Error(up.error.message);
+      let principal = false;
+      if (it.tipo === 'foto') {
+        const { count } = await db.from('produto_arquivos').select('id', { count: 'exact', head: true }).eq('produto_id', it.produto_id).eq('tipo', 'foto').eq('principal', true);
+        principal = !count;
+      }
       const ins = await db.from('produto_arquivos').insert({ produto_id: it.produto_id, tipo: it.tipo, nome: it.nome, caminho: it.caminho,
-        mime, tamanho: bytes.length, revisao_data: it.revisao_data ?? null, principal: false });
+        mime, tamanho: bytes.length, revisao_data: it.revisao_data ?? null, principal });
       if (ins.error) throw new Error(ins.error.message);
       let foto = '';
       if (it.foto && mime === 'application/pdf') {
