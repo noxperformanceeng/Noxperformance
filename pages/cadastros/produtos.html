@@ -64,6 +64,7 @@
     <div><label>Situação</label><select id="fSit"><option value="ativo">Ativos</option><option value="inativo">Inativos</option><option value="">Todos</option></select></div>
     <div><label>Revisão</label><select id="fRev"><option value="">Todas</option><option value="nao">Não revisado</option><option value="ok">Revisado</option><option value="alt">Alterado após revisão</option></select></div>
     <div><label>Unidade</label><select id="fUn"><option value="">Todas</option><option value="-">Sem unidade</option></select></div>
+    <div><label>Vendido</label><select id="fVend"><option value="">Todos</option><option value="sim">Vendidos (anúncio ou pedido de venda)</option><option value="nao">Não vendidos</option></select></div>
     <div><label>Movimento no Tiny (desde 2025)</label><select id="fMov"><option value="">Todos</option><option value="sim">Com movimento</option><option value="nao">Sem movimento</option></select></div>
     <div><label>Alterado de</label><input type="date" id="fDe"></div>
     <div><label>até</label><input type="date" id="fAte"></div>
@@ -79,7 +80,7 @@
         <th style="width:64px">Foto</th>
         <th class="ord" data-ord="codigo">Código</th>
         <th class="ord" data-ord="descricao">Descrição</th>
-        <th id="thTipo">Tipo</th>
+        <th id="thTipo">Origem</th><th>Vendido</th>
         <th>Un</th>
         <th>Fornecedor</th>
         <th class="ord" data-ord="revisao">Revisão</th>
@@ -101,13 +102,15 @@
 <script src="../../assets/js/layout.js?v=202610271117"></script>
 <script>
 /* ===================== CONFIGURAÇÃO ===================== */
+/* "Origem" = como a peça chega na NOX (quem cadastra sabe olhando a peça, o desenho ou a nota de compra).
+   Se o produto é VENDIDO o sistema descobre sozinho (anúncio ou pedido de venda) — ninguém precisa informar. */
 const TIPOS = [
-  { id: 'materia_prima', nome: 'Matéria-prima' },
-  { id: 'componente',    nome: 'Componente comprado' },
-  { id: 'semiacabado',   nome: 'Semiacabado' },
-  { id: 'acabado',       nome: 'Produto acabado' },
-  { id: 'kit',           nome: 'Kit' },
-  { id: 'ferramenta',    nome: 'Ferramenta / dispositivo / gabarito' }
+  { id: 'materia_prima', nome: 'Matéria-prima',   longo: 'Matéria-prima (comprada para transformar: tubo, chapa, barra…)' },
+  { id: 'componente',    nome: 'Comprada pronta', longo: 'Comprada pronta (peça de terceiro usada como vem: filtro, abraçadeira, pino…)' },
+  { id: 'semiacabado',   nome: 'Sob desenho NOX', longo: 'Feita sob desenho NOX (usinada, cortada a laser, corpo de abafador…)' },
+  { id: 'acabado',       nome: 'Montado na NOX',  longo: 'Montado na NOX (intake, ponteira, abafador, defletor, pressurização…)' },
+  { id: 'kit',           nome: 'Kit',             longo: 'Kit (junta itens já prontos numa embalagem)' },
+  { id: 'ferramenta',    nome: 'Ferramenta',      longo: 'Ferramenta / dispositivo / gabarito (uso interno)' }
 ];
 const NOME_TIPO = Object.fromEntries(TIPOS.map(t => [t.id, t.nome]));
 const COMPRADOS = ['materia_prima', 'componente', 'ferramenta'];          // precisam de fornecedor
@@ -129,7 +132,13 @@ const PEND = [
 ];
 
 let ctx, podeEditar = false;
-let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {}, categorias = [], GRUPOS = [];
+let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {}, categorias = [], GRUPOS = [], VENDAS = {};
+// etiqueta automática "Vendido": anúncio ou pedido de venda (ninguém informa)
+const vendaDe = id => VENDAS[id];
+const tgVendido = (id, longo) => { const v = vendaDe(id); if (!v) return '<span class="tg neutro" title="Sem anúncio e sem pedido de venda">Não vendido</span>';
+  const onde = (v.canais || []).join(', ');
+  return `<span class="tg ok" title="${esc(onde)}${v.ultima_venda ? ' · última venda ' + v.ultima_venda.split('-').reverse().join('/') : ''}">Vendido</span>` +
+    (longo ? ` <span class="sub">${esc(onde)}${v.pedidos ? ` · ${v.pedidos} pedido(s)` : ''}${v.anuncios ? ` · ${v.anuncios} anúncio(s)` : ''}${v.ultima_venda ? ' · última venda ' + v.ultima_venda.split('-').reverse().join('/') : ''}</span>` : ''); };
 const catDe = id => categorias.find(c => c.id === id);
 const nomeCat = id => { const c = catDe(id); return c ? `${c.codigo} ${c.nome}` : ''; };
 let tipoAtual = 'materia_prima', pendAtual = '', ordem = { campo: 'codigo', asc: true };
@@ -145,7 +154,7 @@ let visiveis = [], selecionados = new Set();
 
   ['fBusca'].forEach(id => document.getElementById(id).addEventListener('input', desenhar));
   ligarPainelFiltros(document.getElementById('conteudo'), 'produtos', () => { preencherFiltros(); desenhar(); });
-  ['fGrupo', 'fCat', 'fForn', 'fSit', 'fRev', 'fUn', 'fMov', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
+  ['fGrupo', 'fCat', 'fForn', 'fSit', 'fRev', 'fUn', 'fMov', 'fVend', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', desenhar));
   document.querySelectorAll('th.ord').forEach(th => th.onclick = () => {
     ordem = { campo: th.dataset.ord, asc: ordem.campo === th.dataset.ord ? !ordem.asc : true }; desenhar();
   });
@@ -154,9 +163,9 @@ let visiveis = [], selecionados = new Set();
   };
   botoesRelatorio('relProdutos', () => ({
     arquivo: 'produtos_' + (tipoAtual || 'todos'),
-    colunas: ['Código', 'Descrição', 'Tipo', 'Grupo', 'Categoria financeira', 'Unid. estoque', 'Unid. compra', 'Fator', 'Situação', 'Fornecedores', 'NCM', 'Revisão', 'Revisado por', 'Revisado em',
+    colunas: ['Código', 'Descrição', 'Origem', 'Vendido', 'Onde vende', 'Grupo', 'Categoria financeira', 'Unid. estoque', 'Unid. compra', 'Fator', 'Situação', 'Fornecedores', 'NCM', 'Revisão', 'Revisado por', 'Revisado em',
               'Última alteração', 'Alterado por', 'Pendências', 'Entradas Tiny desde 2025', 'Saldo Tiny 09/10/2026'],
-    linhas: visiveis.map(p => [p.codigo, p.descricao, NOME_TIPO[p.tipo], p.grupo, nomeCat(p.categoria_financeira_id), p.unidade, p.unidade_compra, p.fator_compra ? String(p.fator_compra).replace('.', ',') : '', p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
+    linhas: visiveis.map(p => [p.codigo, p.descricao, NOME_TIPO[p.tipo], vendaDe(p.id) ? 'Sim' : 'Não', (vendaDe(p.id)?.canais || []).join(', '), p.grupo, nomeCat(p.categoria_financeira_id), p.unidade, p.unidade_compra, p.fator_compra ? String(p.fator_compra).replace('.', ',') : '', p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
       fornDe(p.id).map(v => v.nome).join(', '), p.ncm, statusRevisao(p).texto, nomes[p.revisado_por] || '', dataHoraBR(p.revisado_em),
       dataHoraBR(p.atualizado_em), nomes[p.atualizado_por] || '', [...p._pend].filter(x => x !== 'nao_revisado').map(x => PEND.find(y => y.id === x).nome).join(', '),
       p.ref_tiny?.entradas_2025 ?? '', p.ref_tiny?.saldo_tiny ?? ''])
@@ -177,8 +186,9 @@ async function carregar() {
       buscarTodos(() => db.from('produto_fornecedores').select('id, produto_id, fornecedor_id, codigo_fornecedor, preferencial, unidade_compra, fator_compra, preco, ipi_pct, icms_pct, cotacao_data, cotacao_ref, observacao').order('id')),
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, situacao').order('nome')),
       db.rpc('usuarios_nomes'),
-      db.rpc('produtos_duplicados')
+      db.rpc('produtos_duplicados'),
     ]);
+    try { const { data: vr } = await db.rpc('produtos_vendas_resumo'); VENDAS = Object.fromEntries((vr || []).map(x => [x.produto_id, x])); } catch { VENDAS = {}; }
     produtos = lista; vinculos = vinc; fornecedores = forn;
     // Plano de categorias (se a tabela ainda não existir, a tela segue sem ela)
     const [cat, gr] = await Promise.all([db.from('categorias_financeiras').select('id, codigo, nome, tipo, pai_id, aceita_lancamento, aplica_produtos, situacao, aprovacao').order('codigo'),
@@ -331,6 +341,7 @@ function filtrar(ignorarPend) {
       const c = statusRevisao(p).cls;
       if ((v('fRev') === 'nao' && c !== 'neutro') || (v('fRev') === 'ok' && c !== 'ok') || (v('fRev') === 'alt' && c !== 'alerta')) return false;
     }
+    if (v('fVend') && (v('fVend') === 'sim') !== !!vendaDe(p.id)) return false;
     if (v('fMov')) {
       const teve = p.ref_tiny && ('entradas_2025' in p.ref_tiny);
       if ((v('fMov') === 'sim') !== !!teve) return false;
@@ -381,11 +392,12 @@ function desenhar() {
       <td class="cod">${esc(p.codigo || '—')}</td>
       <td class="desc">${esc(p.descricao)}${p.grupo || p.categoria_financeira_id ? `<small>${esc([p.grupo, catDe(p.categoria_financeira_id)?.nome].filter(Boolean).join(' · '))}</small>` : ''}</td>
       ${tipoAtual ? '' : `<td>${NOME_TIPO[p.tipo] || p.tipo}</td>`}
+      <td>${tgVendido(p.id)}</td>
       <td>${esc(p.unidade || '')}</td>
       <td>${fs.length ? esc(fs[0].nome) + (fs.length > 1 ? ` <span class="tg neutro">+${fs.length - 1}</span>` : '') : ''}</td>
       <td class="rev"><span class="tg ${r.cls}">${r.texto}</span>${revInfo ? `<small>${revInfo}</small>` : ''}</td>
       <td>${pend}</td></tr>`;
-  }).join('') : '<tr><td colspan="9" class="vazio">Nenhum produto com esses filtros.</td></tr>';
+  }).join('') : '<tr><td colspan="10" class="vazio">Nenhum produto com esses filtros.</td></tr>';
 
   document.getElementById('contagem').textContent = `${visiveis.length} produto${visiveis.length === 1 ? '' : 's'}`;
   document.getElementById('rodape').textContent = visiveis.length > LIM ? `Mostrando os ${LIM} primeiros. Use os filtros para refinar (o Exportar Excel leva todos os ${visiveis.length}).` : '';
@@ -471,7 +483,8 @@ function abrirProduto(p) {
     ${p.aprovacao === 'recusado' ? `<div style="background:#fdeceb;color:var(--erro);border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px"><b>Cadastro recusado pelo master:</b> ${esc(p.aprovacao_motivo || '')}${ctx.admin ? ' <button type="button" class="btn fino" id="pAprovar">Aprovar mesmo assim</button>' : ''}</div>` : ''}
     <div id="avisoDup"></div>
     <div class="grade-campos">
-      <div class="campo"><label>Tipo</label><select id="pTipo" ${ro}>${TIPOS.map(t => `<option value="${t.id}"${t.id === p.tipo ? ' selected' : ''}>${t.nome}</option>`).join('')}</select></div>
+      <div class="campo"><label>Origem <span class="dica" tabindex="0" title="Como a peça chega na NOX. Se ela é vendida ou não, o sistema descobre sozinho pelos anúncios e pedidos de venda.">?</span></label><select id="pTipo" ${ro}>${TIPOS.map(t => `<option value="${t.id}"${t.id === p.tipo ? ' selected' : ''}>${t.longo}</option>`).join('')}${p.tipo && !TIPOS.some(t => t.id === p.tipo) ? `<option value="${esc(p.tipo)}" selected>${esc(p.tipo)}</option>` : ''}</select>
+        ${p.id ? `<div style="margin-top:4px">${tgVendido(p.id, true)}</div>` : '<div class="sub" style="margin-top:4px">Vendido ou não: o sistema marca sozinho quando o produto tiver anúncio ou pedido de venda.</div>'}</div>
       <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre pela família: matéria-prima e componente comprado 4000xxx; semiacabado de usinagem NX; outros semiacabados 2000xxx; ferramenta F. Escolha o tipo e o grupo antes.">Gerar</button>' : ''}</div></div>
       <div class="campo"><label>Situação</label><select id="pSit" ${ro}><option value="ativo"${p.situacao === 'ativo' ? ' selected' : ''}>Ativo</option><option value="inativo"${p.situacao === 'inativo' ? ' selected' : ''}>Inativo</option></select></div>
       <div class="campo"><label>Unid. de estoque / uso</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>

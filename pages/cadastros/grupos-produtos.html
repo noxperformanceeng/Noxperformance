@@ -19,7 +19,7 @@
 <script>
 /* Grupos de produtos: lista oficial usada no campo "Grupo" do cadastro de produtos.
    Tipo e categoria financeira padrão: o produto novo do grupo já vem com eles. Renomear atualiza os produtos. */
-const TIPOS = [{ v: 'materia_prima', n: 'Matéria-prima' }, { v: 'componente', n: 'Componente comprado' }, { v: 'semiacabado', n: 'Semiacabado' }, { v: 'acabado', n: 'Produto acabado' }, { v: 'kit', n: 'Kit' },
+const TIPOS = [{ v: 'materia_prima', n: 'Matéria-prima' }, { v: 'componente', n: 'Comprada pronta' }, { v: 'semiacabado', n: 'Feita sob desenho NOX' }, { v: 'acabado', n: 'Montado na NOX' }, { v: 'kit', n: 'Kit' },
   { v: 'ferramenta', n: 'Ferramenta / dispositivo / gabarito' }];
 let CATS = [], USO = {};
 const ordCod = c => String(c || '').split('.').map(n => n.padStart(4, '0')).join('.');
@@ -31,7 +31,7 @@ montarCadastro({
   abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativos' }, { v: 'inativo', n: 'Inativos' }, { v: '', n: 'Todos' }] },
   campos: [
     { id: 'nome', label: 'Nome do grupo', obrig: true, col: 2, lista: true, placeholder: 'ex.: Abraçadeira, Tubo, Intake' },
-    { id: 'tipo_produto', label: 'Tipo de produto padrão', tipo: 'select', opcoes: TIPOS, col: 2, lista: true, filtro: true },
+    { id: 'tipo_produto', label: 'Origem padrão', tipo: 'select', opcoes: TIPOS, col: 2, lista: true, filtro: true },
     { id: 'categoria_financeira_id', label: 'Categoria financeira padrão', tipo: 'select', col: 4, cadastro: false,
       opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Só as categorias liberadas para produtos (Categorias financeiras › "Usar no cadastro de produtos").' },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo' },
