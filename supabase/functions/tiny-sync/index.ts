@@ -19,6 +19,8 @@ const RECURSOS: Record<string, { pesquisa: string; lista: string; item: string; 
   notas_saida:    { pesquisa: 'notas.fiscais.pesquisa.php',  lista: 'notas_fiscais', item: 'nota_fiscal', obter: 'nota.fiscal.obter.php', extra: { tipoNota: 'S' } },
   contatos:       { pesquisa: 'contatos.pesquisa.php',       lista: 'contatos', item: 'contato', obter: 'contato.obter.php' },
   produtos:       { pesquisa: 'produtos.pesquisa.php',       lista: 'produtos', item: 'produto', obter: 'produto.obter.php' },
+  // saldo de estoque: lista os produtos e lê o estoque de cada um (lido sempre de novo: o saldo muda sem o cadastro mudar)
+  estoque:        { pesquisa: 'produtos.pesquisa.php',       lista: 'produtos', item: 'produto', obter: 'produto.obter.estoque.php' },
 };
 
 let pausa = 300;   // ms entre chamadas; aumenta sozinho se o Tiny reclamar de excesso de acessos
@@ -74,7 +76,7 @@ async function rodar(jobId: number, chave: string) {
         const chave = (r: Record<string, unknown> | null) => r ? ['vencimento', 'valor', 'saldo', 'situacao', 'historico', 'nome_cliente', 'numero_doc', 'data_emissao', 'nome', 'numero', 'data_pedido', 'data_prevista', 'cpf_cnpj']
           .map(k => String(r[k] ?? '')).join('|') : '';
         const mapa = new Map((atuais ?? []).map((a: { tiny_id: string; resumo: Record<string, unknown> }) => [a.tiny_id, chave(a.resumo)]));
-        const mudou = linhas.filter((l: { tiny_id: string; resumo: Record<string, unknown> }) => mapa.get(l.tiny_id) !== chave(l.resumo));
+        const mudou = job.recurso === 'estoque' ? linhas : linhas.filter((l: { tiny_id: string; resumo: Record<string, unknown> }) => mapa.get(l.tiny_id) !== chave(l.resumo));
         if (mudou.length) {
           const { error } = await db.from('tiny_brutos').upsert(mudou.map((l: Record<string, unknown>) => ({ ...l, detalhe: null, detalhado_em: null, processado_em: null })), { onConflict: 'empresa_id,recurso,tiny_id' });
           if (error) throw new Error('gravar: ' + error.message);
