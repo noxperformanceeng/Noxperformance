@@ -6,21 +6,21 @@
 <title>Grupos de produtos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610271117">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610300714">
 </head>
 <body data-modulo="produtos" data-titulo="Grupos de produtos">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610271117"></script>
-<script src="../../assets/js/ui.js?v=202610271117"></script>
-<script src="../../assets/js/auth.js?v=202610271117"></script>
-<script src="../../assets/js/layout.js?v=202610271117"></script>
-<script src="../../assets/js/cadastro.js?v=202610271117"></script>
+<script src="../../assets/js/supabase.js?v=202610300714"></script>
+<script src="../../assets/js/ui.js?v=202610300714"></script>
+<script src="../../assets/js/auth.js?v=202610300714"></script>
+<script src="../../assets/js/layout.js?v=202610300714"></script>
+<script src="../../assets/js/cadastro.js?v=202610300714"></script>
 <script>
 /* Grupos de produtos: lista oficial usada no campo "Grupo" do cadastro de produtos.
    Tipo e categoria financeira padrão: o produto novo do grupo já vem com eles. Renomear atualiza os produtos. */
-const TIPOS = [{ v: 'materia_prima', n: 'Matéria-prima' }, { v: 'componente', n: 'Comprada pronta' }, { v: 'semiacabado', n: 'Feita sob desenho NOX' }, { v: 'acabado', n: 'Montado na NOX' }, { v: 'kit', n: 'Kit' },
-  { v: 'ferramenta', n: 'Ferramenta / dispositivo / gabarito' }];
+const TIPOS = [{ v: 'materia_prima', n: 'Matéria-prima' }, { v: 'componente', n: 'Produto adquirido pronto' }, { v: 'semiacabado', n: 'Semiacabado' },
+  { v: 'acabado', n: 'Produto pronto – fabricado pela NOX' }, { v: 'kit', n: 'Kit completo' }, { v: 'insumo', n: 'Insumo' }, { v: 'ferramenta', n: 'Ferramenta / dispositivo / gabarito' }];
 let CATS = [], USO = {};
 const ordCod = c => String(c || '').split('.').map(n => n.padStart(4, '0')).join('.');
 montarCadastro({

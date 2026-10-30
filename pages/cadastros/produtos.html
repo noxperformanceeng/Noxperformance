@@ -6,7 +6,7 @@
 <title>Produtos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610271117">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610300714">
 <style>
   td.foto { width: 64px; padding: 4px 8px; }
   td.foto img { display: block; width: 52px; height: 52px; object-fit: contain; background: #fff; border: 1px solid var(--linha); border-radius: 6px; cursor: zoom-in; }
@@ -96,24 +96,45 @@
 <datalist id="dlForn"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610271117"></script>
-<script src="../../assets/js/ui.js?v=202610271117"></script>
-<script src="../../assets/js/auth.js?v=202610271117"></script>
-<script src="../../assets/js/layout.js?v=202610271117"></script>
+<script src="../../assets/js/supabase.js?v=202610300714"></script>
+<script src="../../assets/js/ui.js?v=202610300714"></script>
+<script src="../../assets/js/auth.js?v=202610300714"></script>
+<script src="../../assets/js/layout.js?v=202610300714"></script>
 <script>
 /* ===================== CONFIGURAÇÃO ===================== */
 /* "Origem" = como a peça chega na NOX (quem cadastra sabe olhando a peça, o desenho ou a nota de compra).
    Se o produto é VENDIDO o sistema descobre sozinho (anúncio ou pedido de venda) — ninguém precisa informar. */
-const TIPOS = [
-  { id: 'materia_prima', nome: 'Matéria-prima',   longo: 'Matéria-prima (comprada para transformar: tubo, chapa, barra…)' },
-  { id: 'componente',    nome: 'Comprada pronta', longo: 'Comprada pronta (peça de terceiro usada como vem: filtro, abraçadeira, pino…)' },
-  { id: 'semiacabado',   nome: 'Sob desenho NOX', longo: 'Feita sob desenho NOX (usinada, cortada a laser, corpo de abafador…)' },
-  { id: 'acabado',       nome: 'Montado na NOX',  longo: 'Montado na NOX (intake, ponteira, abafador, defletor, pressurização…)' },
-  { id: 'kit',           nome: 'Kit',             longo: 'Kit (junta itens já prontos numa embalagem)' },
-  { id: 'ferramenta',    nome: 'Ferramenta',      longo: 'Ferramenta / dispositivo / gabarito (uso interno)' }
+const TIPOS = [   // abas da lista
+  { id: 'materia_prima', nome: 'Matéria-prima' }, { id: 'componente', nome: 'Adquirido pronto' },
+  { id: 'semiacabado', nome: 'Semiacabado' }, { id: 'acabado', nome: 'Produto pronto' }, { id: 'kit', nome: 'Kit' },
+  { id: 'insumo', nome: 'Insumo' }, { id: 'ferramenta', nome: 'Ferramenta' }
 ];
 const NOME_TIPO = Object.fromEntries(TIPOS.map(t => [t.id, t.nome]));
-const COMPRADOS = ['materia_prima', 'componente', 'ferramenta'];          // precisam de fornecedor
+// Opções do campo Origem: cada uma define o tipo e, algumas, o grupo (que decide o código: usinagem → NX)
+const ORIGENS = [
+  { id: 'materia_prima', tipo: 'materia_prima', nome: 'Matéria-prima' },
+  { id: 'componente', tipo: 'componente', nome: 'Produto adquirido pronto' },
+  { id: 'semi_laser', tipo: 'semiacabado', grupo: 'Corte a laser', nome: 'Semiacabado – corte a laser' },
+  { id: 'semi_usinagem', tipo: 'semiacabado', grupo: 'Usinagem', nome: 'Semiacabado – usinagem' },
+  { id: 'semi_nox', tipo: 'semiacabado', nome: 'Semiacabado – fabricado na NOX' },
+  { id: 'acabado', tipo: 'acabado', nome: 'Produto pronto – fabricado pela NOX' },
+  { id: 'kit', tipo: 'kit', nome: 'Kit completo' },
+  { id: 'insumo', tipo: 'insumo', nome: 'Insumo' },
+  { id: 'ferramenta', tipo: 'ferramenta', nome: 'Ferramenta' },
+  { id: 'dispositivo', tipo: 'ferramenta', grupo: 'Dispositivos', nome: 'Dispositivo' },
+  { id: 'gabarito', tipo: 'ferramenta', grupo: 'Gabaritos', nome: 'Gabarito' }
+];
+const AJUDA_ORIGEM = 'Matéria-prima: comprada para ser transformada na NOX (tubo, chapa, barra, rolo de mangueira).\n' +
+  'Produto adquirido pronto: usado como vem (mangote, abraçadeira, filtro).\n' +
+  'Semiacabado: peça nossa que vai compor outro produto — corte a laser, usinagem (código NX) ou feita aqui (corpo de abafador, mangueira cortada).\n' +
+  'Produto pronto: fabricado pela NOX. Kit completo: todos os itens de um kit NOX.\n' +
+  'Insumo: consumido na produção sem virar peça (polimento, disco de corte, gases).\n' +
+  'Ferramenta: uso geral (broca, macho, chave). Dispositivo: serve para fabricar várias peças. Gabarito: feito para uma peça só.\n' +
+  'Se o produto é vendido, o sistema descobre sozinho pelos anúncios e pedidos de venda.';
+const origemDe = p => ORIGENS.find(o => o.tipo === p.tipo && o.grupo && o.grupo === p.grupo)
+  || ORIGENS.find(o => o.tipo === p.tipo && !o.grupo) || null;
+const nomeOrigem = p => origemDe(p)?.nome || NOME_TIPO[p.tipo] || p.tipo;
+const COMPRADOS = ['materia_prima', 'componente', 'insumo', 'ferramenta'];          // precisam de fornecedor
 const COM_ENGENHARIA = ['acabado', 'semiacabado', 'kit'];   // medidas e desenho técnico
 // Conversões automáticas sugeridas: [compra, estoque] → fator
 const CONVERSOES = { 'M>MM': 1000, 'M>CM': 100, 'KG>G': 1000, 'L>ML': 1000, 'M2>CM2': 10000, 'BARRA>MM': 6000, 'BARRA>M': 6 };
@@ -165,7 +186,7 @@ let visiveis = [], selecionados = new Set();
     arquivo: 'produtos_' + (tipoAtual || 'todos'),
     colunas: ['Código', 'Descrição', 'Origem', 'Vendido', 'Onde vende', 'Grupo', 'Categoria financeira', 'Unid. estoque', 'Unid. compra', 'Fator', 'Situação', 'Fornecedores', 'NCM', 'Revisão', 'Revisado por', 'Revisado em',
               'Última alteração', 'Alterado por', 'Pendências', 'Entradas Tiny desde 2025', 'Saldo Tiny 09/10/2026'],
-    linhas: visiveis.map(p => [p.codigo, p.descricao, NOME_TIPO[p.tipo], vendaDe(p.id) ? 'Sim' : 'Não', (vendaDe(p.id)?.canais || []).join(', '), p.grupo, nomeCat(p.categoria_financeira_id), p.unidade, p.unidade_compra, p.fator_compra ? String(p.fator_compra).replace('.', ',') : '', p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
+    linhas: visiveis.map(p => [p.codigo, p.descricao, nomeOrigem(p), vendaDe(p.id) ? 'Sim' : 'Não', (vendaDe(p.id)?.canais || []).join(', '), p.grupo, nomeCat(p.categoria_financeira_id), p.unidade, p.unidade_compra, p.fator_compra ? String(p.fator_compra).replace('.', ',') : '', p.situacao === 'ativo' ? 'Ativo' : 'Inativo',
       fornDe(p.id).map(v => v.nome).join(', '), p.ncm, statusRevisao(p).texto, nomes[p.revisado_por] || '', dataHoraBR(p.revisado_em),
       dataHoraBR(p.atualizado_em), nomes[p.atualizado_por] || '', [...p._pend].filter(x => x !== 'nao_revisado').map(x => PEND.find(y => y.id === x).nome).join(', '),
       p.ref_tiny?.entradas_2025 ?? '', p.ref_tiny?.saldo_tiny ?? ''])
@@ -391,7 +412,7 @@ function desenhar() {
       <td class="foto">${fotoLista(p.id)}</td>
       <td class="cod">${esc(p.codigo || '—')}</td>
       <td class="desc">${esc(p.descricao)}${p.grupo || p.categoria_financeira_id ? `<small>${esc([p.grupo, catDe(p.categoria_financeira_id)?.nome].filter(Boolean).join(' · '))}</small>` : ''}</td>
-      ${tipoAtual ? '' : `<td>${NOME_TIPO[p.tipo] || p.tipo}</td>`}
+      ${tipoAtual ? '' : `<td>${esc(nomeOrigem(p))}</td>`}
       <td>${tgVendido(p.id)}</td>
       <td>${esc(p.unidade || '')}</td>
       <td>${fs.length ? esc(fs[0].nome) + (fs.length > 1 ? ` <span class="tg neutro">+${fs.length - 1}</span>` : '') : ''}</td>
@@ -483,9 +504,9 @@ function abrirProduto(p) {
     ${p.aprovacao === 'recusado' ? `<div style="background:#fdeceb;color:var(--erro);border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px"><b>Cadastro recusado pelo master:</b> ${esc(p.aprovacao_motivo || '')}${ctx.admin ? ' <button type="button" class="btn fino" id="pAprovar">Aprovar mesmo assim</button>' : ''}</div>` : ''}
     <div id="avisoDup"></div>
     <div class="grade-campos">
-      <div class="campo"><label>Origem <span class="dica" tabindex="0" title="Como a peça chega na NOX. Se ela é vendida ou não, o sistema descobre sozinho pelos anúncios e pedidos de venda.">?</span></label><select id="pTipo" ${ro}>${TIPOS.map(t => `<option value="${t.id}"${t.id === p.tipo ? ' selected' : ''}>${t.longo}</option>`).join('')}${p.tipo && !TIPOS.some(t => t.id === p.tipo) ? `<option value="${esc(p.tipo)}" selected>${esc(p.tipo)}</option>` : ''}</select>
+      <div class="campo"><label>Origem <span class="dica" tabindex="0" title="${esc(AJUDA_ORIGEM)}">?</span></label><select id="pTipo" data-simples ${ro}>${ORIGENS.map(o => `<option value="${o.id}"${o === origemDe(p) ? ' selected' : ''}>${o.nome}</option>`).join('')}${p.tipo && !origemDe(p) ? `<option value="" selected>${esc(p.tipo)}</option>` : ''}</select>
         ${p.id ? `<div style="margin-top:4px">${tgVendido(p.id, true)}</div>` : '<div class="sub" style="margin-top:4px">Vendido ou não: o sistema marca sozinho quando o produto tiver anúncio ou pedido de venda.</div>'}</div>
-      <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre pela família: matéria-prima e componente comprado 4000xxx; semiacabado de usinagem NX; outros semiacabados 2000xxx; ferramenta F. Escolha o tipo e o grupo antes.">Gerar</button>' : ''}</div></div>
+      <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre pela origem: matéria-prima, adquirido pronto e insumo 4000xxx; semiacabado – usinagem NX; outros semiacabados (corte a laser, fabricado na NOX) 2000xxx; ferramenta, dispositivo e gabarito F.">Gerar</button>' : ''}</div></div>
       <div class="campo"><label>Situação</label><select id="pSit" ${ro}><option value="ativo"${p.situacao === 'ativo' ? ' selected' : ''}>Ativo</option><option value="inativo"${p.situacao === 'inativo' ? ' selected' : ''}>Inativo</option></select></div>
       <div class="campo"><label>Unid. de estoque / uso</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
       <div class="campo l4"><label>Descrição</label><input id="pDesc" value="${esc(p.descricao || '')}" ${ro}></div>
@@ -610,18 +631,27 @@ function abrirProduto(p) {
   const calcTotalUsi = () => { const c = lerNumero($('#uComp').value), q = lerNumero($('#uPerda').value); $('#uTotal').value = c > 0 ? String((c + (q || 0))).replace('.', ',') : ''; };
   ['#uComp', '#uPerda'].forEach(i => $(i).addEventListener('input', calcTotalUsi)); calcTotalUsi();
 
+  const tipoSel = () => ORIGENS.find(o => o.id === $('#pTipo').value)?.tipo || p.tipo;
   const ajustarTipo = () => {
-    const t = $('#pTipo').value;
+    const t = tipoSel();
     $('#blEng').hidden = !COM_ENGENHARIA.includes(t);
     $('#obrigForn').textContent = COMPRADOS.includes(t) ? '· obrigatório para itens comprados' : '';
   };
   ajustarTipo();
-  $('#pTipo').onchange = () => { ajustarTipo(); checarParecidos(); };
+  $('#pTipo').onchange = () => {
+    const o = ORIGENS.find(x => x.id === $('#pTipo').value);
+    if (o?.grupo && $('#pGrupo').value !== o.grupo) { garantirGrupo(o.grupo); $('#pGrupo').value = o.grupo; $('#pGrupo').dispatchEvent(new Event('change')); }
+    else if (o && !o.grupo && ORIGENS.some(x => x.grupo && x.grupo === $('#pGrupo').value)) { $('#pGrupo').value = ''; $('#pGrupo').dispatchEvent(new Event('change')); }
+    ajustarTipo(); checarParecidos();
+  };
+  const garantirGrupo = nome => { const sel = $('#pGrupo'); if (![...sel.options].some(op => op.value === nome)) sel.add(new Option(nome, nome)); };
   // Grupo escolhido: produto novo herda tipo e categoria padrão do grupo (se ainda estiverem vazios)
   $('#pGrupo').onchange = () => {
-    const g = GRUPOS.find(x => x.nome === $('#pGrupo').value); if (!g) return;
-    if (!p.id && g.tipo_produto && $('#pTipo').value !== g.tipo_produto && !$('#pCodigo').value) { $('#pTipo').value = g.tipo_produto; ajustarTipo(); }
-    if (g.categoria_financeira_id && $('#pCat') && !$('#pCat').value) $('#pCat').value = g.categoria_financeira_id;
+    const grupo = $('#pGrupo').value, g = GRUPOS.find(x => x.nome === grupo);
+    // tipo: o do grupo (produto novo sem código) ou o atual; a origem acompanha (ex.: grupo Usinagem → Semiacabado – usinagem)
+    const tipo = !p.id && g?.tipo_produto && !$('#pCodigo').value ? g.tipo_produto : tipoSel();
+    const o = origemDe({ tipo, grupo }); if (o && o.id !== $('#pTipo').value) { $('#pTipo').value = o.id; ajustarTipo(); }
+    if (g?.categoria_financeira_id && $('#pCat') && !$('#pCat').value) $('#pCat').value = g.categoria_financeira_id;
   };
   // Voltou do "+ cadastrar" grupo: recarrega a lista sem perder o resto do formulário
   if (!window.__ouvinteGrupo) { window.__ouvinteGrupo = true; window.addEventListener('aba-ativa', async () => {
@@ -753,7 +783,7 @@ function abrirProduto(p) {
           v.ipi_pct ? 'com IPI ' + reaisF(v.preco * (1 + v.ipi_pct / 100)) : '', v.cotacao_data ? 'cotação ' + v.cotacao_data.split('-').reverse().join('/') : ''].filter(Boolean).map(t => ' · ' + t).join('')}</div>` : ''}
         ${v.cotacao_ref || v.observacao ? `<div class="sub">${esc([v.cotacao_ref, v.observacao].filter(Boolean).join(' · '))}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">${podeEditar ? `<button class="btn discreto" data-ed="${i}">editar</button> <button class="btn discreto" data-rm="${i}">remover</button>` : ''}</td></tr>`).join('')
-      : `<tr><td class="sub" style="padding:6px 0">${COMPRADOS.includes($('#pTipo').value) ? 'Nenhum fornecedor vinculado — sem ele, compras não consegue repor este item.' : 'Nenhum fornecedor vinculado.'}</td></tr>`;
+      : `<tr><td class="sub" style="padding:6px 0">${COMPRADOS.includes(tipoSel()) ? 'Nenhum fornecedor vinculado — sem ele, compras não consegue repor este item.' : 'Nenhum fornecedor vinculado.'}</td></tr>`;
     m.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const [r] = vinc.splice(+b.dataset.rm, 1); if (r.id) removidos.push(r.id); editForn = null; desenharForn(); });
     m.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => {   // carrega no formulário de baixo para alterar
       const v = vinc[+b.dataset.ed]; editForn = +b.dataset.ed;
@@ -787,7 +817,7 @@ function abrirProduto(p) {
       ['#nfNome', '#nfCod', '#nfUn', '#nfFator', '#nfPreco', '#nfIpi', '#nfIcms', '#nfData', '#nfRef'].forEach(x => $(x).value = ''); $('#nfPref').checked = false; desenharForn();
     };
     $('#pGerar').onclick = async () => {
-      const { data, error } = await db.rpc('produtos_proximo_codigo', { p_tipo: $('#pTipo').value, p_grupo: $('#pGrupo').value || null });
+      const { data, error } = await db.rpc('produtos_proximo_codigo', { p_tipo: tipoSel(), p_grupo: $('#pGrupo').value || null });
       if (error || !data) return aviso('Este tipo não tem sequência automática; informe o código.', true);
       $('#pCodigo').value = data;
     };
@@ -820,9 +850,9 @@ function abrirProduto(p) {
   let ultimo = '';
   const checarParecidos = async () => {
     const d = $('#pDesc').value.trim();
-    if (!podeEditar || d.length < 6 || d + $('#pTipo').value === ultimo) return;
-    ultimo = d + $('#pTipo').value;
-    const { data } = await db.rpc('produtos_parecidos', { p_descricao: d, p_tipo: $('#pTipo').value, p_ignorar: p.id || null });
+    if (!podeEditar || d.length < 6 || d + tipoSel() === ultimo) return;
+    ultimo = d + tipoSel();
+    const { data } = await db.rpc('produtos_parecidos', { p_descricao: d, p_tipo: tipoSel(), p_ignorar: p.id || null });
     $('#avisoDup').innerHTML = data?.length ? `<div class="aviso-dup"><b>Atenção:</b> já existe produto parecido — confira antes de salvar:<br>${data.map(x =>
       `${esc(x.codigo || '(sem código)')} · ${esc(x.descricao)}${x.situacao === 'inativo' ? ' (inativo)' : ''}`).join('<br>')}</div>` : '';
   };
@@ -835,7 +865,7 @@ function abrirProduto(p) {
   const salvar = async revisar => {
     const n = id => lerNumero($(id).value);
     const dados = {
-      tipo: $('#pTipo').value, codigo: $('#pCodigo').value.trim().toUpperCase() || null, situacao: $('#pSit').value,
+      tipo: tipoSel(), codigo: $('#pCodigo').value.trim().toUpperCase() || null, situacao: $('#pSit').value,
       unidade: $('#pUn').value || null, descricao: $('#pDesc').value.trim().replace(/\s+/g, ' '), grupo: $('#pGrupo').value.trim() || null,
       ncm: $('#pNcm').value.replace(/\D/g, '') || null, gtin: $('#pGtin').value.trim() || null,
       unidade_compra: $('#pUnC').value && $('#pUnC').value !== $('#pUn').value ? $('#pUnC').value : null,
