@@ -23,9 +23,9 @@ const MENU = [
     { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html' }
   ]},
   { grupo: 'Produção', icone: 'producao', itens: [
-    { id: 'ordens',        nome: 'Ordens de produção', arquivo: null },
+    { id: 'ordens',        nome: 'Ordens de produção', arquivo: 'pages/fabricacao/ordens.html' },
     { id: 'etapas',        nome: 'Etapas',             arquivo: null },
-    { id: 'apontamento',   nome: 'Apontamento',        arquivo: null },
+    { id: 'apontamento',   nome: 'Apontamento',        arquivo: 'pages/fabricacao/apontamento.html' },
     { id: 'embalagem',     nome: 'Embalagem',          arquivo: null },
     { id: 'desenvolvimento', nome: 'Desenvolvimento', arquivo: null },
     { id: 'desenhos',        nome: 'Desenho técnico', arquivo: null },

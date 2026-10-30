@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ordens de produção · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610301609">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202610301609">
+</head>
+<body data-modulo="ordens" data-titulo="Ordens de produção">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Ordens de produção</h1>
+    <p class="sub">Toda produção da NOX começa aqui. A OP diz o que fazer, quanto e para quê, e mostra o material necessário.</p></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="busca" class="busca" type="search" placeholder="Buscar: OP, código, descrição…" data-livre>
+      <button class="btn" id="btnAtualizar">Atualizar</button><button class="btn primario" id="btnNova" hidden>+ Nova OP</button></div></div>
+  <div class="fb-abas" id="abas"></div>
+  <div id="lista"><div class="fb-vazio">Carregando…</div></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610301609"></script>
+<script src="../../assets/js/ui.js?v=202610301609"></script>
+<script src="../../assets/js/auth.js?v=202610301609"></script>
+<script src="../../assets/js/layout.js?v=202610301609"></script>
+<script>
+/* OP: aberta → em produção (1º apontamento) → concluída (quantidade atingida ou encerrada com menos) | cancelada
+   (só sem apontamento). Material = cópia da ficha técnica no momento da abertura. */
+const $ = s => document.querySelector(s);
+const qt = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const dia = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
+const hoje = () => new Date().toLocaleDateString('sv-SE');
+const nomeP = p => `${p.codigo || 'SEM CÓDIGO'} · ${p.descricao}`;
+const MOTIVOS = { reposicao: 'Repor estoque', pedido: 'Pedido de venda', kit: 'Montagem de kit', outro: 'Outro' };
+const SIT = { aberta: ['Aberta', 'info'], em_producao: ['Em produção', 'alerta'], concluida: ['Concluída', 'ok'], cancelada: ['Cancelada', 'neutro'] };
+const ABAS = [{ v: 'abertas', n: 'Em aberto' }, { v: 'concluida', n: 'Concluídas (90 dias)' }, { v: 'cancelada', n: 'Canceladas (90 dias)' }];
+let CTX = null, ABERTAS = [], ANTIGAS = null, aba = 'abertas', PRODUTOS = null;
+
+async function carregar() {
+  const { data, error } = await db.rpc('producao_ordens_lista', { p_abertas: true });
+  if (error) { $('#lista').innerHTML = `<div class="fb-vazio">Erro: ${esc(error.message)}</div>`; return; }
+  ABERTAS = data || [];
+  if (aba !== 'abertas' || ANTIGAS) await carregarAntigas();
+  desenhar();
+}
+async function carregarAntigas() {
+  const { data, error } = await db.rpc('producao_ordens_lista', { p_abertas: false, p_dias: 90 });
+  if (error) return aviso('Erro: ' + error.message, true);
+  ANTIGAS = (data || []).filter(o => !o.aberta);
+}
+
+function lista() {
+  const b = $('#busca').value;
+  const ls = aba === 'abertas' ? ABERTAS : (ANTIGAS || []).filter(o => o.situacao === aba);
+  return ls.filter(o => !b || combinaBusca([o.numero, o.codigo, o.descricao, o.motivo_detalhe, o.obs].join(' '), b));
+}
+
+function desenhar() {
+  $('#abas').innerHTML = ABAS.map(a => `<button class="aba${a.v === aba ? ' ativa' : ''}" data-v="${a.v}">${a.n}${a.v === 'abertas' ? `<span class="n">${ABERTAS.length}</span>` : ''}</button>`).join('');
+  $('#abas').querySelectorAll('[data-v]').forEach(x => x.onclick = async () => { aba = x.dataset.v; if (aba !== 'abertas' && !ANTIGAS) await carregarAntigas(); desenhar(); });
+  const ls = lista(), podeAlt = CTX.pode('ordens', 'alterar'), podeApontar = CTX.pode('apontamento', 'criar');
+  $('#lista').innerHTML = !ls.length ? `<div class="fb-vazio">${aba === 'abertas' ? 'Nenhuma OP em aberto.' : 'Nada aqui nos últimos 90 dias.'}</div>` : ls.map(o => {
+    const pct = Math.min(100, o.produzido / o.quantidade * 100), atrasada = o.aberta && o.prazo && o.prazo < hoje();
+    const mats = o.materiais || [], falta = mats.filter(m => m.controla_estoque && m.restante > m.saldo);
+    return `<div class="op-card"><h3>${esc(o.numero)} · ${esc(nomeP(o))} <span class="tg ${SIT[o.situacao][1]}">${SIT[o.situacao][0]}</span>${atrasada ? '<span class="tg erro">atrasada</span>' : ''}${o.aberta && falta.length ? '<span class="tg alerta">falta material</span>' : ''}</h3>
+      <div class="meta">${MOTIVOS[o.motivo] || o.motivo}${o.motivo_detalhe ? ': ' + esc(o.motivo_detalhe) : ''} · aberta ${dia(o.criado_em)} por ${esc(o.quem || '—')}${o.prazo ? ' · prazo <b>' + dia(o.prazo) + '</b>' : ''}${o.concluida_em ? ' · concluída ' + dia(o.concluida_em) : ''}</div>
+      <div><b>${qt(o.produzido)}</b> de <b>${qt(o.quantidade)} ${esc(o.unidade || '')}</b>${o.refugo ? ` · refugo ${qt(o.refugo)}` : ''}${o.apontamentos ? ` · ${o.apontamentos} apontamento(s)` : ''}</div>
+      <div class="op-barra"><div style="width:${pct}%"></div></div>
+      ${o.obs ? `<div class="meta">${esc(o.obs)}</div>` : ''}
+      ${o.encerramento_motivo ? `<div class="meta">Encerrada com menos: ${esc(o.encerramento_motivo)}</div>` : ''}
+      ${o.cancelamento_motivo ? `<div class="meta">Cancelada: ${esc(o.cancelamento_motivo)}</div>` : ''}
+      <table class="fb-tab"><thead><tr><th>Material</th><th class="num">Por peça</th><th class="num">Total da OP</th>${o.aberta ? '<th class="num">Ainda vai usar</th><th class="num">Saldo</th><th class="num">Falta</th>' : ''}</tr></thead><tbody>
+        ${mats.map(m => `<tr><td>${esc(nomeP(m))}</td><td class="num">${qt(m.por_unidade)} ${esc(m.unidade || '')}</td><td class="num">${qt(m.total)} ${esc(m.unidade || '')}</td>
+          ${o.aberta ? `<td class="num">${qt(m.restante)}</td><td class="num">${qt(m.saldo)}</td><td class="num${m.controla_estoque && m.restante > m.saldo ? ' op-falta' : ''}">${m.controla_estoque && m.restante > m.saldo ? qt(m.restante - m.saldo) : '—'}</td>` : ''}</tr>`).join('')}
+      </tbody></table>
+      <div class="bts">
+        <button class="btn fino" data-imp="${o.id}">Imprimir OP</button>
+        ${o.aberta && podeApontar ? `<a class="btn fino primario" href="apontamento.html?ordem=${o.id}">Apontar</a>` : ''}
+        ${o.aberta && podeAlt && o.apontamentos ? `<button class="btn fino discreto" data-ac="encerrar" data-id="${o.id}">Encerrar com menos</button>` : ''}
+        ${o.aberta && podeAlt && !o.apontamentos ? `<button class="btn fino discreto" data-ac="cancelar" data-id="${o.id}">Cancelar OP</button>` : ''}
+        ${!o.aberta && podeAlt && (o.situacao === 'cancelada' || o.encerramento_motivo) ? `<button class="btn fino discreto" data-ac="reabrir" data-id="${o.id}">Reabrir</button>` : ''}
+      </div></div>`;
+  }).join('');
+  $('#lista').querySelectorAll('[data-imp]').forEach(x => x.onclick = () => imprimir(Number(x.dataset.imp)));
+  $('#lista').querySelectorAll('[data-ac]').forEach(x => x.onclick = () => acao(Number(x.dataset.id), x.dataset.ac));
+}
+
+function achar(id) { return ABERTAS.find(o => o.id === id) || (ANTIGAS || []).find(o => o.id === id); }
+
+function imprimir(id) {
+  const o = achar(id); if (!o) return;
+  const linhas = [['PRODUZIR', nomeP(o), qt(o.quantidade), o.unidade || '', '', ''], ...(o.materiais || []).map(m =>
+    ['MATERIAL', nomeP(m), qt(m.total), m.unidade || '', qt(m.por_unidade) + ' por peça', '[   ]'])];
+  imprimirRelatorio({ arquivo: o.numero, colunas: ['', 'Item', 'Quantidade', 'Un.', 'Obs.', 'Separado'], linhas,
+    titulo: `${o.numero} · ${MOTIVOS[o.motivo]}${o.motivo_detalhe ? ': ' + o.motivo_detalhe : ''}${o.prazo ? ' · prazo ' + dia(o.prazo) : ''}${o.obs ? ' · ' + o.obs : ''}` });
+}
+
+async function acao(id, ac) {
+  const o = achar(id); if (!o) return;
+  const pergunta = { encerrar: `Encerrar a ${o.numero} com ${qt(o.produzido)} de ${qt(o.quantidade)}?\nPor que termina com menos?`,
+    cancelar: `Cancelar a ${o.numero}?\nMotivo:`, reabrir: `Reabrir a ${o.numero}?\nMotivo (opcional):` }[ac];
+  const m = prompt(pergunta); if (m === null) return;
+  if (ac !== 'reabrir' && !m.trim()) return aviso('Informe o motivo', true);
+  const { error } = await db.rpc('producao_ordem_acao', { p_id: id, p_acao: ac, p_motivo: m.trim() || null });
+  if (error) return aviso('Não salvou: ' + error.message, true);
+  aviso({ encerrar: 'OP encerrada', cancelar: 'OP cancelada', reabrir: 'OP reaberta' }[ac]); ANTIGAS = null; carregar();
+}
+
+async function novaOP() {
+  if (!PRODUTOS) {
+    const [p, e] = await Promise.all([
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade').eq('situacao', 'ativo').order('codigo')),
+      buscarTodos(() => db.from('produto_estrutura').select('produto_id').eq('ativo', true).eq('opcional', false).order('id'))]);
+    const com = new Set((e || []).map(x => x.produto_id)); PRODUTOS = (p || []).filter(x => com.has(x.id));
+  }
+  const m = abrirModal(`<h2>Nova ordem de produção</h2>
+    <p class="sub">Só aparecem produtos com ficha técnica (componentes do conjunto). Falta algum? Cadastre os componentes no produto.</p>
+    <div class="fb-campos c4">
+      <div class="l3"><label for="nProd">Produto a produzir</label><select id="nProd"><option value="">— escolher —</option>${PRODUTOS.map(x => `<option value="${x.id}">${esc(nomeP(x))}</option>`).join('')}</select></div>
+      <div><label for="nQtd">Quantidade</label><input id="nQtd" inputmode="decimal" placeholder="0"></div>
+      <div><label for="nMot">Motivo</label><select id="nMot" data-simples>${Object.entries(MOTIVOS).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></div>
+      <div class="l2"><label for="nDet">Detalhe do motivo <span id="nDetObr" class="sub"></span></label><input id="nDet" placeholder="ex.: pedido 1234, kit intake Golf"></div>
+      <div><label for="nPrazo">Prazo</label><input id="nPrazo" type="date" min="${hoje()}"></div>
+      <div style="grid-column:1/-1"><label for="nObs">Observação (opcional)</label><input id="nObs"></div>
+    </div>
+    <div id="nMat"></div>
+    <div class="fb-bts"><button class="btn" id="nCanc">Cancelar</button><button class="btn primario" id="nOk">Abrir OP</button></div>`);
+  m.querySelector('.modal').style.cssText += ';width:min(760px, calc(100vw - 32px));max-width:none';
+  const q = s => m.querySelector(s); let prep = null;
+  const mat = () => {
+    const n = lerNumero(q('#nQtd').value) || 0;
+    q('#nMat').innerHTML = !prep ? '' : `<table class="fb-tab"><thead><tr><th>Material necessário</th><th class="num">Por peça</th><th class="num">Total</th><th class="num">Saldo</th><th class="num">Falta</th></tr></thead><tbody>
+      ${prep.componentes.map(c => { const t = c.por_unidade * n, f = c.controla_estoque ? Math.max(t - c.saldo, 0) : 0;
+        return `<tr><td>${esc(nomeP(c))}</td><td class="num">${qt(c.por_unidade)} ${esc(c.unidade || '')}</td><td class="num">${n ? qt(t) : '—'} ${esc(c.unidade || '')}</td><td class="num">${qt(c.saldo)}</td><td class="num${f ? ' op-falta' : ''}">${f ? qt(f) : '—'}</td></tr>`; }).join('')}
+      </tbody></table>`;
+  };
+  const motivo = () => { q('#nDetObr').textContent = q('#nMot').value === 'reposicao' ? '(opcional)' : '(obrigatório)'; };
+  motivo(); q('#nMot').onchange = motivo;
+  q('#nProd').onchange = async () => {
+    prep = null; mat(); const id = Number(q('#nProd').value); if (!id) return;
+    const { data, error } = await db.rpc('producao_preparar', { p_produto: id });
+    if (error) return aviso('Não carregou a ficha: ' + error.message, true); prep = data; mat();
+  };
+  q('#nQtd').addEventListener('input', mat);
+  q('#nCanc').onclick = () => m.remove();
+  q('#nOk').onclick = async () => {
+    const prod = Number(q('#nProd').value), n = lerNumero(q('#nQtd').value), mot = q('#nMot').value, det = q('#nDet').value.trim();
+    if (!prod) return aviso('Escolha o produto', true);
+    if (!(n > 0)) return aviso('Informe a quantidade', true);
+    if (mot !== 'reposicao' && !det) return aviso('Informe o detalhe do motivo', true);
+    q('#nOk').disabled = true;
+    const { data, error } = await db.rpc('producao_ordem_criar', { p_produto: prod, p_quantidade: n, p_prazo: q('#nPrazo').value || null,
+      p_motivo: mot, p_motivo_detalhe: det || null, p_obs: q('#nObs').value.trim() || null });
+    if (error) { q('#nOk').disabled = false; return aviso('Não abriu: ' + error.message, true); }
+    m.remove(); aviso('OP aberta'); aba = 'abertas'; await carregar();
+    const o = ABERTAS.find(x => x.id === data); if (o && confirm(`${o.numero} aberta. Imprimir a OP com a lista de material?`)) imprimir(o.id);
+  };
+  q('#nProd').focus();
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  if (CTX.pode('ordens', 'criar')) { $('#btnNova').hidden = false; $('#btnNova').onclick = novaOP; }
+  $('#btnAtualizar').onclick = () => { ANTIGAS = null; carregar(); };
+  $('#busca').addEventListener('input', desenhar);
+  window.addEventListener('aba-ativa', carregar);
+  carregar();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apontamento de produção · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610301609">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202610301609">
+</head>
+<body data-modulo="apontamento" data-titulo="Apontamento de produção">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Apontamento de produção</h1>
+    <p class="sub">Aponte na ordem de produção o que foi feito. Entram as peças boas e sai o material pela ficha técnica.</p></div>
+    <div><button class="btn" id="btnAtualizar">Atualizar</button></div></div>
+  <div class="fb-grade">
+    <div>
+      <section class="fb-card" id="cardProd">
+        <h2>Apontar na OP</h2>
+        <p class="sub">Ex.: OP de 10 mangueiras de 330 mm → cortou 10 → informe 10 boas. O rolo baixa 3.300 mm sozinho.</p>
+        <div class="fb-campos c4">
+          <div class="l2"><label for="aOrdem">Ordem de produção</label><select id="aOrdem"><option value="">— escolher —</option></select></div>
+          <div><label for="aQtd">Peças boas</label><input id="aQtd" inputmode="decimal" placeholder="0"></div>
+          <div><label for="aRef">Refugo</label><input id="aRef" inputmode="decimal" placeholder="0"></div>
+        </div>
+        <div id="aInfo"></div>
+        <div id="aComp"></div>
+        <div class="fb-campos c4" style="margin-top:10px">
+          <div><label for="aData">Data</label><input id="aData" type="date"></div>
+          <div class="l3"><label for="aObs">Observação (opcional)</label><input id="aObs" placeholder="ex.: máquina, quem fez, motivo do refugo"></div>
+        </div>
+        <div class="fb-bts"><button class="btn primario" id="aSalvar" disabled>Registrar apontamento</button></div>
+      </section>
+      <section class="fb-card" id="cardPerda">
+        <h2>Perda de material</h2>
+        <p class="sub">Sobra de rolo curta demais para usar, material danificado. Baixa do estoque com o motivo.</p>
+        <div class="fb-campos c4">
+          <div class="l2"><label for="pProd">Material</label><select id="pProd"><option value="">— escolher —</option></select></div>
+          <div><label for="pQtd">Quantidade <span id="pUn" class="sub"></span></label><input id="pQtd" inputmode="decimal" placeholder="0"></div>
+          <div><label>Saldo atual</label><div id="pSaldo" style="padding:7px 0">—</div></div>
+        </div>
+        <div class="fb-campos c1" style="margin-top:10px"><div><label for="pMotivo">Motivo</label><input id="pMotivo" placeholder="ex.: final do rolo, 180 mm sem uso"></div></div>
+        <div class="fb-bts"><button class="btn" id="pSalvar">Lançar perda</button></div>
+      </section>
+    </div>
+    <section class="fb-card">
+      <h2>Últimos 60 dias</h2>
+      <div id="hAbas" class="fb-abas"></div>
+      <div class="fb-hist" id="hist"><div class="fb-vazio">Carregando…</div></div>
+    </section>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610301609"></script>
+<script src="../../assets/js/ui.js?v=202610301609"></script>
+<script src="../../assets/js/auth.js?v=202610301609"></script>
+<script src="../../assets/js/layout.js?v=202610301609"></script>
+<script>
+/* Apontamento: escolhe a OP em aberto, informa peças boas e refugo. Entra o que é bom; sai o material da OP
+   (por unidade × (boas + refugo)), que pode ser corrigido antes de registrar. Errou? Estorna (a OP reabre). */
+const $ = s => document.querySelector(s);
+const qt = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const dia = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
+const hoje = () => new Date().toLocaleDateString('sv-SE');
+const nomeP = p => `${p.codigo || 'SEM CÓDIGO'} · ${p.descricao}`;
+const reais = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 4 });
+let CTX = null, ORDENS = [], OP = null, MATS = [], PRODUTOS = [], HIST = { apontamentos: [], perdas: [] }, abaH = 'ap';
+
+async function carregarOrdens() {
+  const { data, error } = await db.rpc('producao_ordens_lista', { p_abertas: true });
+  if (error) return aviso('Não carregou as OPs: ' + error.message, true);
+  ORDENS = data || [];
+  const atual = $('#aOrdem').value || new URLSearchParams(location.search).get('ordem') || '';
+  $('#aOrdem').innerHTML = '<option value="">— escolher —</option>' + (ORDENS.length
+    ? ORDENS.map(o => `<option value="${o.id}">${esc(o.numero)} · ${esc(nomeP(o))} · falta ${qt(Math.max(o.quantidade - o.produzido, 0))} ${esc(o.unidade || '')}</option>`).join('')
+    : '<option value="" disabled>Nenhuma OP em aberto — abra em Ordens de produção</option>');
+  $('#aOrdem').value = ORDENS.some(o => String(o.id) === String(atual)) ? atual : '';
+  aoEscolherOrdem();
+}
+
+async function carregarMateriais() {
+  const d = await buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade').eq('situacao', 'ativo').order('codigo'));
+  PRODUTOS = d || [];
+  $('#pProd').innerHTML = '<option value="">— escolher —</option>' + PRODUTOS.map(x => `<option value="${x.id}">${esc(nomeP(x))}</option>`).join('');
+}
+
+function aoEscolherOrdem() {
+  OP = ORDENS.find(o => String(o.id) === $('#aOrdem').value) || null;
+  MATS = OP ? (OP.materiais || []).map(m => ({ ...m, manual: null })) : [];
+  desenhar();
+}
+
+const num = id => lerNumero($(id).value) || 0;
+
+function desenhar() {
+  const box = $('#aComp'), info = $('#aInfo');
+  if (!OP) { box.innerHTML = ''; info.innerHTML = ''; $('#aSalvar').disabled = true; return; }
+  const q = num('#aQtd'), r = num('#aRef'), falta = Math.max(OP.quantidade - OP.produzido, 0);
+  info.innerHTML = `<div class="fb-resumo">OP <b>${esc(OP.numero)}</b> · ${esc(nomeP(OP))} · pedido <b>${qt(OP.quantidade)}</b>, já feito <b>${qt(OP.produzido)}</b>${OP.refugo ? `, refugo ${qt(OP.refugo)}` : ''}, falta <b>${qt(falta)} ${esc(OP.unidade || '')}</b>${OP.prazo ? ' · prazo ' + dia(OP.prazo) : ''}</div>`;
+  MATS.forEach(m => m.baixa = m.manual ?? +(m.por_unidade * (q + r)).toFixed(4));
+  const neg = MATS.filter(m => m.controla_estoque && m.saldo - m.baixa < 0);
+  box.innerHTML = `
+    <table class="fb-tab"><thead><tr><th>Material que sai</th><th class="num">Por peça</th><th class="num">Baixar agora</th><th class="num">Saldo hoje</th><th class="num">Fica</th></tr></thead><tbody>
+    ${MATS.map((m, i) => `<tr><td>${esc(nomeP(m))}</td><td class="num">${qt(m.por_unidade)} ${esc(m.unidade || '')}</td>
+      <td class="num"><input data-i="${i}" value="${q + r ? qt(m.baixa) : ''}" inputmode="decimal" title="Corrija se o consumo real foi diferente"> ${esc(m.unidade || '')}</td>
+      <td class="num">${qt(m.saldo)}</td><td class="num${m.saldo - m.baixa < 0 ? ' fb-neg' : ''}">${qt(m.saldo - m.baixa)}</td></tr>`).join('')}
+    </tbody></table>
+    ${q + r ? `<div class="fb-resumo">Entra <b>${qt(q)} ${esc(OP.unidade || '')}</b> de ${esc(OP.codigo || OP.descricao)}${r ? ` (refugo de ${qt(r)} não entra no estoque)` : ''} e sai ${MATS.map(m => `<b>${qt(m.baixa)} ${esc(m.unidade || '')}</b> de ${esc(m.codigo || m.descricao)}`).join(', ')}.${q >= falta && falta > 0 ? ' <b>A OP será concluída.</b>' : ''}</div>` : ''}
+    ${q > falta && falta >= 0 ? `<div class="fb-alerta">Você está apontando ${qt(q - falta)} a mais do que a OP pediu. Confira a quantidade.</div>` : ''}
+    ${q + r && neg.length ? `<div class="fb-alerta">O estoque de ${neg.map(m => esc(m.codigo || m.descricao)).join(', ')} vai ficar negativo. Pode registrar (o inventário inicial ainda não foi feito), mas confira.</div>` : ''}`;
+  box.querySelectorAll('input[data-i]').forEach(inp => inp.onchange = () => {
+    const m = MATS[+inp.dataset.i], v = lerNumero(inp.value);
+    m.manual = inp.value.trim() === '' ? null : (v >= 0 ? v : null); desenhar();
+  });
+  $('#aSalvar').disabled = !(q + r > 0) || !CTX.pode('apontamento', 'criar');
+}
+
+async function registrar() {
+  const q = num('#aQtd'), r = num('#aRef'); if (!OP || !(q + r > 0)) return aviso('Escolha a OP e informe a quantidade', true);
+  const mudou = MATS.some(m => m.manual != null);
+  const txt = `${OP.numero}: registrar ${qt(q)} boas${r ? ` e ${qt(r)} refugo` : ''} de ${nomeP(OP)}?\n\nSai do estoque:\n` +
+    MATS.filter(m => m.baixa > 0).map(m => `• ${qt(m.baixa)} ${m.unidade || ''} de ${m.codigo || m.descricao}`).join('\n');
+  if (!confirm(txt)) return;
+  $('#aSalvar').disabled = true;
+  const { error } = await db.rpc('producao_apontar', { p_ordem: OP.id, p_quantidade: q, p_refugo: r, p_data: $('#aData').value || null,
+    p_obs: $('#aObs').value.trim() || null, p_consumos: mudou ? MATS.filter(m => m.baixa > 0).map(m => ({ produto_id: m.id, quantidade: m.baixa })) : null });
+  if (error) { $('#aSalvar').disabled = false; return aviso('Não registrou: ' + error.message, true); }
+  aviso('Apontamento registrado');
+  $('#aQtd').value = ''; $('#aRef').value = ''; $('#aObs').value = '';
+  await carregarOrdens(); carregarHist();
+}
+
+async function aoEscolherPerda() {
+  const p = PRODUTOS.find(x => x.id === Number($('#pProd').value));
+  $('#pUn').textContent = p?.unidade ? `(${p.unidade})` : ''; $('#pSaldo').textContent = '—';
+  if (!p) return;
+  const { data, error } = await db.rpc('estoque_saldo_item', { p_produto: p.id });
+  if (!error) $('#pSaldo').textContent = `${qt(data)} ${p.unidade || ''}`;
+}
+
+async function lancarPerda() {
+  const p = PRODUTOS.find(x => x.id === Number($('#pProd').value)), n = lerNumero($('#pQtd').value), m = $('#pMotivo').value.trim();
+  if (!p) return aviso('Escolha o material', true);
+  if (!(n > 0)) return aviso('Informe a quantidade perdida', true);
+  if (!m) return aviso('Informe o motivo', true);
+  if (!confirm(`Baixar ${qt(n)} ${p.unidade || ''} de ${nomeP(p)} como perda?\nMotivo: ${m}`)) return;
+  const { error } = await db.rpc('estoque_lancar_perda', { p_produto: p.id, p_quantidade: n, p_motivo: m });
+  if (error) return aviso('Não lançou: ' + error.message, true);
+  aviso('Perda lançada'); $('#pQtd').value = ''; $('#pMotivo').value = ''; aoEscolherPerda(); carregarHist(); carregarOrdens();
+}
+
+async function carregarHist() {
+  const { data, error } = await db.rpc('producao_historico', { p_dias: 60 });
+  if (error) { $('#hist').innerHTML = `<div class="fb-vazio">Erro: ${esc(error.message)}</div>`; return; }
+  HIST = data || { apontamentos: [], perdas: [] }; desenharHist();
+}
+
+function desenharHist() {
+  $('#hAbas').innerHTML = [['ap', 'Apontamentos', HIST.apontamentos.length], ['pe', 'Perdas', HIST.perdas.length]]
+    .map(([v, n, c]) => `<button class="aba${v === abaH ? ' ativa' : ''}" data-v="${v}">${n}<span class="n">${c}</span></button>`).join('');
+  $('#hAbas').querySelectorAll('[data-v]').forEach(b => b.onclick = () => { abaH = b.dataset.v; desenharHist(); });
+  const podeEst = CTX.pode('apontamento', 'alterar');
+  $('#hist').innerHTML = abaH === 'ap'
+    ? (HIST.apontamentos.length ? HIST.apontamentos.map(a => `<div class="it${a.situacao === 'estornado' ? ' estornado' : ''}">
+      <div class="top"><div><b>${qt(a.quantidade)} ${esc(a.unidade || '')}</b>${a.refugo ? ` + ${qt(a.refugo)} refugo` : ''} · ${esc(a.codigo || '')} ${esc(a.descricao)}</div>
+        ${a.situacao === 'estornado' ? '<span class="tg neutro">estornado</span>' : podeEst ? `<button class="btn discreto fino" data-est="${a.id}">Estornar</button>` : ''}</div>
+      <div class="meta">${esc(a.ordem)} · ${dia(a.data)} · ${esc(a.quem || '—')}${a.custo != null ? ' · custo ' + reais(a.custo) + '/' + esc(a.unidade || 'un') : ''}${a.obs ? ' · ' + esc(a.obs) : ''}</div>
+      <div class="cons">Baixou: ${(a.consumos || []).map(c => `${qt(c.quantidade)} ${esc(c.unidade || '')} de ${esc(c.codigo || c.descricao)}`).join(', ') || '—'}</div>
+      ${a.estorno_motivo ? `<div class="cons">Estorno: ${esc(a.estorno_motivo)}</div>` : ''}</div>`).join('')
+      : '<div class="fb-vazio">Nenhum apontamento nos últimos 60 dias.</div>')
+    : (HIST.perdas.length ? HIST.perdas.map(p => `<div class="it">
+      <div class="top"><div><b>${qt(p.quantidade)} ${esc(p.unidade || '')}</b> · ${esc(p.codigo || '')} ${esc(p.descricao)}</div></div>
+      <div class="meta">${dia(p.data)} · ${esc(p.quem || '—')} · ${esc(String(p.obs || '').replace(/^PERDA · /, ''))}</div></div>`).join('')
+      : '<div class="fb-vazio">Nenhuma perda nos últimos 60 dias.</div>');
+  $('#hist').querySelectorAll('[data-est]').forEach(b => b.onclick = () => estornar(Number(b.dataset.est)));
+}
+
+async function estornar(id) {
+  const a = HIST.apontamentos.find(x => x.id === id); if (!a) return;
+  const m = prompt(`Estornar o apontamento de ${qt(a.quantidade)} × ${a.codigo || a.descricao} (${a.ordem})?\nAs peças saem do estoque, o material volta e a OP reabre se precisar.\n\nMotivo:`);
+  if (m === null) return; if (!m.trim()) return aviso('Informe o motivo', true);
+  const { error } = await db.rpc('producao_estornar', { p_id: id, p_motivo: m.trim() });
+  if (error) return aviso('Não estornou: ' + error.message, true);
+  aviso('Apontamento estornado'); carregarHist(); carregarOrdens();
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  $('#aData').value = hoje(); $('#aData').max = hoje();
+  if (!CTX.pode('apontamento', 'criar')) { $('#cardProd').hidden = true; $('#cardPerda').hidden = true; }
+  $('#aOrdem').onchange = aoEscolherOrdem;
+  ['#aQtd', '#aRef'].forEach(s => $(s).addEventListener('input', () => { MATS.forEach(m => m.manual = null); desenhar(); }));
+  $('#aSalvar').onclick = registrar; $('#pProd').onchange = aoEscolherPerda; $('#pSalvar').onclick = lancarPerda;
+  $('#btnAtualizar').onclick = () => { carregarOrdens(); carregarHist(); };
+  window.addEventListener('aba-ativa', () => { carregarOrdens(); carregarHist(); });
+  carregarOrdens(); carregarHist(); carregarMateriais();
+})();
+</script>
+</body>
+</html>

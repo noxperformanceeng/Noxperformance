@@ -1,0 +1,39 @@
+/* Ordens de produção e apontamento */
+.fb-grade { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .fb-grade { grid-template-columns: 1fr; } }
+.fb-card { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+.fb-card h2 { font-size: 15px; margin: 0 0 2px; }
+.fb-card > .sub { margin: 0 0 10px; }
+.fb-campos { display: grid; gap: 10px; }
+.fb-campos.c4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.fb-campos.c1 { grid-template-columns: 1fr; }
+.fb-campos .l2 { grid-column: span 2; }
+.fb-campos .l3 { grid-column: span 3; }
+@media (max-width: 640px) { .fb-campos.c4 { grid-template-columns: 1fr 1fr; } .fb-campos .l2, .fb-campos .l3 { grid-column: 1 / -1; } }
+.fb-campos label { display: block; font-size: 12px; color: var(--texto-suave); margin-bottom: 3px; }
+.fb-campos input, .fb-campos select, .fb-campos textarea { width: 100%; }
+.fb-tab { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+.fb-tab th, .fb-tab td { padding: 6px; border-bottom: 1px solid var(--linha); text-align: left; vertical-align: middle; }
+.fb-tab th { font-size: 11.5px; color: var(--texto-suave); font-weight: 500; }
+.fb-tab .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fb-tab input { width: 110px; text-align: right; }
+.fb-neg { color: #b42318; font-weight: 600; }
+.fb-resumo { margin-top: 10px; padding: 9px 12px; border-radius: 8px; background: var(--fundo, #f6f7f9); font-size: 13px; line-height: 1.5; }
+.fb-alerta { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #fff4e5; color: #92400e; font-size: 12.5px; }
+.fb-bts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.fb-abas { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.fb-hist { font-size: 13px; }
+.fb-hist .it { border-bottom: 1px solid var(--linha); padding: 8px 0; }
+.fb-hist .it:last-child { border-bottom: 0; }
+.fb-hist .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.fb-hist .meta, .fb-hist .cons { color: var(--texto-suave); font-size: 12px; margin-top: 2px; }
+.fb-hist .estornado { opacity: .55; }
+.fb-vazio { color: var(--texto-suave); padding: 14px 0; text-align: center; }
+/* lista de OPs */
+.op-card { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+.op-card h3 { margin: 0; font-size: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.op-card .meta { color: var(--texto-suave); font-size: 12.5px; margin: 3px 0 6px; }
+.op-barra { height: 6px; background: var(--linha); border-radius: 3px; overflow: hidden; margin: 6px 0 2px; max-width: 360px; }
+.op-barra > div { height: 100%; background: var(--destaque); }
+.op-card .bts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.op-falta { color: #b42318; font-weight: 600; }
