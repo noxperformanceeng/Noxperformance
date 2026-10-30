@@ -17,6 +17,8 @@ update public.produtos set tipo = 'insumo', grupo = 'Ferramentas de corte'
 update public.produtos set grupo = 'Dispositivos'
  where tipo = 'ferramenta' and descricao ~* '^mesa de solda';
 
--- Eletrodos de solda (F04) são consumidos: Insumo, grupo Consumíveis de produção (o código fica o mesmo).
+-- Eletrodos de solda (antigo F04, família de ferramentas) são consumidos: Insumo, grupo Consumíveis de
+-- produção e código de insumo 4000740. O Tiny continua reconhecendo pelo SKU antigo (ref_tiny.sku_tiny = F04).
 -- A pinça da tocha TIG continua Ferramenta (é peça da tocha).
-update public.produtos set tipo = 'insumo', grupo = 'Consumíveis de produção' where codigo = 'F04' and tipo = 'ferramenta';
+update public.produtos set tipo = 'insumo', grupo = 'Consumíveis de produção', codigo = '4000740', descricao = 'ELETRODOS E-6013 GERDAU'
+ where codigo = 'F04' and not exists (select 1 from public.produtos where codigo = '4000740');
