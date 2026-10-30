@@ -379,3 +379,29 @@ const ICONES = {
 function icone(nome, tam = 18) {
   return `<svg class="ico" width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nome] || ''}</svg>`;
 }
+
+/* ---------- DICAS "?" ----------
+   O balão nativo (title) não aparece direito dentro das telas (abrem num iframe) e corta texto longo.
+   Qualquer .dica com title mostra um balão próprio ao passar o mouse, focar ou tocar. */
+(function () {
+  if (window.__dicas) return; window.__dicas = true;
+  let caixa = null;
+  const fechar = () => { caixa?.remove(); caixa = null; };
+  const abrir = el => {
+    if (el.title) { el.dataset.dica = el.title; el.removeAttribute('title'); }
+    const txt = el.dataset.dica; if (!txt) return;
+    fechar();
+    caixa = document.createElement('div'); caixa.className = 'dica-caixa'; caixa.textContent = txt;
+    document.body.appendChild(caixa);
+    const r = el.getBoundingClientRect(), w = caixa.offsetWidth, h = caixa.offsetHeight;
+    const x = Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8));
+    const y = r.bottom + h + 8 > window.innerHeight && r.top > h + 8 ? r.top - h - 6 : r.bottom + 6;
+    caixa.style.left = x + window.scrollX + 'px'; caixa.style.top = y + window.scrollY + 'px';
+  };
+  document.addEventListener('mouseover', e => { const d = e.target.closest?.('.dica'); if (d) abrir(d); });
+  document.addEventListener('mouseout', e => { if (e.target.closest?.('.dica') && !e.target.contains(document.activeElement)) fechar(); });
+  document.addEventListener('focusin', e => { const d = e.target.closest?.('.dica'); if (d) abrir(d); });
+  document.addEventListener('focusout', e => { if (e.target.closest?.('.dica')) fechar(); });
+  document.addEventListener('click', e => { const d = e.target.closest?.('.dica'); if (d) { e.preventDefault(); caixa ? fechar() : abrir(d); } });
+  document.addEventListener('scroll', fechar, true);
+})();

@@ -1,5 +1,5 @@
 -- =====================================================================
--- 098 · Ferramentas de corte viram Insumo; mesas de solda viram Dispositivo
+-- 098 · Ferramentas de corte e eletrodos viram Insumo; mesas de solda viram Dispositivo
 --  · Brocas, machos e serras (copo e fita) se gastam e são recompradas sempre: passam para a origem
 --    INSUMO, num grupo próprio "Ferramentas de corte", separado dos outros insumos (polimento, gases…).
 --    As categorias financeiras de cada item não mudam.
@@ -16,3 +16,7 @@ update public.produtos set tipo = 'insumo', grupo = 'Ferramentas de corte'
 
 update public.produtos set grupo = 'Dispositivos'
  where tipo = 'ferramenta' and descricao ~* '^mesa de solda';
+
+-- Eletrodos de solda (F04) são consumidos: Insumo, grupo Consumíveis de produção (o código fica o mesmo).
+-- A pinça da tocha TIG continua Ferramenta (é peça da tocha).
+update public.produtos set tipo = 'insumo', grupo = 'Consumíveis de produção' where codigo = 'F04' and tipo = 'ferramenta';
