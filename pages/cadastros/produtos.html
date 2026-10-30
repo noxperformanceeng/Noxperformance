@@ -128,8 +128,8 @@ const AJUDA_ORIGEM = 'Matéria-prima: comprada para ser transformada na NOX (tub
   'Produto adquirido pronto: usado como vem (mangote, abraçadeira, filtro).\n' +
   'Semiacabado: peça nossa que vai compor outro produto — corte a laser, usinagem (código NX) ou feita aqui (corpo de abafador, mangueira cortada).\n' +
   'Produto pronto: fabricado pela NOX. Kit completo: todos os itens de um kit NOX.\n' +
-  'Insumo: consumido na produção sem virar peça (polimento, disco de corte, gases).\n' +
-  'Ferramenta: uso geral (broca, macho, chave). Dispositivo: serve para fabricar várias peças. Gabarito: feito para uma peça só.\n' +
+  'Insumo: consumido na produção sem virar peça (polimento, disco de corte, gases). Broca, macho e serra também — grupo Ferramentas de corte.\n' +
+  'Ferramenta: uso durável (chave, retificadeira, curvador). Dispositivo: serve para fabricar várias peças. Gabarito: feito para uma peça só.\n' +
   'Se o produto é vendido, o sistema descobre sozinho pelos anúncios e pedidos de venda.';
 const origemDe = p => ORIGENS.find(o => o.tipo === p.tipo && o.grupo && o.grupo === p.grupo)
   || ORIGENS.find(o => o.tipo === p.tipo && !o.grupo) || null;
