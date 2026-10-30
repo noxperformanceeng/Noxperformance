@@ -13,9 +13,9 @@ const MENU = [
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
   ]},
   { grupo: 'Estoque', icone: 'estoque', itens: [
-    { id: 'estoque',       nome: 'Posição de estoque', arquivo: null },
+    { id: 'estoque',       nome: 'Posição de estoque', arquivo: 'pages/estoque/posicao.html' },
     { id: 'almoxarifado',  nome: 'Almoxarifado',      arquivo: null },
-    { id: 'inventario',    nome: 'Inventário',        arquivo: null },
+    { id: 'inventario',    nome: 'Inventário',        arquivo: 'pages/estoque/inventario.html' },
     { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' }
   ]},
   { grupo: 'Compras', icone: 'compras', itens: [

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventário · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610302013">
+<style>
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.num input { width: 120px; text-align: right; }
+  tr.contado td { background: #ecfdf3; }
+  tr.difere td { background: #fff4e5; }
+  .neg { color: #b42318; font-weight: 600; }
+  .inv-barra { position: sticky; bottom: 0; background: var(--superficie); border-top: 1px solid var(--linha); padding: 10px 0; display: flex; gap: 10px;
+    align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
+  .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+  .ferr select { width: auto; max-width: 220px; }
+  .inv-barra input { flex: 1 1 260px; max-width: 420px; }
+</style>
+</head>
+<body data-modulo="inventario" data-titulo="Inventário">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Inventário (contagem)</h1>
+    <p class="sub">Conte o que está na prateleira e digite a quantidade. Ao salvar, o saldo do sistema fica igual ao contado e a diferença vai para o extrato. Deixe em branco o que não contou.</p></div></div>
+  <div class="barra-ferr">
+    <div class="abas" id="abas"></div>
+    <div class="ferr">
+      <input id="fBusca" class="busca" type="search" placeholder="Buscar: código, descrição, local…" title="Palavras em qualquer ordem">
+      <select id="fLocal" data-simples title="Local"><option value="">Todos os locais</option><option value="-">Sem local</option></select>
+      <select id="fGrupo" title="Grupo"><option value="">Todos os grupos</option></select>
+      <label class="chk"><input type="checkbox" id="fSaldo"> mostrar saldo do sistema</label>
+      <button class="btn fino" id="btnFolha" type="button">Imprimir folha de contagem</button>
+    </div>
+  </div>
+  <div class="barra-lista"><span id="contagem"></span></div>
+  <div class="cartao tabela-rolagem">
+    <table>
+      <thead><tr><th>Código</th><th>Descrição</th><th>Local</th><th>Un</th><th class="num col-saldo" hidden>Saldo no sistema</th><th class="num">Contado</th></tr></thead>
+      <tbody id="lista"><tr><td colspan="6" class="vazio">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+  <p class="sub" id="rodape" style="margin-top:10px"></p>
+  <div class="inv-barra" id="barra">
+    <span id="nCont" class="sub">Nada digitado</span>
+    <input id="obs" placeholder="Observação (ex.: inventário geral nov/26, contado por…)">
+    <button class="btn discreto" id="btnLimpar">Limpar digitação</button>
+    <button class="btn primario" id="btnSalvar" disabled>Salvar contagem</button>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610302013"></script>
+<script src="../../assets/js/ui.js?v=202610302013"></script>
+<script src="../../assets/js/auth.js?v=202610302013"></script>
+<script src="../../assets/js/layout.js?v=202610302013"></script>
+<script>
+/* Contagem em lote: o digitado fica guardado na tela (CONTADO) enquanto troca filtros; salva tudo de uma vez.
+   "Saldo do sistema" fica escondido por padrão para a contagem ser às cegas. */
+const $ = s => document.querySelector(s);
+const qt = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const ORIG = [{ id: '', nome: 'Todos' }, { id: 'materia_prima', nome: 'Matéria-prima' }, { id: 'componente', nome: 'Adquirido pronto' },
+  { id: 'insumo', nome: 'Insumo' }, { id: 'semiacabado', nome: 'Semiacabado' }, { id: 'acabado', nome: 'Produto pronto' }, { id: 'kit', nome: 'Kit' }, { id: 'ferramenta', nome: 'Ferramenta' }];
+let CTX = null, PRODUTOS = [], SALDOS = new Map(), LOCAIS = [], aba = '';
+const CONTADO = new Map();   // produto_id → quantidade digitada
+const CHAVE = 'nox_inventario_rascunho';
+const guardar = () => { try { localStorage.setItem(CHAVE, JSON.stringify([...CONTADO])); } catch {} };
+
+async function carregar() {
+  const [p, s, l] = await Promise.all([
+    buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, tipo, grupo, local_id').eq('situacao', 'ativo').eq('controla_estoque', true).neq('tipo', 'despesa').order('codigo')),
+    db.rpc('estoque_saldos'), db.from('locais_estoque').select('id, codigo, descricao, situacao').order('codigo')]);
+  if (s.error) return aviso('Erro: ' + s.error.message, true);
+  PRODUTOS = p || []; LOCAIS = l.data || []; SALDOS = new Map((s.data || []).map(x => [x.produto_id, Number(x.saldo)]));
+  const lv = $('#fLocal').value, gv = $('#fGrupo').value;
+  $('#fLocal').innerHTML = '<option value="">Todos os locais</option><option value="-">Sem local</option>' + LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(x.codigo)}</option>`).join('');
+  $('#fGrupo').innerHTML = '<option value="">Todos os grupos</option>' + [...new Set(PRODUTOS.map(x => x.grupo).filter(Boolean))].sort().map(g => `<option>${esc(g)}</option>`).join('');
+  $('#fLocal').value = lv; $('#fGrupo').value = gv;
+  desenhar();
+}
+const local = id => LOCAIS.find(x => x.id === id);
+function filtrados() {
+  const b = $('#fBusca').value, fl = $('#fLocal').value, fg = $('#fGrupo').value;
+  return PRODUTOS.filter(p => (!aba || p.tipo === aba) && (fl === '-' ? !p.local_id : !fl || String(p.local_id) === fl) && (!fg || p.grupo === fg)
+    && (!b || combinaBusca([p.codigo, p.descricao, p.grupo, local(p.local_id)?.codigo].join(' '), b)));
+}
+function desenhar() {
+  const mostra = $('#fSaldo').checked;
+  document.querySelectorAll('.col-saldo').forEach(x => x.hidden = !mostra);
+  $('#abas').innerHTML = ORIG.map(o => `<button class="aba${o.id === aba ? ' ativa' : ''}" data-v="${o.id}">${o.nome}</button>`).join('');
+  $('#abas').querySelectorAll('[data-v]').forEach(b => b.onclick = () => { aba = b.dataset.v; desenhar(); });
+  const ls = filtrados(), MAX = 400;
+  $('#contagem').textContent = `${ls.length} produto(s)`;
+  $('#lista').innerHTML = ls.length ? ls.slice(0, MAX).map(p => { const c = CONTADO.get(p.id), s = SALDOS.get(p.id) || 0;
+    return `<tr data-id="${p.id}" class="${c == null ? '' : mostra && c !== s ? 'difere' : 'contado'}"><td><b>${esc(p.codigo || '—')}</b></td><td>${esc(p.descricao)}</td>
+      <td>${local(p.local_id) ? esc(local(p.local_id).codigo) : ''}</td><td>${esc(p.unidade || '')}</td>
+      <td class="num col-saldo${s < 0 ? ' neg' : ''}"${mostra ? '' : ' hidden'}>${qt(s)}</td>
+      <td class="num"><input data-c="${p.id}" inputmode="decimal" value="${c == null ? '' : qt(c)}"></td></tr>`; }).join('')
+    : '<tr><td colspan="6" class="vazio">Nenhum produto com esses filtros.</td></tr>';
+  $('#rodape').textContent = ls.length > MAX ? `Mostrando os primeiros ${MAX}. Filtre por local, grupo ou busca para contar os demais.` : '';
+  $('#lista').querySelectorAll('input[data-c]').forEach(inp => {
+    inp.onchange = () => { const id = +inp.dataset.c, v = inp.value.trim(), n = lerNumero(v);
+      if (!v) CONTADO.delete(id); else if (n == null || isNaN(n) || n < 0) { aviso('Quantidade inválida', true); inp.value = ''; CONTADO.delete(id); }
+      else CONTADO.set(id, n);
+      guardar(); resumo(); const tr = inp.closest('tr'), s = SALDOS.get(id) || 0;
+      tr.className = !CONTADO.has(id) ? '' : $('#fSaldo').checked && CONTADO.get(id) !== s ? 'difere' : 'contado'; };
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const t = [...document.querySelectorAll('input[data-c]')]; t[t.indexOf(inp) + 1]?.focus(); } };
+  });
+  resumo();
+}
+function resumo() {
+  const n = CONTADO.size, dif = [...CONTADO].filter(([id, c]) => c !== (SALDOS.get(id) || 0)).length;
+  $('#nCont').textContent = n ? `${n} item(ns) contado(s) · ${dif} mudam o saldo` : 'Nada digitado';
+  $('#btnSalvar').disabled = !n || !(CTX.pode('inventario', 'criar') || CTX.pode('estoque', 'editar'));
+}
+async function salvar() {
+  const n = CONTADO.size; if (!n) return;
+  if (!confirm(`Salvar a contagem de ${n} item(ns)? O saldo de cada um passa a ser o contado.`)) return;
+  $('#btnSalvar').disabled = true;
+  const itens = [...CONTADO].map(([produto_id, contado]) => ({ produto_id, contado }));
+  let feitos = 0, dif = 0;
+  for (let i = 0; i < itens.length; i += 200) {
+    const { data, error } = await db.rpc('estoque_contagem', { p_itens: itens.slice(i, i + 200), p_obs: $('#obs').value.trim() || null });
+    if (error) { aviso(`Parou depois de ${feitos} item(ns): ${error.message}`, true); break; }
+    feitos += data.contados; dif += data.com_diferenca;
+    itens.slice(i, i + 200).forEach(x => CONTADO.delete(x.produto_id));
+  }
+  guardar(); if (feitos) aviso(`Contagem salva: ${feitos} item(ns), ${dif} com diferença`);
+  carregar();
+}
+function folha() {
+  const ls = filtrados(), mostra = $('#fSaldo').checked;
+  if (!ls.length) return aviso('Nada para imprimir com esses filtros', true);
+  imprimirRelatorio({ arquivo: 'folha_contagem', titulo: 'Folha de contagem' + ($('#fLocal').value ? ' · local ' + ($('#fLocal').selectedOptions[0].text) : ''),
+    colunas: ['Código', 'Descrição', 'Local', 'Un', ...(mostra ? ['Sistema'] : []), 'Contado'],
+    linhas: ls.map(p => [p.codigo, p.descricao, local(p.local_id)?.codigo || '', p.unidade || '', ...(mostra ? [qt(SALDOS.get(p.id) || 0)] : []), '____________']) });
+}
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  try { JSON.parse(localStorage.getItem(CHAVE) || '[]').forEach(([k, v]) => CONTADO.set(k, v)); } catch {}
+  $('#fBusca').addEventListener('input', desenhar);
+  ['#fLocal', '#fGrupo', '#fSaldo'].forEach(s => $(s).onchange = desenhar);
+  $('#btnSalvar').onclick = salvar; $('#btnFolha').onclick = folha;
+  $('#btnLimpar').onclick = () => { if (CONTADO.size && !confirm('Apagar o que foi digitado e não salvo?')) return; CONTADO.clear(); guardar(); desenhar(); };
+  if (!(CTX.pode('inventario', 'criar') || CTX.pode('estoque', 'editar'))) $('#barra').hidden = true;
+  carregar();
+})();
+</script>
+</body>
+</html>

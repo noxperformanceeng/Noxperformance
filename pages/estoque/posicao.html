@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Posição de estoque · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610302013">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202610302013">
+<style>
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .neg { color: #b42318; font-weight: 600; }
+  .baixo { color: #92400e; font-weight: 600; }
+  .es-topo { display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline; margin: 4px 0 10px; }
+  .es-topo .grande { font-size: 22px; font-weight: 700; }
+  .es-acoes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .es-form { background: var(--fundo, #f6f7f9); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  tr.clic { cursor: pointer; }
+</style>
+</head>
+<body data-modulo="estoque" data-titulo="Posição de estoque">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Posição de estoque</h1>
+    <p class="sub">Saldo de cada produto, onde fica guardado e tudo o que entrou e saiu. Clique no produto para ver o extrato e movimentar.</p></div></div>
+  <div class="barra-ferr">
+    <div class="abas" id="abas"></div>
+    <div class="ferr">
+      <input id="fBusca" class="busca" type="search" placeholder="Buscar: código, descrição, local…" title="Palavras em qualquer ordem">
+      <button class="btn fino" type="button" id="btnFiltros">Filtros<span class="nfilt" id="nFiltros"></span></button>
+      <div id="rel"></div>
+    </div>
+  </div>
+  <div class="cartao filtros painel-filtros" hidden>
+    <div><label>Saldo</label><select id="fSaldo"><option value="">Todos</option><option value="com">Com saldo</option><option value="zero">Zerado</option><option value="neg">Negativo</option><option value="min">Abaixo do mínimo</option></select></div>
+    <div><label>Local</label><select id="fLocal"><option value="">Todos</option><option value="-">Sem local</option></select></div>
+    <div><label>Grupo</label><select id="fGrupo"><option value="">Todos</option></select></div>
+    <div><label>Contagem</label><select id="fCont"><option value="">Todos</option><option value="nunca">Nunca contado</option><option value="30">Contado há mais de 30 dias</option></select></div>
+    <div class="limpar"><button class="btn discreto fino" type="button" id="btnLimpar">Limpar filtros</button></div>
+  </div>
+  <div class="barra-lista"><span id="contagem"></span><div class="lote" id="lote" hidden></div></div>
+  <div class="cartao tabela-rolagem">
+    <table>
+      <thead><tr>
+        <th style="width:28px" class="nao-imprimir"><input type="checkbox" id="selTodos" title="Selecionar todos os listados"></th>
+        <th>Código</th><th>Descrição</th><th>Local</th><th>Un</th><th class="num">Saldo</th><th class="num">Mínimo</th><th>Última contagem</th><th>Último movimento</th>
+      </tr></thead>
+      <tbody id="lista"><tr><td colspan="9" class="vazio">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+  <p class="sub" id="rodape" style="margin-top:10px"></p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610302013"></script>
+<script src="../../assets/js/ui.js?v=202610302013"></script>
+<script src="../../assets/js/auth.js?v=202610302013"></script>
+<script src="../../assets/js/layout.js?v=202610302013"></script>
+<script>
+/* Saldo = soma dos movimentos (compras, produção, consumo, vendas, contagens, avulsos). Só produtos ativos que
+   controlam estoque. Contagem e local também em lote na tela Inventário. */
+const $ = s => document.querySelector(s);
+const qt = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const dia = v => v ? new Date(v).toLocaleDateString('pt-BR') : '';
+const ORIG = [{ id: '', nome: 'Todos' }, { id: 'materia_prima', nome: 'Matéria-prima' }, { id: 'componente', nome: 'Adquirido pronto' },
+  { id: 'insumo', nome: 'Insumo' }, { id: 'semiacabado', nome: 'Semiacabado' }, { id: 'acabado', nome: 'Produto pronto' }, { id: 'kit', nome: 'Kit' }, { id: 'ferramenta', nome: 'Ferramenta' }];
+const TIPOS_MOV = { entrada_compra: 'Compra', saida: 'Venda / expedição', ajuste: 'Avulso', inventario: 'Contagem', envio_terceiro: 'Envio a terceiro',
+  retorno_terceiro: 'Retorno de terceiro', producao: 'Produção', consumo: 'Consumo na produção', perda: 'Perda' };
+let CTX = null, PRODUTOS = [], SALDOS = new Map(), LOCAIS = [], aba = '', selecionados = new Set();
+
+async function carregar() {
+  const [p, s, l] = await Promise.all([
+    buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, tipo, grupo, estoque_minimo, local_id').eq('situacao', 'ativo').eq('controla_estoque', true).neq('tipo', 'despesa').order('codigo')),
+    db.rpc('estoque_saldos'), db.from('locais_estoque').select('id, codigo, descricao, situacao').order('codigo')]);
+  if (s.error) return aviso('Erro: ' + s.error.message, true);
+  PRODUTOS = p || []; LOCAIS = l.data || [];
+  SALDOS = new Map((s.data || []).map(x => [x.produto_id, x]));
+  const lv = $('#fLocal').value, gv = $('#fGrupo').value;
+  $('#fLocal').innerHTML = '<option value="">Todos</option><option value="-">Sem local</option>' + LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(x.codigo)}${x.descricao ? ' · ' + esc(x.descricao) : ''}</option>`).join('');
+  const grupos = [...new Set(PRODUTOS.map(x => x.grupo).filter(Boolean))].sort();
+  $('#fGrupo').innerHTML = '<option value="">Todos</option>' + grupos.map(g => `<option>${esc(g)}</option>`).join('');
+  $('#fLocal').value = lv; $('#fGrupo').value = gv;
+  desenhar();
+}
+const local = id => LOCAIS.find(x => x.id === id);
+const saldo = p => Number(SALDOS.get(p.id)?.saldo || 0);
+
+function filtrados() {
+  const b = $('#fBusca').value, fs = $('#fSaldo').value, fl = $('#fLocal').value, fg = $('#fGrupo').value, fc = $('#fCont').value;
+  const lim = Date.now() - 30 * 864e5;
+  return PRODUTOS.filter(p => {
+    const s = saldo(p), info = SALDOS.get(p.id);
+    if (aba && p.tipo !== aba) return false;
+    if (fs === 'com' && !(s > 0)) return false;
+    if (fs === 'zero' && s !== 0) return false;
+    if (fs === 'neg' && !(s < 0)) return false;
+    if (fs === 'min' && !(p.estoque_minimo > 0 && s < p.estoque_minimo)) return false;
+    if (fl === '-' ? p.local_id : fl && String(p.local_id) !== fl) return false;
+    if (fg && p.grupo !== fg) return false;
+    if (fc === 'nunca' && info?.ultima_contagem) return false;
+    if (fc === '30' && (!info?.ultima_contagem || new Date(info.ultima_contagem) > lim)) return false;
+    return !b || combinaBusca([p.codigo, p.descricao, p.grupo, local(p.local_id)?.codigo, local(p.local_id)?.descricao].join(' '), b);
+  });
+}
+
+function desenhar() {
+  $('#abas').innerHTML = ORIG.map(o => `<button class="aba${o.id === aba ? ' ativa' : ''}" data-v="${o.id}">${o.nome}<span class="n">${PRODUTOS.filter(p => !o.id || p.tipo === o.id).length}</span></button>`).join('');
+  $('#abas').querySelectorAll('[data-v]').forEach(b => b.onclick = () => { aba = b.dataset.v; selecionados.clear(); desenhar(); });
+  contarFiltros(document);
+  const ls = filtrados(), MAX = 600;
+  $('#contagem').textContent = `${ls.length} produto(s)` + (ls.length ? ` · ${ls.filter(p => saldo(p) > 0).length} com saldo` : '');
+  $('#lista').innerHTML = ls.length ? ls.slice(0, MAX).map(p => { const s = saldo(p), i = SALDOS.get(p.id), l = local(p.local_id);
+    return `<tr class="clic" data-id="${p.id}"><td class="nao-imprimir"><input type="checkbox" data-sel="${p.id}"${selecionados.has(p.id) ? ' checked' : ''}></td>
+      <td><b>${esc(p.codigo || '—')}</b></td><td>${esc(p.descricao)}</td><td>${l ? esc(l.codigo) : '<span class="sub">—</span>'}</td><td>${esc(p.unidade || '')}</td>
+      <td class="num${s < 0 ? ' neg' : p.estoque_minimo > 0 && s < p.estoque_minimo ? ' baixo' : ''}">${qt(s)}</td>
+      <td class="num">${p.estoque_minimo ? qt(p.estoque_minimo) : ''}</td><td>${dia(i?.ultima_contagem)}</td><td>${dia(i?.ultimo_mov)}</td></tr>`; }).join('')
+    : '<tr><td colspan="9" class="vazio">Nenhum produto com esses filtros.</td></tr>';
+  $('#rodape').textContent = ls.length > MAX ? `Mostrando os primeiros ${MAX}. Use a busca ou os filtros para achar os demais.` : '';
+  $('#lista').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = e => { if (e.target.closest('input')) return; abrir(Number(tr.dataset.id)); });
+  $('#lista').querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? selecionados.add(+c.dataset.sel) : selecionados.delete(+c.dataset.sel); lote(); });
+  lote();
+}
+
+function lote() {
+  const el = $('#lote'), n = selecionados.size, pode = CTX.pode('estoque', 'alterar') || CTX.pode('almoxarifado', 'alterar');
+  el.hidden = !n || !pode; if (el.hidden) return;
+  el.innerHTML = `${n} selecionado(s) · <select id="loteLocal" data-simples><option value="">— local —</option>${LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(x.codigo)}</option>`).join('')}<option value="-">Tirar o local</option></select> <button class="btn fino" id="loteOk">Definir local</button> <button class="btn discreto fino" id="loteLimpa">Limpar seleção</button>`;
+  $('#loteOk').onclick = async () => { const v = $('#loteLocal').value; if (!v) return aviso('Escolha o local', true);
+    const { error } = await db.rpc('estoque_definir_local', { p_produtos: [...selecionados], p_local: v === '-' ? null : Number(v) });
+    if (error) return aviso('Não salvou: ' + error.message, true); aviso('Local definido'); selecionados.clear(); carregar(); };
+  $('#loteLimpa').onclick = () => { selecionados.clear(); desenhar(); };
+}
+
+async function abrir(id) {
+  const p = PRODUTOS.find(x => x.id === id); if (!p) return;
+  const podeMov = CTX.pode('estoque', 'criar') || CTX.pode('almoxarifado', 'criar'), podeCont = CTX.pode('inventario', 'criar') || CTX.pode('estoque', 'editar');
+  const podeLocal = CTX.pode('estoque', 'alterar') || CTX.pode('almoxarifado', 'alterar');
+  const m = abrirModal(`<h2>${esc(p.codigo || '')} · ${esc(p.descricao)}</h2>
+    <div class="es-topo"><div><div class="sub">Saldo</div><div class="grande${saldo(p) < 0 ? ' neg' : ''}">${qt(saldo(p))} ${esc(p.unidade || '')}</div></div>
+      <div><div class="sub">Local</div><div>${local(p.local_id) ? esc(local(p.local_id).codigo) : '—'}</div></div>
+      ${p.estoque_minimo ? `<div><div class="sub">Mínimo</div><div>${qt(p.estoque_minimo)}</div></div>` : ''}</div>
+    <div class="es-acoes">
+      ${podeCont ? '<button class="btn fino primario" data-f="cont">Contagem</button>' : ''}
+      ${podeMov ? '<button class="btn fino" data-f="ent">Entrada avulsa</button><button class="btn fino" data-f="sai">Saída avulsa</button>' : ''}
+      ${podeLocal ? '<button class="btn fino" data-f="loc">Local</button>' : ''}
+    </div>
+    <div id="esForm"></div>
+    <h3 style="font-size:14px;margin:6px 0 0">Extrato</h3>
+    <div id="esExt" class="sub">Carregando…</div>
+    <div class="fb-bts"><button class="btn" id="esFechar">Fechar</button></div>`);
+  m.querySelector('.modal').style.cssText += ';width:min(860px, calc(100vw - 32px));max-width:none';
+  const q = s => m.querySelector(s), un = esc(p.unidade || '');
+  q('#esFechar').onclick = () => m.remove();
+  const extrato = async () => {
+    const { data, error } = await db.rpc('estoque_extrato', { p_produto: id, p_limite: 200 });
+    if (error) { q('#esExt').textContent = 'Erro: ' + error.message; return; }
+    q('#esExt').innerHTML = !data.length ? 'Nenhum movimento ainda.' : `<table class="fb-tab"><thead><tr><th>Data</th><th>Tipo</th><th class="num">Quantidade</th><th class="num">Saldo</th><th>Detalhe</th><th>Quem</th></tr></thead><tbody>
+      ${data.map(x => `<tr><td>${dataHoraBR(x.data)}</td><td>${TIPOS_MOV[x.tipo] || x.tipo}</td><td class="num${x.quantidade < 0 ? ' neg' : ''}">${x.quantidade > 0 ? '+' : ''}${qt(x.quantidade)}</td><td class="num">${qt(x.saldo)}</td><td>${esc(x.obs || '')}</td><td>${esc(x.quem || '')}</td></tr>`).join('')}</tbody></table>`;
+  };
+  const recarregar = async () => { await carregar(); m.remove(); abrir(id); };
+  m.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
+    const f = b.dataset.f, box = q('#esForm');
+    if (f === 'cont') box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div><label>Quantidade contada (${un})</label><input id="fQ" inputmode="decimal"></div>
+      <div class="l3"><label>Observação (opcional)</label><input id="fO" placeholder="ex.: contagem geral, quem contou"></div></div>
+      <p class="sub" style="margin:6px 0 0">O saldo passa a ser o que foi contado; a diferença fica registrada no extrato.</p>
+      <div class="fb-bts"><button class="btn primario" id="fOk">Salvar contagem</button></div></div>`;
+    else if (f === 'ent' || f === 'sai') box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div><label>Quantidade (${un})</label><input id="fQ" inputmode="decimal"></div>
+      <div class="${f === 'ent' ? 'l2' : 'l3'}"><label>Motivo</label><input id="fO" placeholder="${f === 'ent' ? 'ex.: devolução de cliente, sobra de obra' : 'ex.: amostra, uso interno, brinde'}"></div>
+      ${f === 'ent' ? '<div><label>Custo unitário (opcional)</label><input id="fC" inputmode="decimal" placeholder="R$"></div>' : ''}</div>
+      <div class="fb-bts"><button class="btn primario" id="fOk">${f === 'ent' ? 'Dar entrada' : 'Dar saída'}</button></div></div>`;
+    else box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div class="l3"><label>Local de armazenagem</label><select id="fL"><option value="">— sem local —</option>${LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}"${x.id === p.local_id ? ' selected' : ''}>${esc(x.codigo)}${x.descricao ? ' · ' + esc(x.descricao) : ''}</option>`).join('')}</select></div></div>
+      ${LOCAIS.length ? '' : `<p class="sub">Nenhum local cadastrado. <a href="${RAIZ}pages/cadastros/locais.html?novo=1">Cadastrar locais</a></p>`}
+      <div class="fb-bts"><button class="btn primario" id="fOk">Salvar local</button></div></div>`;
+    q('#fQ')?.focus();
+    q('#fOk').onclick = async () => {
+      let r;
+      if (f === 'loc') r = await db.rpc('estoque_definir_local', { p_produtos: [id], p_local: q('#fL').value ? Number(q('#fL').value) : null });
+      else {
+        const n = lerNumero(q('#fQ').value), o = q('#fO').value.trim();
+        if (n == null || n < 0 || (f !== 'cont' && n === 0)) return aviso('Informe a quantidade', true);
+        if (f !== 'cont' && !o) return aviso('Informe o motivo', true);
+        if (f === 'cont') r = await db.rpc('estoque_contagem', { p_itens: [{ produto_id: id, contado: n }], p_obs: o || null });
+        else r = await db.rpc('estoque_movimento_avulso', { p_produto: id, p_sentido: f === 'ent' ? 'entrada' : 'saida', p_quantidade: n, p_motivo: o, p_custo: f === 'ent' ? lerNumero(q('#fC').value) : null });
+      }
+      if (r.error) return aviso('Não salvou: ' + r.error.message, true);
+      aviso('Salvo'); recarregar();
+    };
+  });
+  extrato();
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  ligarPainelFiltros(document, 'estoque', desenhar);
+  ['#fSaldo', '#fLocal', '#fGrupo', '#fCont'].forEach(s => $(s).onchange = desenhar);
+  $('#fBusca').addEventListener('input', desenhar);
+  $('#selTodos').onchange = e => { filtrados().slice(0, 600).forEach(p => e.target.checked ? selecionados.add(p.id) : selecionados.delete(p.id)); desenhar(); };
+  botoesRelatorio('rel', () => ({ arquivo: 'posicao_estoque', titulo: 'Posição de estoque',
+    colunas: ['Código', 'Descrição', 'Origem', 'Grupo', 'Local', 'Un', 'Saldo', 'Mínimo', 'Última contagem', 'Último movimento'],
+    linhas: filtrados().map(p => [p.codigo, p.descricao, ORIG.find(o => o.id === p.tipo)?.nome || p.tipo, p.grupo, local(p.local_id)?.codigo || '', p.unidade,
+      qt(saldo(p)), p.estoque_minimo ? qt(p.estoque_minimo) : '', dia(SALDOS.get(p.id)?.ultima_contagem), dia(SALDOS.get(p.id)?.ultimo_mov)]) }));
+  window.addEventListener('aba-ativa', carregar);
+  carregar();
+})();
+</script>
+</body>
+</html>
