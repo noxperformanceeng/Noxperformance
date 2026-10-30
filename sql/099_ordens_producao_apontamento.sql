@@ -52,7 +52,7 @@ create index if not exists producao_ordens_produto on public.producao_ordens (pr
 -- material da OP: cópia da ficha técnica no momento em que a OP foi aberta
 create table if not exists public.producao_ordens_materiais (
   id           bigint generated always as identity primary key,
-  ordem_id     bigint not null references public.producao_ordens(id) on delete cascade,
+  ordem_id     bigint not null references public.producao_ordens(id),
   produto_id   bigint not null references public.produtos(id),
   por_unidade  numeric(14,4) not null check (por_unidade > 0),
   unidade      text,
@@ -98,10 +98,10 @@ create policy "ver materiais das ordens" on public.producao_ordens_materiais for
 drop policy if exists "ver apontamentos" on public.producao_apontamentos;
 create policy "ver apontamentos" on public.producao_apontamentos for select to authenticated
   using ((select public.pode('ordens')) or (select public.pode('apontamento')) or (select public.pode('estoque')) or (select public.pode('almoxarifado')));
-drop policy if exists "ver estoque movimentos" on public.estoque_movimentos;
-create policy "ver estoque movimentos" on public.estoque_movimentos for select to authenticated
-  using ((select public.pode('estoque')) or (select public.pode('almoxarifado')) or (select public.pode('compras'))
-      or (select public.pode('notas')) or (select public.pode('apontamento')));
+-- quem aponta produção também enxerga os movimentos de estoque (política a mais, somada à que já existe)
+drop policy if exists "ver estoque movimentos producao" on public.estoque_movimentos;
+create policy "ver estoque movimentos producao" on public.estoque_movimentos for select to authenticated
+  using ((select public.pode('apontamento')) or (select public.pode('ordens')));
 
 -- ---------- Funções internas ----------
 -- custo médio por unidade de estoque: entradas com custo; sem entrada, o preço do fornecedor
@@ -110,7 +110,8 @@ returns numeric language sql stable security definer set search_path = public as
   select coalesce(
     (select round(sum(quantidade * custo_unitario) / nullif(sum(quantidade), 0), 6)
        from public.estoque_movimentos
-      where produto_id = p_produto and quantidade > 0 and custo_unitario is not null and tipo in ('entrada_compra', 'producao')),
+      where produto_id = p_produto and quantidade > 0 and custo_unitario is not null and tipo in ('entrada_compra', 'producao')
+        and (apontamento_id is null or not exists (select 1 from public.producao_apontamentos a where a.id = apontamento_id and a.situacao = 'estornado'))),
     (select round(f.preco / coalesce(nullif(f.fator_compra, 0), nullif(p.fator_compra, 0), 1), 6)
        from public.produto_fornecedores f join public.produtos p on p.id = f.produto_id
       where f.produto_id = p_produto and f.preco is not null
@@ -216,6 +217,9 @@ begin
            cancelamento_motivo = trim(p_motivo), atualizado_em = now() where id = p_id;
   elsif p_acao = 'reabrir' then
     if o.situacao not in ('concluida', 'cancelada') then raise exception 'A OP já está em aberto'; end if;
+    if o.situacao = 'concluida' and not o.encerrada_manual then
+      raise exception 'A % já produziu toda a quantidade. Para fazer mais, abra outra OP.', o.numero;
+    end if;
     update public.producao_ordens set situacao = 'aberta', encerrada_manual = false, encerrada_por = null, encerramento_motivo = null,
            cancelada_em = null, cancelada_por = null, cancelamento_motivo = null, concluida_em = null where id = p_id;
   else
@@ -268,6 +272,9 @@ begin
   if o.situacao not in ('aberta', 'em_producao') then raise exception 'A % está % — não recebe apontamento', o.numero, o.situacao; end if;
   select * into v_p from public.produtos where id = o.produto_id;
   if p_data > (now() at time zone 'America/Sao_Paulo')::date then raise exception 'A data não pode ser futura'; end if;
+  if p_data < (now() at time zone 'America/Sao_Paulo')::date - 30 and not public.pode('apontamento', 'editar') then
+    raise exception 'Apontamento com mais de 30 dias atrás: peça para o líder de produção lançar';
+  end if;
   v_quando := case when p_data is null or p_data = (now() at time zone 'America/Sao_Paulo')::date then now()
                    else (p_data + time '12:00') at time zone 'America/Sao_Paulo' end;
 
@@ -397,4 +404,5 @@ select pf.id, 'apontamento', 'editar' from public.perfis pf where pf.nome = 'Est
 on conflict do nothing;
 
 select public.ligar_auditoria('producao_ordens');
+select public.ligar_auditoria('producao_ordens_materiais');
 select public.ligar_auditoria('producao_apontamentos');
