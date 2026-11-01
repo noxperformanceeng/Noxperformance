@@ -86,15 +86,16 @@ Deno.serve(async req => {
   const { data: cfg } = await db.from('integracao_config').select('valor').eq('chave', 'chave_interna').maybeSingle();
   if (!cfg?.valor || req.headers.get('x-nox-chave') !== cfg.valor) return resp({ erro: 'Sem permissão' }, 403);
   const corpo = await req.json().catch(() => ({})) as { itens?: Item[]; fotos?: { produtos: number[]; previa?: boolean; escala?: number; substituir?: boolean; folha?: boolean; recortes?: Record<string, number[]> } };
-  // Foto a partir do desenho já anexado (PDF de dobra, ou de corte): 1ª página vira a foto principal do produto.
+  // Foto a partir do desenho já anexado (PDF de dobra, de corte ou de montagem): 1ª página vira a foto principal do produto.
   // previa: só devolve a imagem (base64) para conferir, sem gravar.
   if (corpo.fotos) {
     const res: unknown[] = [];
     for (const pid of corpo.fotos.produtos || []) {
       try {
         const { data: arqs } = await db.from('produto_arquivos').select('nome, caminho, finalidade, obsoleto, revisao_data, id')
-          .eq('produto_id', pid).in('finalidade', ['dobra_pdf', 'corte_pdf']).order('obsoleto').order('revisao_data', { ascending: false, nullsFirst: false }).order('id', { ascending: false });
-        const a = (arqs || []).find(x => x.finalidade === 'dobra_pdf') || (arqs || [])[0];
+          .eq('produto_id', pid).in('finalidade', ['dobra_pdf', 'corte_pdf', 'montagem']).order('obsoleto').order('revisao_data', { ascending: false, nullsFirst: false }).order('id', { ascending: false });
+        // preferência: dobra > corte > montagem (conjuntos DF só têm o desenho montado)
+        const a = ['dobra_pdf', 'corte_pdf', 'montagem'].map(f => (arqs || []).find(x => x.finalidade === f && !x.obsoleto)).find(Boolean) || (arqs || [])[0];
         if (!a) { res.push({ produto_id: pid, erro: 'sem PDF' }); continue; }
         const dl = await db.storage.from('produtos').download(a.caminho);
         if (dl.error || !dl.data) throw new Error('download: ' + dl.error?.message);
