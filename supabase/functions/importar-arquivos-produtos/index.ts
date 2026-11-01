@@ -3,6 +3,8 @@
 // ou da pasta temporária _envio do site (foto enviada no chat), ou o arquivo embutido (base64). tipo 'foto' vira a foto principal se o produto não tiver.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as mupdf from 'npm:mupdf@1';
+import { decode, encode } from 'npm:fast-png@6';
+import jpeg from 'npm:jpeg-js@0.4.4';
 
 const resp = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { 'Content-Type': 'application/json' } });
 type Item = { produto_id: number; url?: string; base64?: string; nome: string; tipo: 'desenho' | 'outro' | 'foto'; caminho: string; mime?: string;
@@ -65,7 +67,51 @@ function recortar(pg: any, f: number[], lado: number): Uint8Array {
   const dev = new mupdf.DrawDevice(mupdf.Matrix.scale(e, e), pix); pg.run(dev, mupdf.Matrix.identity); dev.close();
   return pix.asPNG();
 }
+/* Peça desenhada "pintada de preto" vira cinza claro: se o que não é fundo branco é escuro (média < 110),
+   clareia com uma curva (gama) calculada para a média ficar perto de 185 — mantém o sombreado, fundo continua branco. */
+function clarearPng(png: Uint8Array): { png: Uint8Array; mudou: boolean } {
+  const im = decode(png), ch = im.channels, d = im.data as Uint8Array;
+  if (im.depth !== 8 || ch < 3) return { png, mudou: false };
+  let soma = 0, qt = 0;
+  for (let i = 0; i < d.length; i += ch) { if (ch === 4 && d[i + 3] < 128) continue; const l = (d[i] + d[i + 1] + d[i + 2]) / 3; if (l < 235) { soma += l; qt++; } }
+  const media = qt ? soma / qt : 255;
+  // só peça "cheia" (sombreada) — desenho de traço tem pouca área escura e fica como está
+  if (qt < .15 * (d.length / ch) || media >= 110) return { png, mudou: false };
+  const g = Math.log(185 / 255) / Math.log(Math.max(media, 5) / 255), tab = new Uint8Array(256);
+  for (let v = 0; v < 256; v++) tab[v] = Math.round(255 * Math.pow(v / 255, g));
+  for (let i = 0; i < d.length; i += ch) { d[i] = tab[d[i]]; d[i + 1] = tab[d[i + 1]]; d[i + 2] = tab[d[i + 2]]; }
+  return { png: encode({ width: im.width, height: im.height, data: d, channels: ch, depth: 8 }), mudou: true };
+}
+// mesma coisa para JPG (fotos importadas): decodifica, clareia e regrava com boa qualidade
+function clarearImg(b: Uint8Array, jpg: boolean): { img: Uint8Array; mudou: boolean } {
+  if (!jpg) { const r = clarearPng(b); return { img: r.png, mudou: r.mudou }; }
+  const im = jpeg.decode(b, { useTArray: true, formatAsRGBA: true }), d = im.data as Uint8Array;
+  const png = encode({ width: im.width, height: im.height, data: d, channels: 4, depth: 8 });
+  const r = clarearPng(png); if (!r.mudou) return { img: b, mudou: false };
+  const c = decode(r.png);
+  return { img: new Uint8Array(jpeg.encode({ data: c.data, width: c.width, height: c.height }, 90).data), mudou: true };
+}
+// desfaz um clareamento: acha a curva usada (a que, desfeita, devolve a mesma média) e aplica a inversa
+function desfazerClarear(png: Uint8Array): Uint8Array {
+  const im = decode(png), ch = im.channels, d = im.data as Uint8Array;
+  const hist = new Float64Array(256 * 3);   // histograma da luminância (soma dos 3 canais) para acelerar
+  for (let i = 0; i < d.length; i += ch) hist[d[i] + d[i + 1] + d[i + 2]]++;
+  let melhor = 1, erro = 1e9;
+  for (let g = .08; g < .8; g += .002) {
+    let s = 0, q = 0;
+    for (let k = 0; k < hist.length; k++) { if (!hist[k]) continue; const l = 255 * Math.pow(k / 3 / 255, 1 / g); if (l < 235) { s += l * hist[k]; q += hist[k]; } }
+    if (!q) continue; const gi = Math.log(185 / 255) / Math.log(Math.max(s / q, 5) / 255);
+    if (Math.abs(gi - g) < erro) { erro = Math.abs(gi - g); melhor = g; }
+  }
+  const tab = new Uint8Array(256); for (let v = 0; v < 256; v++) tab[v] = Math.round(255 * Math.pow(v / 255, 1 / melhor));
+  for (let i = 0; i < d.length; i += ch) { d[i] = tab[d[i]]; d[i + 1] = tab[d[i + 1]]; d[i + 2] = tab[d[i + 2]]; }
+  return encode({ width: im.width, height: im.height, data: d, channels: ch, depth: 8 });
+}
 async function fotoIso(pdf: Uint8Array, lado = 800, manual?: number[]): Promise<{ png: Uint8Array; iso: boolean; tx?: number }> {
+  const r = await fotoIsoBruta(pdf, lado, manual);
+  return r.iso ? { ...r, png: clarearPng(r.png).png } : r;
+}
+async function fotoIsoBruta(pdf: Uint8Array, lado = 800, manual?: number[]): Promise<{ png: Uint8Array; iso: boolean; tx?: number }> {
   const doc = mupdf.Document.openDocument(pdf, 'application/pdf'), pg = doc.loadPage(0);
   if (manual) return { png: recortar(pg, manual, lado), iso: true };
   const [x0, y0, x1, y1] = pg.getBounds(), W = x1 - x0, H = y1 - y0, e1 = 1400 / Math.max(W, H);
@@ -85,7 +131,73 @@ Deno.serve(async req => {
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
   const { data: cfg } = await db.from('integracao_config').select('valor').eq('chave', 'chave_interna').maybeSingle();
   if (!cfg?.valor || req.headers.get('x-nox-chave') !== cfg.valor) return resp({ erro: 'Sem permissão' }, 403);
-  const corpo = await req.json().catch(() => ({})) as { itens?: Item[]; fotos?: { produtos: number[]; previa?: boolean; escala?: number; substituir?: boolean; folha?: boolean; recortes?: Record<string, number[]> } };
+  const corpo = await req.json().catch(() => ({})) as { itens?: Item[]; fotos?: { produtos: number[]; previa?: boolean; escala?: number; substituir?: boolean; folha?: boolean; recortes?: Record<string, number[]> };
+    clarear?: { produtos: number[]; ver?: boolean }; restaurar?: { produtos: number[] }; copiarFoto?: Record<string, number> };
+  if (corpo.restaurar) {
+    const res: unknown[] = [];
+    for (const pid of corpo.restaurar.produtos || []) {
+      try {
+        const { data: fs } = await db.from('produto_arquivos').select('id, caminho').eq('produto_id', pid).eq('tipo', 'foto').like('caminho', '%/foto-%-iso.png');
+        for (const f of fs || []) {
+          const dl = await db.storage.from('produtos').download(f.caminho);
+          if (dl.error || !dl.data) throw new Error('download: ' + dl.error?.message);
+          const png = desfazerClarear(new Uint8Array(await dl.data.arrayBuffer()));
+          const up = await db.storage.from('produtos').upload(f.caminho, png, { contentType: 'image/png', upsert: true });
+          if (up.error) throw new Error(up.error.message);
+          res.push({ produto_id: pid, ok: 'restaurada' });
+        }
+      } catch (e) { res.push({ produto_id: pid, erro: String((e as Error).message || e) }); }
+    }
+    return resp({ restaurar: res });
+  }
+  // Fotos geradas de desenho (foto-*-iso.png) que estão escuras (peça "pintada") passam a cinza claro, no mesmo arquivo.
+  if (corpo.clarear) {
+    const res: unknown[] = [];
+    for (const pid of corpo.clarear.produtos || []) {
+      try {
+        const { data: fs } = await db.from('produto_arquivos').select('id, caminho').eq('produto_id', pid).eq('tipo', 'foto').like('caminho', '%/foto-%');
+        for (const f of fs || []) {
+          const jpg = /\.jpe?g$/i.test(f.caminho);
+          if (!jpg && !/\.png$/i.test(f.caminho)) continue;
+          const dl = await db.storage.from('produtos').download(f.caminho);
+          if (dl.error || !dl.data) throw new Error('download: ' + dl.error?.message);
+          const bytes = new Uint8Array(await dl.data.arrayBuffer());
+          if (corpo.clarear.ver) { let b = ''; bytes.forEach(c => b += String.fromCharCode(c)); res.push({ produto_id: pid, caminho: f.caminho, b64: btoa(b) }); continue; }
+          const { img: png, mudou } = clarearImg(bytes, jpg);
+          if (!mudou) { res.push({ produto_id: pid, ok: 'já era clara' }); continue; }
+          const up = await db.storage.from('produtos').upload(f.caminho, png, { contentType: jpg ? 'image/jpeg' : 'image/png', upsert: true });
+          if (up.error) throw new Error(up.error.message);
+          await db.from('produto_arquivos').update({ tamanho: png.length }).eq('id', f.id);
+          res.push({ produto_id: pid, ok: 'clareada' });
+        }
+      } catch (e) { res.push({ produto_id: pid, erro: String((e as Error).message || e) }); }
+    }
+    return resp({ clarear: res });
+  }
+  // Copia a foto principal de um produto (ex.: a caixa) para outro sem foto (ex.: o conjunto DF): { destino: origem }
+  if (corpo.copiarFoto) {
+    const res: unknown[] = [];
+    for (const [dst, org] of Object.entries(corpo.copiarFoto)) {
+      const pid = Number(dst);
+      try {
+        const { count } = await db.from('produto_arquivos').select('id', { count: 'exact', head: true }).eq('produto_id', pid).eq('tipo', 'foto');
+        if (count) { res.push({ produto_id: pid, ok: 'já tinha foto' }); continue; }
+        const { data: f } = await db.from('produto_arquivos').select('caminho, mime').eq('produto_id', org).eq('tipo', 'foto').order('principal', { ascending: false }).limit(1).maybeSingle();
+        if (!f) { res.push({ produto_id: pid, erro: 'origem sem foto' }); continue; }
+        const dl = await db.storage.from('produtos').download(f.caminho);
+        if (dl.error || !dl.data) throw new Error('download: ' + dl.error?.message);
+        const bytes = new Uint8Array(await dl.data.arrayBuffer());
+        const { data: pr } = await db.from('produtos').select('codigo').eq('id', pid).single();
+        const cam = `${pid}/foto-${pr?.codigo || pid}-iso.png`;
+        const up = await db.storage.from('produtos').upload(cam, bytes, { contentType: f.mime || 'image/png', upsert: true });
+        if (up.error) throw new Error(up.error.message);
+        const ins = await db.from('produto_arquivos').insert({ produto_id: pid, tipo: 'foto', nome: `${pr?.codigo || pid}.png`, caminho: cam, mime: f.mime || 'image/png', tamanho: bytes.length, principal: true });
+        if (ins.error) throw new Error(ins.error.message);
+        res.push({ produto_id: pid, ok: 'foto copiada do produto ' + org });
+      } catch (e) { res.push({ produto_id: pid, erro: String((e as Error).message || e) }); }
+    }
+    return resp({ copiarFoto: res });
+  }
   // Foto a partir do desenho já anexado (PDF de dobra, de corte ou de montagem): 1ª página vira a foto principal do produto.
   // previa: só devolve a imagem (base64) para conferir, sem gravar.
   if (corpo.fotos) {
