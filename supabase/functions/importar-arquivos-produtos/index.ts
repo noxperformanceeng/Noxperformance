@@ -67,17 +67,18 @@ function recortar(pg: any, f: number[], lado: number): Uint8Array {
   const dev = new mupdf.DrawDevice(mupdf.Matrix.scale(e, e), pix); pg.run(dev, mupdf.Matrix.identity); dev.close();
   return pix.asPNG();
 }
-/* Peça desenhada "pintada de preto" vira cinza claro: se o que não é fundo branco é escuro (média < 110),
-   clareia com uma curva (gama) calculada para a média ficar perto de 185 — mantém o sombreado, fundo continua branco. */
+/* Peça desenhada "pintada de preto" vira cinza claro: se o que não é fundo branco é escuro (média < 120) e sem cor,
+   clareia com uma curva (gama) calculada para a média ficar perto de 170 — mantém o sombreado, fundo continua branco. */
 function clarearPng(png: Uint8Array): { png: Uint8Array; mudou: boolean } {
   const im = decode(png), ch = im.channels, d = im.data as Uint8Array;
   if (im.depth !== 8 || ch < 3) return { png, mudou: false };
-  let soma = 0, qt = 0;
-  for (let i = 0; i < d.length; i += ch) { if (ch === 4 && d[i + 3] < 128) continue; const l = (d[i] + d[i + 1] + d[i + 2]) / 3; if (l < 235) { soma += l; qt++; } }
+  let soma = 0, qt = 0, sat = 0;
+  for (let i = 0; i < d.length; i += ch) { if (ch === 4 && d[i + 3] < 128) continue; const l = (d[i] + d[i + 1] + d[i + 2]) / 3;
+    if (l < 235) { soma += l; qt++; sat += Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]); } }
   const media = qt ? soma / qt : 255;
-  // só peça "cheia" (sombreada) — desenho de traço tem pouca área escura e fica como está
-  if (qt < .15 * (d.length / ch) || media >= 110) return { png, mudou: false };
-  const g = Math.log(185 / 255) / Math.log(Math.max(media, 5) / 255), tab = new Uint8Array(256);
+  // só peça "cheia" (sombreada), escura e sem cor — desenho de traço e peça colorida (mangote, anodizado) ficam como estão
+  if (qt < .15 * (d.length / ch) || media >= 120 || sat / qt >= 12) return { png, mudou: false };
+  const g = Math.log(170 / 255) / Math.log(Math.max(media, 5) / 255), tab = new Uint8Array(256);
   for (let v = 0; v < 256; v++) tab[v] = Math.round(255 * Math.pow(v / 255, g));
   for (let i = 0; i < d.length; i += ch) { d[i] = tab[d[i]]; d[i + 1] = tab[d[i + 1]]; d[i + 2] = tab[d[i + 2]]; }
   return { png: encode({ width: im.width, height: im.height, data: d, channels: ch, depth: 8 }), mudou: true };
