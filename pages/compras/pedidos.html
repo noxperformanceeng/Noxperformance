@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611010347">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611010352">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,11 +49,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611010347"></script>
-<script src="../../assets/js/ui.js?v=202611010347"></script>
-<script src="../../assets/js/auth.js?v=202611010347"></script>
-<script src="../../assets/js/layout.js?v=202611010347"></script>
-<script src="../../assets/js/cadastro.js?v=202611010347"></script>
+<script src="../../assets/js/supabase.js?v=202611010352"></script>
+<script src="../../assets/js/ui.js?v=202611010352"></script>
+<script src="../../assets/js/auth.js?v=202611010352"></script>
+<script src="../../assets/js/layout.js?v=202611010352"></script>
+<script src="../../assets/js/cadastro.js?v=202611010352"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -375,35 +375,32 @@ const chipsArq = arqs => { const f = new Set(arqs.map(a => a.finalidade));
 const servPintura = () => SERVS.find(s => s.situacao === 'ativo' && /PINTURA/i.test(s.nome));
 function abrirConjunto() {
   const lista = PRODS.filter(p => CONJ.has(p.id) && p.situacao === 'ativo').sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
+  const sp = servPintura(), ultimo = (() => { try { return Number(localStorage.getItem('nox_pintor')) || null; } catch { return null; } })();
+  const pintor0 = ultimo && forn(ultimo) ? ultimo : sp?.fornecedor_id || '';
+  const fornAtivos = FORN.filter(f => f.situacao === 'ativo').sort((a, b) => (/PINT|COAT/i.test(nomeComFantasia(b)) - /PINT|COAT/i.test(nomeComFantasia(a))) || nomeComFantasia(a).localeCompare(nomeComFantasia(b)));
   const m = abrirModal(`<h2>Incluir conjunto (defletor, kit…)</h2>
-    <p class="sub" style="margin:0 0 8px">Escolha o conjunto pronto e quantos vai fazer. O sistema traz as peças de corte e dobra com o estoque de cada uma; os desenhos vão junto ao enviar o pedido.</p>
+    <p class="sub" style="margin:0 0 8px">Escolha o conjunto pronto e quantos vai fazer. As peças de corte e dobra entram neste pedido; a pintura sai numa OC separada, já em rascunho, no fornecedor que você escolher. Os desenhos vão junto ao enviar cada pedido.</p>
     <div class="grade-campos">
       <div class="campo l2"><label>Conjunto</label><select id="cjP"><option value="">— escolha (ex.: DF-002) —</option>${lista.map(p => `<option value="${p.id}">${esc(p.codigo + ' · ' + p.descricao)}</option>`).join('')}</select></div>
       <div class="campo"><label>Quantos conjuntos</label><input id="cjQ" inputmode="decimal" value="1"></div>
-      <div class="campo"><label>Este pedido é de</label><select id="cjM" data-simples><option value="corte">Corte e dobra (peças)</option><option value="pintura">Pintura (serviço)</option></select></div>
+      <div class="campo"><label>Pintura (gera outra OC)</label><select id="cjF"><option value="">— não gerar pintura agora —</option>${fornAtivos.map(f => `<option value="${f.id}"${f.id === pintor0 ? ' selected' : ''}>${esc(nomeComFantasia(f))}</option>`).join('')}</select></div>
     </div>
     <div id="cjBox" class="sub-ed" style="max-height:52vh;overflow:auto"></div>
-    <div class="acoes"><button class="btn" id="cjN">Fechar</button><button class="btn primario" id="cjS" disabled>Incluir no pedido</button></div>`);
+    <div class="acoes"><button class="btn" id="cjN">Fechar</button><button class="btn primario" id="cjS" disabled>Incluir</button></div>`);
   m.querySelector('.modal').style.maxWidth = '1040px';
-  const box = m.querySelector('#cjBox'), qtd = () => lerNumero(m.querySelector('#cjQ').value) || 0, modo = () => m.querySelector('#cjM').value;
+  const box = m.querySelector('#cjBox'), qtd = () => lerNumero(m.querySelector('#cjQ').value) || 0, pintor = () => Number(m.querySelector('#cjF').value) || null;
   let D = null;
   const sug = p => p.controla_estoque === false ? Number(p.necessario) : Math.max(0, Number(p.necessario) - Math.max(0, Number(p.saldo)));
   const desenhar = () => {
-    m.querySelector('#cjS').disabled = !D;
+    const bt = m.querySelector('#cjS'); bt.disabled = !D;
+    bt.textContent = pintor() ? 'Incluir peças + gerar OC de pintura' : 'Incluir peças';
     if (!D) { box.innerHTML = ''; return; }
     const q = qtd(), pecas = D.pecas.map(p => ({ ...p, necessario: Number(p.por_conjunto) * q }));
-    if (!pecas.length) { box.innerHTML = '<div class="aviso-box erro">Este conjunto não tem peças cadastradas. Cadastre em Produtos › Componentes do conjunto.</div>'; m.querySelector('#cjS').disabled = true; return; }
-    const mont = (D.conjunto.arquivos || []).filter(a => a.finalidade === 'montagem');
-    if (modo() === 'pintura') {
-      const s = servPintura(), pc = pecas.filter(ehCorte);
-      box.innerHTML = `${s ? '' : '<div class="aviso-box erro">Cadastre o serviço de pintura em Cadastros › Serviços terceirizados.</div>'}
-        <div class="secao">Vai no pedido</div><p style="margin:2px 0 6px"><b>${esc(s?.nome || 'PINTURA')}</b> · ${esc(D.conjunto.codigo)} × ${num(q)} conjunto(s)</p>
-        <div class="sub">Peças a pintar por conjunto: ${pc.map(p => `${num(p.por_conjunto)}× ${esc(p.codigo)} ${esc(p.descricao)}`).join(' · ') || '—'}</div>
-        <div class="sub" style="margin-top:4px">Desenhos que vão para o pintor: ${mont.length ? mont.map(a => esc(a.nome)).join(', ') : '<span class="tg alerta">conjunto sem desenho de montagem</span>'} + PDF de corte de cada peça.</div>`;
-      m.querySelector('#cjS').disabled = !s; return;
-    }
+    if (!pecas.length) { box.innerHTML = '<div class="aviso-box erro">Este conjunto não tem peças cadastradas. Cadastre em Produtos › Componentes do conjunto.</div>'; bt.disabled = true; return; }
+    const mont = (D.conjunto.arquivos || []).filter(a => a.finalidade === 'montagem'), pc = pecas.filter(ehCorte);
     const comEst = pecas.filter(p => ehCorte(p) && Number(p.saldo) > 0);
     box.innerHTML = `${comEst.length ? `<div class="aviso-box"><b>⚠ Já tem em estoque:</b> ${comEst.map(p => `${esc(p.descricao)} (${num(p.saldo)})`).join(' · ')}. A quantidade a comprar já desconta o estoque; ajuste se essas peças estiverem reservadas.</div>` : ''}
+      <div class="secao">Peças de corte e dobra · entram neste pedido</div>
       <table><thead><tr><th></th><th>Peça</th><th class="num">Por conj.</th><th class="num">Precisa</th><th class="num">Estoque</th><th class="num">Em pedido</th><th>Comprar</th><th>Desenhos</th></tr></thead><tbody>
       ${pecas.map((p, k) => { const corte = ehCorte(p), dxf = (p.arquivos || []).some(a => a.finalidade === 'corte_dxf');
         const tags = [p.situacao !== 'ativo' ? '<span class="tg erro">produto inativo</span>' : '', !corte ? '<span class="tg neutro">não é corte a laser</span>' : !dxf ? '<span class="tg erro">sem DXF de corte</span>' : '',
@@ -413,7 +410,12 @@ function abrirConjunto() {
           <td class="num">${num(p.por_conjunto)}</td><td class="num">${num(p.necessario)}</td>
           <td class="num">${Number(p.saldo) > 0 ? `<b style="color:#b45309">${num(p.saldo)}</b>` : num(p.saldo)}</td><td class="num">${num(p.em_pedido)}</td>
           <td style="width:80px"><input data-q inputmode="decimal" value="${num(sug(p))}"></td><td style="white-space:nowrap">${corte ? chipsArq(p.arquivos || []) : ''}</td></tr>`; }).join('')}</tbody></table>
-      <div class="sub" style="margin-top:4px">Montagem do conjunto: ${mont.length ? mont.map(a => esc(a.nome)).join(', ') : 'sem desenho'}</div>`;
+      <div class="sub" style="margin-top:4px">Montagem do conjunto: ${mont.length ? mont.map(a => esc(a.nome)).join(', ') : 'sem desenho'}</div>
+      <div class="secao">Pintura · OC separada</div>
+      ${!pintor() ? '<p class="sub" style="margin:2px 0">Não vai gerar OC de pintura agora (escolha o fornecedor da pintura no alto se quiser).</p>'
+        : !sp ? '<div class="aviso-box erro">Cadastre o serviço de pintura em Cadastros › Serviços terceirizados.</div>'
+        : `<p style="margin:2px 0">Nova OC em rascunho para <b>${esc(nomeComFantasia(forn(pintor())))}</b>: ${esc(sp.nome)} · ${esc(D.conjunto.codigo)} × ${num(q)} conjunto(s)${Number(sp.preco_referencia) ? ' · ' + reais(sp.preco_referencia) + ' cada (preço de referência)' : ''}</p>
+           <div class="sub">Peças a pintar por conjunto: ${pc.map(p => `${num(p.por_conjunto)}× ${esc(p.codigo)}`).join(' · ') || '—'}</div>`}`;
     D._pecas = pecas;
   };
   const carregar = async () => {
@@ -426,30 +428,38 @@ function abrirConjunto() {
   };
   m.querySelector('#cjP').onchange = carregar;
   m.querySelector('#cjQ').oninput = desenhar;
-  m.querySelector('#cjM').onchange = desenhar;
+  m.querySelector('#cjF').onchange = desenhar;
   m.querySelector('#cjN').onclick = () => m.remove();
-  m.querySelector('#cjS').onclick = () => {
-    const tb = modalAtual.querySelector('#itens > table > tbody');
-    // tira a linha em branco do pedido novo
-    tb.querySelectorAll(':scope > tr:not(.hist-precos)').forEach(tr => { const p = tr.querySelector('[data-k=produto_id]'), s = tr.querySelector('[data-k=servico_id]'), d = tr.querySelector('[data-k=descricao]');
-      if (!tr.dataset.tipo && !p?.value && !s?.value && !d?.value.trim()) tr.remove(); });
-    let n = 0;
-    if (modo() === 'pintura') {
-      const s = servPintura(), q = qtd(); if (!s || !(q > 0)) return aviso('Informe a quantidade', true);
-      const pc = D.pecas.filter(ehCorte).map(p => p.codigo);
-      tb.insertAdjacentHTML('beforeend', linhaServ({ servico_id: s.id, quantidade: q, unidade: 'CJ', descricao: `${D.conjunto.codigo} ${D.conjunto.descricao}${pc.length ? ' · peças ' + pc.join(', ') : ''}` }));
-      aoEscolherServ(tb.lastElementChild); n = 1;
-    } else {
-      m.querySelectorAll('#cjBox tr[data-k]').forEach(tr => {
-        const p = D._pecas[Number(tr.dataset.k)], q = lerNumero(tr.querySelector('[data-q]').value) || 0;
-        if (!tr.querySelector('[data-ok]').checked || !(q > 0)) return;
-        tb.insertAdjacentHTML('beforeend', linhaProduto({ produto_id: p.id, quantidade: q }));
-        aoEscolherProduto(tb.lastElementChild); n++;
-      });
-      if (!n) return aviso('Marque ao menos uma peça com quantidade', true);
+  m.querySelector('#cjS').onclick = async () => {
+    const q = qtd(), fp = pintor(), bt = m.querySelector('#cjS');
+    if (!(q > 0)) return aviso('Informe quantos conjuntos', true);
+    const sel = [...m.querySelectorAll('#cjBox tr[data-k]')].map(tr => ({ p: D._pecas[Number(tr.dataset.k)], q: lerNumero(tr.querySelector('[data-q]').value) || 0, ok: tr.querySelector('[data-ok]').checked })).filter(x => x.ok && x.q > 0);
+    if (!sel.length && !fp) return aviso('Marque ao menos uma peça com quantidade', true);
+    if (fp && !sp) return aviso('Cadastre o serviço de pintura em Cadastros › Serviços terceirizados', true);
+    let oc = '';
+    if (fp) {
+      const emp = Number(modalAtual.querySelector('#f_empresa_id')?.value) || CTX.empresa || EMPRESAS[0]?.id;
+      if (!emp) return aviso('Escolha a empresa do pedido antes', true);
+      bt.disabled = true;
+      const pc = D._pecas.filter(ehCorte).map(p => p.codigo), origem = ex.porId?.[PED_ATUAL]?.numero;
+      const { data: id, error } = await db.rpc('pedido_compra_salvar', {
+        p_pedido: { empresa_id: emp, fornecedor_id: fp, observacoes_internas: `Pintura do ${D.conjunto.codigo}${origem ? ' · peças no pedido ' + origem : ''} (gerada pelo "+ Conjunto")` },
+        p_itens: [{ servico_id: sp.id, descricao: `${sp.nome} · ${D.conjunto.codigo} ${D.conjunto.descricao}${pc.length ? ' · peças ' + pc.join(', ') : ''}`, unidade: 'CJ', quantidade: q,
+          valor_unitario: Number(sp.preco_referencia) || 0, categoria_financeira_id: sp.categoria_financeira_id }] });
+      if (error) { bt.disabled = false; return aviso('Não gerou a OC de pintura: ' + error.message, true); }
+      const { data: n } = await db.from('pedidos_compra').select('numero').eq('id', id).maybeSingle();
+      oc = n?.numero || 'OC de pintura';
+      try { localStorage.setItem('nox_pintor', String(fp)); } catch {}
     }
-    sujo = true; recalcular(); m.remove();
-    aviso(`${n} linha(s) do ${D.conjunto.codigo} incluída(s) · confira preços e salve`);
+    if (sel.length) {
+      const tb = modalAtual.querySelector('#itens > table > tbody');
+      tb.querySelectorAll(':scope > tr:not(.hist-precos)').forEach(tr => { const p = tr.querySelector('[data-k=produto_id]'), s = tr.querySelector('[data-k=servico_id]'), d = tr.querySelector('[data-k=descricao]');
+        if (!tr.dataset.tipo && !p?.value && !s?.value && !d?.value.trim()) tr.remove(); });
+      sel.forEach(x => { tb.insertAdjacentHTML('beforeend', linhaProduto({ produto_id: x.p.id, quantidade: x.q })); aoEscolherProduto(tb.lastElementChild); });
+      sujo = true; recalcular();
+    }
+    m.remove();
+    aviso([sel.length ? `${sel.length} peça(s) do ${D.conjunto.codigo} incluída(s) neste pedido · confira preços e salve` : '', oc ? `${oc} de pintura criada em rascunho (${nomeComFantasia(forn(fp))})` : ''].filter(Boolean).join(' · '));
   };
 }
 // Pacote de desenhos do pedido (ZIP): peças → DXF/PDF de corte e dobra vigentes; pintura de conjunto → montagem + PDF das peças
