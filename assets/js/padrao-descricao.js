@@ -1,7 +1,6 @@
 /* ERP NOX · padrão de descrição de produto
-   Exemplo do padrão: "Abraçadeira rosca sem fim 19-27mm fita 9mm - aço carbono"
-   · primeira letra maiúscula e o resto minúsculo;
-   · siglas (TSI, BMW, AISI…), códigos com número (EA111, M8x25, G20) e nomes de carro/marca (Golf, Civic…) mantidos;
+   Exemplo do padrão: "ABRAÇADEIRA ROSCA SEM FIM 19-27MM FITA 9MM - AÇO CARBONO"
+   · tudo em maiúscula, com os acentos certos;
    · medida colada na unidade (9mm, 19-27mm, 150x150mm, 1,5kg, 12V);
    · material no final, depois de " - " (aço carbono, inox, alumínio…).
    padronizarDescricao(texto) → { texto, avisos[] } */
@@ -53,15 +52,14 @@ function padronizarDescricao(texto) {
        .replace(/\s*-\s*(?=[^\d\s])/g, ' - ').replace(/\s+-\s*$/, '') // " - " antes do material/variação
        .replace(/\s{2,}/g, ' ');
   s = s.split(' ').map(pdToken).join(' ');
-  const i = s.search(/[a-zà-ÿA-ZÀ-Ý]/);                             // primeira letra maiúscula
-  if (i >= 0) s = s.slice(0, i) + s[i].toUpperCase() + s.slice(i + 1);
+  s = s.toUpperCase();                                               // padrão NOX: tudo em maiúscula
   // material escrito no fim sem o " - ": coloca o separador sozinho
   if (!/ - \S/.test(s)) {
     const m = s.match(PD_MATERIAL);
     if (m && m.index > 0) s = s.slice(0, m.index).replace(/[\s,;-]+$/, '') + ' - ' + m[0].trim();
   }
   const avisos = [];
-  if (!/ - \S/.test(s)) avisos.push('Falta o material no final, depois de " - " (ex.: " - aço carbono", " - inox 304").');
+  if (!/ - \S/.test(s)) avisos.push('Falta o material no final, depois de " - " (ex.: " - AÇO CARBONO", " - INOX 304").');
   return { texto: s, avisos };
 }
 if (typeof module !== 'undefined') module.exports = { padronizarDescricao };

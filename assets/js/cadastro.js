@@ -369,7 +369,7 @@ async function montarCadastro(cfg) {
       case 'data': return `<input type="date" id="${id}" value="${esc(String(val).slice(0, 10))}" ${dis}>`;
       case 'mes': return `<input type="month" id="${id}" value="${esc(String(val).slice(0, 7))}" ${dis}>`;
       case 'horas': return `<input id="${id}" inputmode="numeric" placeholder="h:mm" value="${esc(fmtHoras(val))}" ${dis}>`;
-      case 'numero': case 'moeda': return `<input id="${id}" inputmode="decimal" value="${val === '' ? '' : esc(c.tipo === 'moeda' ? Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(val).replace('.', ','))}" ${dis}>`;
+      case 'numero': case 'moeda': return `<input id="${id}" inputmode="decimal"${c.tipo === 'moeda' ? ' data-moeda' : ''} value="${val === '' ? '' : esc(c.tipo === 'moeda' ? Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(val).replace('.', ','))}" ${dis}>`;
       case 'cpf': case 'cnpj': case 'cpfcnpj': return `<input id="${id}" inputmode="numeric" value="${esc(fmtDoc(val))}" ${dis}>`;
       case 'cep': return `<input id="${id}" inputmode="numeric" value="${esc(fmtCEP(val))}" placeholder="00000-000" ${dis}>`;
       default: return `<input id="${id}" type="${c.tipo === 'email' ? 'email' : c.tipo === 'tel' ? 'tel' : 'text'}" value="${esc(val)}" ${c.lista_sugestoes ? `list="dl_${c.id}"` : ''} placeholder="${esc(c.placeholder || '')}" ${dis}>`;

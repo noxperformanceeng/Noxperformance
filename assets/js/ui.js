@@ -150,7 +150,7 @@ function dataHoraBR(v) {
 
 // Lê número digitado no padrão brasileiro: "1.234,5" → 1234.5 · "0,5" → 0.5 · "1.000" → 1000 · "0.5" → 0.5
 function lerNumero(v) {
-  v = String(v ?? '').trim().replace(/\s/g, '');
+  v = String(v ?? '').trim().replace(/R\$/gi, '').replace(/\s/g, '');
   if (!v) return null;
   if (v.includes(',')) v = v.replace(/\./g, '').replace(',', '.');
   else if (/^-?\d{1,3}(\.\d{3})+$/.test(v)) v = v.replace(/\./g, '');
@@ -405,3 +405,29 @@ function icone(nome, tam = 18) {
   document.addEventListener('click', e => { const d = e.target.closest?.('.dica'); if (d) { e.preventDefault(); caixa ? fechar() : abrir(d); } });
   document.addEventListener('scroll', fechar, true);
 })();
+
+/* ---------- Campos de valor em dinheiro: formatam sozinhos como R$ 90.500,00 ---------- */
+// Vale para todas as telas: ao sair do campo (e para valores já preenchidos), o número vira moeda.
+// Campo de dinheiro = data-moeda, ou rótulo com "R$" / começando por Valor, Preço, Custo (sem %, quantidade, dias…).
+const MOEDA_CHAVES = new Set(['valor', 'valor_unitario', 'valor_minimo', 'desconto', 'liquido_contabilidade', 'preco', 'preco_servico', 'custo', 'frete']);
+function ehCampoMoeda(el) {
+  if (!el || el.tagName !== 'INPUT' || el.type === 'hidden' || el.type === 'checkbox' || el.type === 'date' || el.type === 'number') return false;
+  if (el._moeda !== undefined) return el._moeda;
+  let sim = el.dataset.moeda !== undefined || [el.dataset.k, el.dataset.c, el.name].some(k => k && MOEDA_CHAVES.has(k));
+  if (!sim && el.getAttribute('inputmode') === 'decimal') {
+    const box = el.closest('.campo') || el.parentElement, lb = box?.querySelector('label');
+    const t = semAcento((lb && lb.contains(el) ? '' : lb?.textContent || '') + ' ' + (el.placeholder || '') + ' ' + (el.title || '')).toLowerCase();
+    sim = (/r\$/.test(t) || /^\s*(valor|preco|custo)\b/.test(t)) && !/%|quant|qtd|fator|dias|horas|peso|\(mm\)|\(cm\)|\(kg\)/.test(t);
+  }
+  return (el._moeda = sim);
+}
+function formatarCampoMoeda(el) {
+  const v = el.value.trim(); if (!v) return;
+  const n = lerNumero(v); if (n === null || !isFinite(n)) return;
+  const f = n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  if (f !== v) el.value = f;
+}
+document.addEventListener('focusout', e => { if (ehCampoMoeda(e.target)) formatarCampoMoeda(e.target); }, true);
+// valores que a tela preenche sozinha (edição, sugestão de preço): formata quando o campo não está em uso
+setInterval(() => document.querySelectorAll('input[inputmode="decimal"], input[data-moeda]').forEach(el => {
+  if (el !== document.activeElement && ehCampoMoeda(el)) formatarCampoMoeda(el); }), 700);
