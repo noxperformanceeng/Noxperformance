@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backups · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610312124">
+<style>
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bk-info { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
+  .bk-arqs { columns: 3 260px; font-size: 12.5px; margin: 6px 0 2px; }
+  .bk-arqs a { color: var(--destaque); }
+  tr.det td { background: var(--fundo, #f6f7f9); }
+</style>
+</head>
+<body data-modulo="backups" data-titulo="Backups">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Backups</h1>
+    <p class="sub">Cópia diária de todo o banco do sistema, feita sozinha toda madrugada (03:15).</p></div>
+    <div style="display:flex;gap:8px"><button class="btn" id="btnAtualizar">Atualizar</button><button class="btn primario" id="btnAgora">Fazer backup agora</button></div></div>
+  <div class="bk-info">
+    <b>O que é guardado:</b> todas as tabelas (cadastros, compras, financeiro, RH, estoque, produção…) e a estrutura do banco (funções e regras de acesso), compactadas, numa pasta privada por dia.
+    A auditoria vai só com os últimos 2 dias em cada backup. Ficam os últimos 14 dias e o domingo das últimas 8 semanas.<br>
+    <b>Não entram:</b> os arquivos anexados (desenhos, fotos, PDFs, documentos do RH), que já ficam guardados no Storage.<br>
+    <b>Restaurar:</b> peça ao administrador do sistema (Claude ou Alexandre). Dá para voltar uma tabela inteira ou só alguns registros de um dia escolhido.
+  </div>
+  <div class="cartao tabela-rolagem">
+    <table>
+      <thead><tr><th>Dia</th><th>Situação</th><th class="num">Tabelas</th><th class="num">Registros</th><th class="num">Tamanho</th><th>Início</th><th>Fim</th><th>Detalhe</th></tr></thead>
+      <tbody id="lista"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202610312124"></script>
+<script src="../../assets/js/ui.js?v=202610312124"></script>
+<script src="../../assets/js/auth.js?v=202610312124"></script>
+<script src="../../assets/js/layout.js?v=202610312124"></script>
+<script>
+/* Lista as execuções (backup_execucoes) e os arquivos de cada dia no bucket privado "backups"
+   (leitura liberada só para administrador). Baixar = link temporário de 5 minutos. */
+const $ = s => document.querySelector(s);
+const tam = b => b >= 1048576 ? (b / 1048576).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' MB' : Math.round(b / 1024) + ' kB';
+const SIT = { ok: ['Concluído', 'ok'], rodando: ['Em andamento', 'info'], erro: ['Erro', 'erro'] };
+let LISTA = [], aberto = null;
+
+async function carregar() {
+  const [e, d] = await Promise.all([db.from('backup_execucoes').select('*').order('id', { ascending: false }).limit(60), db.storage.from('backups').list('', { limit: 200 })]);
+  if (e.error) { $('#lista').innerHTML = `<tr><td colspan="8" class="vazio">Erro: ${esc(e.error.message)}</td></tr>`; return; }
+  const pastas = new Set((d.data || []).map(x => x.name));
+  LISTA = (e.data || []).map(x => ({ ...x, guardado: pastas.has(x.dia) }));
+  desenhar();
+}
+function desenhar() {
+  $('#lista').innerHTML = LISTA.length ? LISTA.map(x => { const s = x.mensagem?.startsWith('Substituído') ? ['Substituído', 'neutro'] : SIT[x.situacao];
+    return `<tr data-id="${x.id}" style="cursor:pointer"><td><b>${x.dia.split('-').reverse().join('/')}</b></td><td><span class="tg ${s[1]}">${s[0]}</span>${x.situacao === 'ok' && !x.guardado ? ' <span class="tg neutro">apagado (antigo)</span>' : ''}</td>
+      <td class="num">${x.situacao === 'rodando' ? `${(x.feitas || []).length} de ${x.tabelas ?? '…'}` : x.tabelas ?? ''}</td><td class="num">${Number(x.linhas).toLocaleString('pt-BR')}</td><td class="num">${tam(x.bytes)}</td>
+      <td>${dataHoraBR(x.iniciado_em)}</td><td>${dataHoraBR(x.concluido_em)}</td><td class="sub">${esc(x.mensagem || '')}</td></tr>
+      ${aberto === x.id ? `<tr class="det"><td colspan="8"><div id="arqs" class="sub">Carregando arquivos…</div></td></tr>` : ''}`; }).join('')
+    : '<tr><td colspan="8" class="vazio">Nenhum backup ainda. O primeiro roda esta madrugada, ou clique em "Fazer backup agora".</td></tr>';
+  $('#lista').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { const id = +tr.dataset.id; aberto = aberto === id ? null : id; desenhar(); if (aberto) arquivos(LISTA.find(x => x.id === id)); });
+}
+async function arquivos(x) {
+  const { data, error } = await db.storage.from('backups').list(x.dia, { limit: 500, sortBy: { column: 'name', order: 'asc' } });
+  const box = $('#arqs'); if (!box) return;
+  if (error || !data?.length) { box.textContent = error ? 'Erro: ' + error.message : 'Os arquivos deste dia não estão mais guardados.'; return; }
+  box.innerHTML = `${data.length} arquivos · clique para baixar (arquivo .gz: abre com 7-Zip ou WinRAR; dentro, os registros em JSON, em blocos de até 1.000)<div class="bk-arqs">${data.map(a => `<div><a href="#" data-a="${esc(x.dia + '/' + a.name)}">${esc(a.name)}</a> <span class="sub">${tam(a.metadata?.size || 0)}</span></div>`).join('')}</div>`;
+  box.querySelectorAll('[data-a]').forEach(l => l.onclick = async e => { e.preventDefault(); e.stopPropagation();
+    const { data: u, error: er } = await db.storage.from('backups').createSignedUrl(l.dataset.a, 300, { download: true });
+    if (er) return aviso('Não gerou o link: ' + er.message, true); window.open(u.signedUrl, '_blank'); });
+}
+(async () => {
+  const ctx = await iniciarTela(); if (!ctx) return;
+  $('#btnAtualizar').onclick = carregar;
+  $('#btnAgora').onclick = async () => {
+    if (!confirm('Fazer um backup completo agora? Leva alguns minutos e roda em segundo plano.')) return;
+    const { error } = await db.rpc('backup_agora'); if (error) return aviso(error.message, true);
+    aviso('Backup iniciado'); setTimeout(carregar, 3000);
+  };
+  window.addEventListener('aba-ativa', carregar);
+  carregar();
+})();
+</script>
+</body>
+</html>

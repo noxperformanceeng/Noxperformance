@@ -73,7 +73,8 @@ const MENU = [
   ]},
   { grupo: 'Configurações', icone: 'config', gerenciar: true, itens: [
     { id: 'usuarios',      nome: 'Usuários e acessos', arquivo: 'pages/config/usuarios.html' },
-    { id: 'auditoria',     nome: 'Auditoria',          arquivo: 'pages/config/auditoria.html' }
+    { id: 'auditoria',     nome: 'Auditoria',          arquivo: 'pages/config/auditoria.html' },
+    { id: 'backups',       nome: 'Backups',            arquivo: 'pages/config/backups.html' }
   ]}
 ];
 
