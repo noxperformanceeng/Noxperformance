@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610312124">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611010317">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -46,11 +46,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610312124"></script>
-<script src="../../assets/js/ui.js?v=202610312124"></script>
-<script src="../../assets/js/auth.js?v=202610312124"></script>
-<script src="../../assets/js/layout.js?v=202610312124"></script>
-<script src="../../assets/js/cadastro.js?v=202610312124"></script>
+<script src="../../assets/js/supabase.js?v=202611010317"></script>
+<script src="../../assets/js/ui.js?v=202611010317"></script>
+<script src="../../assets/js/auth.js?v=202611010317"></script>
+<script src="../../assets/js/layout.js?v=202611010317"></script>
+<script src="../../assets/js/cadastro.js?v=202611010317"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -333,7 +333,7 @@ function aoMudarTipo(tr) {
 }
 function aoEscolherServ(tr) {
   const s = serv(Number(tr.querySelector('[data-k=servico_id]').value));
-  if (s && s.usinagem !== (tr.dataset.tipo === 'servico_usinagem')) tr = trocarLinha(tr, s.usinagem ? linhaServico({ servico_id: s.id }) : linhaServ({ servico_id: s.id }));
+  if (s && !!s.usinagem !== (tr.dataset.tipo === 'servico_usinagem')) tr = trocarLinha(tr, s.usinagem ? linhaServico({ servico_id: s.id }) : linhaServ({ servico_id: s.id }));
   if (!s) return recalcular();
   const c = tr.querySelector('[data-k=categoria_financeira_id]'); if (c) c.value = s.categoria_financeira_id || '';
   const un = tr.querySelector('[data-k=unidade]'); if (un && !un.value) un.value = s.unidade || '';
@@ -356,6 +356,132 @@ function aoEscolherProduto(tr) {
   const cot = pf?.preco != null ? `cotação ${reais(pf.preco)}${pf.unidade_compra ? '/' + esc(pf.unidade_compra) : ''}${Number(pf.ipi_pct) ? ' + IPI ' + num(pf.ipi_pct) + '%' : ''}${pf.cotacao_data ? ' (' + dataCurta(pf.cotacao_data) + ')' : ''}` : '';
   info.innerHTML = [p.categoria_financeira_id ? '' : '<span class="tg alerta">produto sem categoria financeira no cadastro</span>', cf ? 'cód. fornecedor ' + esc(cf) : '', cot, up ? `último preço ${reais(up.v)} (${esc(up.n)} · ${dataCurta(up.d)}${up.f !== fid ? ' · outro fornecedor' : ''})` : ''].filter(Boolean).join(' · ');
   recalcular();
+}
+
+/* ---------- Conjuntos (defletores e afins) ----------
+   O comprador escolhe o conjunto pronto (ex.: DF-002) e quantos vai fazer: o sistema abre as peças da estrutura
+   com saldo em estoque e em pedido, sugere quanto comprar e inclui as linhas. No modo pintura entra uma linha
+   de serviço por conjunto. Os desenhos vigentes (DXF/PDF de corte e dobra, montagem) saem num ZIP para o fornecedor. */
+let CONJ = new Set();
+const FIN = { corte_dxf: 'DXF corte', corte_pdf: 'PDF corte', dobra_pdf: 'PDF dobra', dobra_dxf: 'DXF dobra', montagem: 'Montagem' };
+const ehCorte = p => (p.arquivos || []).some(a => a.finalidade === 'corte_dxf' || a.finalidade === 'corte_pdf');
+const chipsArq = arqs => { const f = new Set(arqs.map(a => a.finalidade));
+  return ['corte_dxf', 'corte_pdf', 'dobra_pdf'].map(k => `<span class="tg ${f.has(k) ? 'ok' : 'neutro'}" title="${esc(arqs.find(a => a.finalidade === k)?.nome || 'sem arquivo')}">${f.has(k) ? '✓' : '—'} ${FIN[k]}</span>`).join(' '); };
+const servPintura = () => SERVS.find(s => s.situacao === 'ativo' && /PINTURA/i.test(s.nome));
+function abrirConjunto() {
+  const lista = PRODS.filter(p => CONJ.has(p.id) && p.situacao === 'ativo').sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
+  const m = abrirModal(`<h2>Incluir conjunto (defletor, kit…)</h2>
+    <p class="sub" style="margin:0 0 8px">Escolha o conjunto pronto e quantos vai fazer. O sistema traz as peças de corte e dobra com o estoque de cada uma; os desenhos vão junto ao enviar o pedido.</p>
+    <div class="grade-campos">
+      <div class="campo l2"><label>Conjunto</label><select id="cjP"><option value="">— escolha (ex.: DF-002) —</option>${lista.map(p => `<option value="${p.id}">${esc(p.codigo + ' · ' + p.descricao)}</option>`).join('')}</select></div>
+      <div class="campo"><label>Quantos conjuntos</label><input id="cjQ" inputmode="decimal" value="1"></div>
+      <div class="campo"><label>Este pedido é de</label><select id="cjM" data-simples><option value="corte">Corte e dobra (peças)</option><option value="pintura">Pintura (serviço)</option></select></div>
+    </div>
+    <div id="cjBox" class="sub-ed" style="max-height:52vh;overflow:auto"></div>
+    <div class="acoes"><button class="btn" id="cjN">Fechar</button><button class="btn primario" id="cjS" disabled>Incluir no pedido</button></div>`);
+  m.querySelector('.modal').style.maxWidth = '1040px';
+  const box = m.querySelector('#cjBox'), qtd = () => lerNumero(m.querySelector('#cjQ').value) || 0, modo = () => m.querySelector('#cjM').value;
+  let D = null;
+  const sug = p => p.controla_estoque === false ? Number(p.necessario) : Math.max(0, Number(p.necessario) - Math.max(0, Number(p.saldo)));
+  const desenhar = () => {
+    m.querySelector('#cjS').disabled = !D;
+    if (!D) { box.innerHTML = ''; return; }
+    const q = qtd(), pecas = D.pecas.map(p => ({ ...p, necessario: Number(p.por_conjunto) * q }));
+    if (!pecas.length) { box.innerHTML = '<div class="aviso-box erro">Este conjunto não tem peças cadastradas. Cadastre em Produtos › Componentes do conjunto.</div>'; m.querySelector('#cjS').disabled = true; return; }
+    const mont = (D.conjunto.arquivos || []).filter(a => a.finalidade === 'montagem');
+    if (modo() === 'pintura') {
+      const s = servPintura(), pc = pecas.filter(ehCorte);
+      box.innerHTML = `${s ? '' : '<div class="aviso-box erro">Cadastre o serviço de pintura em Cadastros › Serviços terceirizados.</div>'}
+        <div class="secao">Vai no pedido</div><p style="margin:2px 0 6px"><b>${esc(s?.nome || 'PINTURA')}</b> · ${esc(D.conjunto.codigo)} × ${num(q)} conjunto(s)</p>
+        <div class="sub">Peças a pintar por conjunto: ${pc.map(p => `${num(p.por_conjunto)}× ${esc(p.codigo)} ${esc(p.descricao)}`).join(' · ') || '—'}</div>
+        <div class="sub" style="margin-top:4px">Desenhos que vão para o pintor: ${mont.length ? mont.map(a => esc(a.nome)).join(', ') : '<span class="tg alerta">conjunto sem desenho de montagem</span>'} + PDF de corte de cada peça.</div>`;
+      m.querySelector('#cjS').disabled = !s; return;
+    }
+    const comEst = pecas.filter(p => ehCorte(p) && Number(p.saldo) > 0);
+    box.innerHTML = `${comEst.length ? `<div class="aviso-box"><b>⚠ Já tem em estoque:</b> ${comEst.map(p => `${esc(p.descricao)} (${num(p.saldo)})`).join(' · ')}. A quantidade a comprar já desconta o estoque; ajuste se essas peças estiverem reservadas.</div>` : ''}
+      <table><thead><tr><th></th><th>Peça</th><th class="num">Por conj.</th><th class="num">Precisa</th><th class="num">Estoque</th><th class="num">Em pedido</th><th>Comprar</th><th>Desenhos</th></tr></thead><tbody>
+      ${pecas.map((p, k) => { const corte = ehCorte(p), dxf = (p.arquivos || []).some(a => a.finalidade === 'corte_dxf');
+        const tags = [p.situacao !== 'ativo' ? '<span class="tg erro">produto inativo</span>' : '', !corte ? '<span class="tg neutro">não é corte a laser</span>' : !dxf ? '<span class="tg erro">sem DXF de corte</span>' : '',
+          Number(p.em_pedido) > 0 ? `<span class="tg info">${num(p.em_pedido)} já em pedido aberto</span>` : ''].filter(Boolean).join(' ');
+        return `<tr data-k="${k}"><td><input type="checkbox" data-ok${corte && p.situacao === 'ativo' ? ' checked' : ''}></td>
+          <td><b>${esc(p.codigo)}</b> ${esc(p.descricao)}${tags ? '<div class="ro">' + tags + '</div>' : ''}</td>
+          <td class="num">${num(p.por_conjunto)}</td><td class="num">${num(p.necessario)}</td>
+          <td class="num">${Number(p.saldo) > 0 ? `<b style="color:#b45309">${num(p.saldo)}</b>` : num(p.saldo)}</td><td class="num">${num(p.em_pedido)}</td>
+          <td style="width:80px"><input data-q inputmode="decimal" value="${num(sug(p))}"></td><td style="white-space:nowrap">${corte ? chipsArq(p.arquivos || []) : ''}</td></tr>`; }).join('')}</tbody></table>
+      <div class="sub" style="margin-top:4px">Montagem do conjunto: ${mont.length ? mont.map(a => esc(a.nome)).join(', ') : 'sem desenho'}</div>`;
+    D._pecas = pecas;
+  };
+  const carregar = async () => {
+    const id = Number(m.querySelector('#cjP').value); D = null;
+    if (!id) return desenhar();
+    box.innerHTML = '<p class="sub">Carregando peças…</p>';
+    const { data, error } = await db.rpc('compra_conjunto', { p_produto: id, p_quantidade: 1 });
+    if (error) { box.innerHTML = `<div class="aviso-box erro">${esc(error.message)}</div>`; return; }
+    D = data; desenhar();
+  };
+  m.querySelector('#cjP').onchange = carregar;
+  m.querySelector('#cjQ').oninput = desenhar;
+  m.querySelector('#cjM').onchange = desenhar;
+  m.querySelector('#cjN').onclick = () => m.remove();
+  m.querySelector('#cjS').onclick = () => {
+    const tb = modalAtual.querySelector('#itens > table > tbody');
+    // tira a linha em branco do pedido novo
+    tb.querySelectorAll(':scope > tr:not(.hist-precos)').forEach(tr => { const p = tr.querySelector('[data-k=produto_id]'), s = tr.querySelector('[data-k=servico_id]'), d = tr.querySelector('[data-k=descricao]');
+      if (!tr.dataset.tipo && !p?.value && !s?.value && !d?.value.trim()) tr.remove(); });
+    let n = 0;
+    if (modo() === 'pintura') {
+      const s = servPintura(), q = qtd(); if (!s || !(q > 0)) return aviso('Informe a quantidade', true);
+      const pc = D.pecas.filter(ehCorte).map(p => p.codigo);
+      tb.insertAdjacentHTML('beforeend', linhaServ({ servico_id: s.id, quantidade: q, unidade: 'CJ', descricao: `${D.conjunto.codigo} ${D.conjunto.descricao}${pc.length ? ' · peças ' + pc.join(', ') : ''}` }));
+      aoEscolherServ(tb.lastElementChild); n = 1;
+    } else {
+      m.querySelectorAll('#cjBox tr[data-k]').forEach(tr => {
+        const p = D._pecas[Number(tr.dataset.k)], q = lerNumero(tr.querySelector('[data-q]').value) || 0;
+        if (!tr.querySelector('[data-ok]').checked || !(q > 0)) return;
+        tb.insertAdjacentHTML('beforeend', linhaProduto({ produto_id: p.id, quantidade: q }));
+        aoEscolherProduto(tb.lastElementChild); n++;
+      });
+      if (!n) return aviso('Marque ao menos uma peça com quantidade', true);
+    }
+    sujo = true; recalcular(); m.remove();
+    aviso(`${n} linha(s) do ${D.conjunto.codigo} incluída(s) · confira preços e salve`);
+  };
+}
+// Pacote de desenhos do pedido (ZIP): peças → DXF/PDF de corte e dobra vigentes; pintura de conjunto → montagem + PDF das peças
+const temDesenho = r => (ex.itens[r.id] || []).some(i => (i.produto_id && !i.servico_id && !i.uso_consumo) || /DF-\d{3}/.test(i.descricao || ''));
+async function pacoteDesenhos(r) {
+  try { await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'); } catch { aviso('Não carregou o compactador (internet?)', true); return null; }
+  const itens = ex.itens[r.id] || [];
+  const pecas = [...new Set(itens.filter(i => i.produto_id && !i.servico_id && !i.uso_consumo).map(i => i.produto_id))];
+  const dfs = [...new Set(itens.filter(i => i.servico_id).flatMap(i => (i.descricao || '').match(/DF-\d{3}/g) || []))].map(c => PRODS.find(p => p.codigo === c)).filter(Boolean);
+  let est = [];
+  if (dfs.length) { const { data } = await db.from('produto_estrutura').select('produto_id, componente_id').in('produto_id', dfs.map(p => p.id)).eq('ativo', true); est = data || []; }
+  const ids = [...new Set([...pecas, ...dfs.map(p => p.id), ...est.map(e => e.componente_id)])];
+  if (!ids.length) { aviso('Este pedido não tem peças com desenho', true); return null; }
+  const { data: arqs, error } = await db.rpc('desenhos_vigentes', { p_produtos: ids });
+  if (error) { aviso('Não buscou os desenhos: ' + error.message, true); return null; }
+  const lista = [];
+  pecas.forEach(pid => arqs.filter(a => a.produto_id === pid && a.finalidade !== 'montagem').forEach(a => lista.push({ ...a, pasta: a.codigo })));
+  dfs.forEach(df => {
+    arqs.filter(a => a.produto_id === df.id && a.finalidade === 'montagem').forEach(a => lista.push({ ...a, pasta: 'PINTURA ' + df.codigo }));
+    est.filter(e => e.produto_id === df.id).forEach(e => arqs.filter(a => a.produto_id === e.componente_id && a.finalidade === 'corte_pdf').forEach(a => lista.push({ ...a, pasta: 'PINTURA ' + df.codigo })));
+  });
+  const semDxf = pecas.map(prod).filter(p => p && /^2/.test(p.codigo || '') && !arqs.some(a => a.produto_id === p.id && a.finalidade === 'corte_dxf')).map(p => p.codigo);
+  if (!lista.length) { aviso('Nenhum desenho anexado às peças deste pedido', true); return null; }
+  const zip = new JSZip(), falhas = [];
+  await Promise.all(lista.map(async a => { const { data, error: e } = await db.storage.from('produtos').download(a.caminho);
+    if (e || !data) falhas.push(a.nome); else zip.file(`${a.pasta}/${a.nome}`, data); }));
+  zip.file('LEIA-ME.txt', [`Pedido de compra ${r.numero} · ${nomeComFantasia(forn(r.fornecedor_id)) || ''}`, '', 'Itens:',
+    ...itens.map(i => `${num(i.quantidade)} ${i.unidade || ''} · ${prod(i.produto_id)?.codigo || ''} ${i.descricao || ''}`.replace(/\s+/g, ' ')), '',
+    'Arquivos por peça: DXF = corte a laser · PDF corte = desenho cotado/planificado · PDF dobra = sequência de dobra.',
+    'Na pasta PINTURA: desenho de montagem do conjunto e as peças que serão pintadas.'].join('\r\n'));
+  const blob = await zip.generateAsync({ type: 'blob' });
+  return { blob, n: lista.length - falhas.length, falhas, semDxf, nome: `${r.numero} - desenhos.zip` };
+}
+async function baixarDesenhos(r) {
+  const p = await pacoteDesenhos(r); if (!p) return;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(p.blob); a.download = p.nome; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  aviso(`${p.n} desenho(s) no ZIP${p.semDxf.length ? ' · sem DXF de corte: ' + p.semDxf.join(', ') : ''}${p.falhas.length ? ' · não baixou: ' + p.falhas.join(', ') : ''}`, !!(p.semDxf.length || p.falhas.length));
 }
 
 /* ---------- Painel do pedido: etapas, ações, financeiro, linha do tempo ---------- */
@@ -393,6 +519,7 @@ function secaoPedido(r) {
     if (podeAlt || CTX.pode('pagar', 'criar')) acoes.push(btn('receber', 'Registrar recebimento da NF…', ['enviado', 'recebido_parcial'].includes(s) ? 'primario' : ''));
   }
   if (s === 'recebido') acoes.push(btn('pdf', 'Baixar PDF'));
+  if (temDesenho(r)) acoes.push(btn('desenhos', 'Baixar desenhos (ZIP)'));
   if (s === 'recebido_parcial' && podeAlt) acoes.push(btn('encerrar', 'Encerrar saldo…'));
   if (['em_aprovacao', 'aprovado', 'enviado'].includes(s) && podeAlt && !Number(r.valor_recebido)) acoes.push(btn('reabrir', 'Reabrir (voltar a rascunho)…', 'discreto'));
   if (['aprovado', 'enviado'].includes(s) && (CTX.admin || ACOES.has('compras.aprovar'))) acoes.push(btn('recusar', 'Recusar…', 'discreto'));
@@ -434,7 +561,7 @@ function pedirTexto(titulo, rotulo, obrig = true, botao = 'Confirmar') {
   });
 }
 async function executarAcao(r, a, m) {
-  if (sujo && ['liberar_avulso', 'enviar_aprovacao', 'aprovar', 'enviar_fornecedor', 'pdf', 'receber'].includes(a)) return aviso('Salve as alterações antes', true);
+  if (sujo && ['liberar_avulso', 'enviar_aprovacao', 'aprovar', 'enviar_fornecedor', 'pdf', 'receber', 'desenhos'].includes(a)) return aviso('Salve as alterações antes', true);
   const fim = txt => { aviso(txt); m.remove(); cfg.recarregar(); };
   if (a === 'enviar_aprovacao') { if (await acao(r, a)) fim('Enviado para aprovação'); }
   else if (a === 'aprovar') { const c = await pedirTexto('Aprovar ' + r.numero, 'Comentário (opcional)', false, 'Aprovar'); if (c === null) return; const s = await acao(r, a, c); if (s) fim(s === 'aprovado' ? 'Pedido aprovado · previsão lançada no contas a pagar' : 'Aprovado neste nível · segue para o próximo'); }
@@ -446,6 +573,7 @@ async function executarAcao(r, a, m) {
   else if (a === 'encerrar') { const c = await pedirTexto('Encerrar saldo de ' + r.numero, 'Motivo (o restante não será entregue)', true, 'Encerrar'); if (!c) return;
     const { error } = await db.rpc('pedido_compra_encerrar', { p_id: r.id, p_motivo: c }); if (error) return aviso('Não deu: ' + error.message, true); fim('Saldo encerrado · projeção removida'); }
   else if (a === 'pdf') { const d = await gerarPdf(r, true); if (d) aviso('PDF gerado'); }
+  else if (a === 'desenhos') await baixarDesenhos(r);
   else if (a === 'enviar_fornecedor') abrirEnvio(r, m);
   else if (a === 'receber') abrirRecebimento(r, m);
 }
@@ -518,9 +646,10 @@ function abrirEnvio(r, pai) {
       <div class="campo l2"><label>Para</label><input id="ePara" value="${esc(!zap && email ? email : zap)}"></div>
       <div class="campo l4"><label>Mensagem</label><textarea id="eMsg" rows="6" data-livre>Olá${contato ? ' ' + esc(contato) : ''}, tudo bem?
 Segue o pedido de compra ${esc(r.numero)} da ${esc((EMPRESAS.find(e => e.id === r.empresa_id) || {}).nome || 'NOX')} no valor de ${reais(r.valor_total)}${r.data_entrega_prevista ? ', entrega prevista para ' + dataCurta(r.data_entrega_prevista) : ''}.
-PDF do pedido: {link}
+PDF do pedido: {link}${temDesenho(r) ? '\nDesenhos para fabricação (DXF/PDF de corte e dobra): {desenhos}' : ''}
 Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. Obrigado!</textarea></div>
     </div>
+    ${temDesenho(r) ? '<label class="chk" style="margin:6px 0 0"><input type="checkbox" id="eDes" checked> Enviar também os desenhos das peças (um ZIP com DXF e PDF de corte e dobra; na pintura, a montagem do conjunto)</label>' : ''}
     <label class="chk" style="margin:6px 0"><input type="checkbox" id="eOk"> Conferi o pedido (itens, preços, condição) e autorizo o envio ao fornecedor.</label>
     <div class="acoes"><button class="btn" id="eN">Voltar</button><button class="btn primario" id="eS">Gerar PDF e abrir para enviar</button></div>`);
   const via = m.querySelector('#eVia'), para = m.querySelector('#ePara');
@@ -534,12 +663,24 @@ Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. 
     const g = await gerarPdf(r, false); if (!g?.path) { m.querySelector('#eS').disabled = false; return; }
     const { data: s, error } = await db.storage.from('compras').createSignedUrl(g.path, 60 * 60 * 24 * 30);
     if (error) { m.querySelector('#eS').disabled = false; return aviso('Não gerou o link: ' + error.message, true); }
-    const msg = m.querySelector('#eMsg').value.replace('{link}', s.signedUrl);
+    let msg = m.querySelector('#eMsg').value.replace('{link}', s.signedUrl), desPath = null;
+    if (m.querySelector('#eDes')?.checked) {
+      const pk = await pacoteDesenhos(r);
+      if (pk) {
+        desPath = `${r.empresa_id}/${r.numero}/${r.numero}-desenhos-${Date.now()}.zip`;
+        const up = await db.storage.from('compras').upload(desPath, pk.blob, { contentType: 'application/zip', upsert: false });
+        const sd = up.error ? null : (await db.storage.from('compras').createSignedUrl(desPath, 60 * 60 * 24 * 30)).data;
+        if (!sd) { m.querySelector('#eS').disabled = false; return aviso('Não salvou o ZIP dos desenhos: ' + (up.error?.message || 'link'), true); }
+        msg = msg.includes('{desenhos}') ? msg.replace('{desenhos}', sd.signedUrl) : msg + '\nDesenhos: ' + sd.signedUrl;
+        if (pk.semDxf.length) aviso('Atenção: sem DXF de corte em ' + pk.semDxf.join(', '), true);
+      } else desPath = null;
+    }
+    msg = msg.split('\n').filter(l => !l.includes('{desenhos}')).join('\n');
     const url = via.value === 'whatsapp'
       ? `https://wa.me/${destino.replace(/\D/g, '').replace(/^(?!55)/, '55')}?text=${encodeURIComponent(msg)}`
       : `mailto:${encodeURIComponent(destino)}?subject=${encodeURIComponent('Pedido de compra ' + r.numero)}&body=${encodeURIComponent(msg)}`;
     window.open(url, '_blank');
-    if (await acao(r, 'enviado_fornecedor', null, { via: via.value === 'whatsapp' ? 'WhatsApp' : 'e-mail', para: destino, pdf: g.path })) {
+    if (await acao(r, 'enviado_fornecedor', null, { via: via.value === 'whatsapp' ? 'WhatsApp' : 'e-mail', para: destino, pdf: g.path, desenhos: desPath })) {
       aviso('Envio registrado · confira a mensagem no ' + (via.value === 'whatsapp' ? 'WhatsApp' : 'e-mail') + ' e envie'); m.remove(); pai.remove(); cfg.recarregar();
     }
   };
@@ -774,7 +915,7 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     CTX = ctx;
-    const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi, sv] = await Promise.all([
+    const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi, sv, es] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
       buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao, aceita_lancamento').eq('aprovacao', 'aprovado').order('codigo')),
@@ -791,8 +932,10 @@ const cfg = {
       db.rpc('usuarios_nomes'),
       db.rpc('minhas_acoes'),
       buscarTodos(() => db.from('produto_usinagem').select('produto_id, material, comprimento_mm, perda_mm, preco_servico, fornecedor_id')),
-      buscarTodos(() => db.from('servicos').select('id, nome, categoria_financeira_id, unidade, usinagem, fornecedor_id, preco_referencia, situacao').order('nome'))
+      buscarTodos(() => db.from('servicos').select('id, nome, categoria_financeira_id, unidade, usinagem, fornecedor_id, preco_referencia, situacao').order('nome')),
+      buscarTodos(() => db.from('produto_estrutura').select('produto_id').eq('ativo', true))
     ]);
+    CONJ = new Set(es.map(x => x.produto_id));
     FICHAS = Object.fromEntries(fi.map(x => [x.produto_id, x])); SERVS = sv;
     SUG = ctx.pode('compras', 'criar') ? ((await db.rpc('sugestao_compra')).data || []) : [];
     FORN = f; PRODS = p.filter(x => !['acabado', 'kit'].includes(x.tipo) || true); PAIS = c.filter(x => !x.aceita_lancamento); CATS = c.filter(x => x.aceita_lancamento).map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONDS = co; FORMAS = fo;
@@ -840,7 +983,7 @@ const cfg = {
     const box = document.createElement('div');
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
-        ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${CTX.pode('produtos', 'criar') ? ` <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''} ${linkServ()}` : ''}
+        ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${CONJ.size ? ' <button type="button" class="btn fino" id="addConj" style="margin-top:4px" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}${CTX.pode('produtos', 'criar') ? ` <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''} ${linkServ()}` : ''}
         <div id="matBox" style="margin-top:8px"></div>
         <div class="tot-ped" id="totPed"></div></div>`;
     box.addEventListener('click', e => { const b = e.target.closest('[data-hist]'); if (b) { e.preventDefault(); mostrarHistorico(b.closest('tr')); } });
@@ -848,6 +991,7 @@ const cfg = {
     antes.parentNode.insertBefore(box, antes);
     if (editavel && podeEd) {
       m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaProduto()); };
+      m.querySelector('#addConj')?.addEventListener('click', abrirConjunto);
       box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { const tr = e.target.closest('tr'); if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove(); tr.remove(); recalcular(); } });
       box.addEventListener('change', e => { if (e.target.dataset.k === 'tipo_linha') { aoMudarTipo(e.target.closest('tr')); return recalcular(); } if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else aoEscolherProduto(tr); } recalcular(); });
       box.addEventListener('input', recalcular);
