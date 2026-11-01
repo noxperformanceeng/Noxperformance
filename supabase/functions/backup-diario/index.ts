@@ -57,6 +57,7 @@ async function limparAntigos() {
 
 // ---------- Cópia no Google Drive (só se os segredos GDRIVE_* estiverem cadastrados) ----------
 // Acesso "drive.file": o sistema só enxerga as pastas e arquivos que ele mesmo criou no Drive.
+// A pasta "Backups ERP NOX" pode ser movida para um Drive compartilhado: o sistema continua achando e gravando nela.
 const DRIVE = 'https://www.googleapis.com/drive/v3/files', PASTA_RAIZ = 'Backups ERP NOX';   // no Drive nada é apagado: fica todo o histórico
 type Drive = { token: string; raiz: string; dia: string };
 async function driveToken(): Promise<string | null> {
@@ -75,10 +76,10 @@ async function driveApi(token: string, url: string, init: RequestInit = {}) {
 }
 async function drivePasta(token: string, nome: string, pai?: string, recriar = false): Promise<string> {
   const q = `name='${nome}' and mimeType='application/vnd.google-apps.folder' and trashed=false` + (pai ? ` and '${pai}' in parents` : '');
-  const l = await driveApi(token, `${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id)`);
-  for (const f of (recriar ? l?.files ?? [] : [])) await driveApi(token, `${DRIVE}/${f.id}`, { method: 'DELETE' });
+  const l = await driveApi(token, `${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`);
+  for (const f of (recriar ? l?.files ?? [] : [])) await driveApi(token, `${DRIVE}/${f.id}?supportsAllDrives=true`, { method: 'DELETE' });
   if (!recriar && l?.files?.length) return l.files[0].id;
-  const c = await driveApi(token, DRIVE, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  const c = await driveApi(token, `${DRIVE}?supportsAllDrives=true`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.folder', ...(pai ? { parents: [pai] } : {}) }) });
   return c.id;
 }
@@ -86,7 +87,7 @@ async function driveEnviar(d: Drive, nome: string, bytes: Uint8Array, tipo: stri
   const b = 'nox' + crypto.randomUUID(), enc = new TextEncoder();
   const corpo = new Blob([enc.encode(`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: nome, parents: [d.dia] })}\r\n--${b}\r\nContent-Type: ${tipo}\r\n\r\n`),
     bytes, enc.encode(`\r\n--${b}--`)]);
-  await driveApi(d.token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+  await driveApi(d.token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true',
     { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${b}` }, body: corpo });
 }
 async function continuar(chave: string) {
