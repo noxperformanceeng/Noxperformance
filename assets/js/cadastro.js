@@ -201,7 +201,7 @@ async function montarCadastro(cfg) {
       campos.filter(c => ['select', 'empresa'].includes(c.tipo)).forEach(c => {
         const el = m.querySelector('#f_' + c.id); if (!el || el.disabled) return;
         const v = el.value, ops = opcoes(c);
-        el.innerHTML = (c.obrig && ops.length ? '' : '<option value="">—</option>') + ops.map(o => `<option value="${esc(o.v)}">${esc(o.n)}</option>`).join('');
+        el.innerHTML = (c.obrig && ops.length && v !== '' ? '' : `<option value="">${c.obrig ? '— escolha —' : '—'}</option>`) + ops.map(o => `<option value="${esc(o.v)}">${esc(o.n)}</option>`).join('');
         el.value = v;
       });
       cfg.aoRecarregarListas?.(m);
@@ -361,7 +361,7 @@ async function montarCadastro(cfg) {
       case 'select': case 'empresa': {
         const ops = opcoes(c);
         const vazio = !ops.length && cadastroDoCampo(c) ? `<option value="">— nenhum ${esc(cadastroDoCampo(c).nome)} cadastrado: use "+ cadastrar" —</option>` : '';
-        return `<select id="${id}" ${dis}>${vazio || (c.obrig && ops.length ? '' : '<option value="">—</option>')}${ops.map(o => `<option value="${esc(o.v)}"${String(o.v) === String(val) ? ' selected' : ''}>${esc(o.n)}</option>`).join('')}</select>`;
+        return `<select id="${id}" ${dis}>${vazio || (c.obrig && ops.length && val !== '' ? '' : `<option value="">${c.obrig ? '— escolha —' : '—'}</option>`)}${ops.map(o => `<option value="${esc(o.v)}"${String(o.v) === String(val) ? ' selected' : ''}>${esc(o.n)}</option>`).join('')}</select>`;
       }
       case 'uf': return `<select id="${id}" ${dis}><option value="">—</option>${UFS.map(u => `<option${u === val ? ' selected' : ''}>${u}</option>`).join('')}</select>`;
       case 'textarea': return `<textarea id="${id}" rows="2" ${dis}>${esc(val)}</textarea>`;

@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611010317">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611010347">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -40,17 +40,20 @@
   .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
   .aviso-box.erro { background: #fdeceb; color: var(--erro); }
   .alc td { padding: 3px 4px; vertical-align: top; }
+  .itens-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; }
+  .itens-acoes .btn.fino { padding: 4px 12px; font-size: 12.5px; min-height: 0; }
+  .itens-links { display: inline-flex; gap: 14px; margin-left: 6px; font-size: 12.5px; }
   .alc .aprov { display: flex; flex-wrap: wrap; gap: 2px 10px; max-width: 360px; font-size: 12px; }
 </style>
 </head>
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611010317"></script>
-<script src="../../assets/js/ui.js?v=202611010317"></script>
-<script src="../../assets/js/auth.js?v=202611010317"></script>
-<script src="../../assets/js/layout.js?v=202611010317"></script>
-<script src="../../assets/js/cadastro.js?v=202611010317"></script>
+<script src="../../assets/js/supabase.js?v=202611010347"></script>
+<script src="../../assets/js/ui.js?v=202611010347"></script>
+<script src="../../assets/js/auth.js?v=202611010347"></script>
+<script src="../../assets/js/layout.js?v=202611010347"></script>
+<script src="../../assets/js/cadastro.js?v=202611010347"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -97,8 +100,9 @@ const quemAprova = (r, n) => n === 0 ? 'quem tem a ação "Aprovar pedidos de co
   : [...new Set(alcadasDoNivel(r, n).flatMap(a => a.aprovadores || []).map(usu).filter(Boolean))].join(', ') || 'administrador';
 
 /* ---------- Itens ---------- */
-const optProds = sel => '<option value="">— item sem cadastro —</option>' + PRODS.filter(p => (p.situacao === 'ativo' && (p.aprovacao || 'aprovado') === 'aprovado') || p.id === sel)
-  .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo || '—') + ' · ' + p.descricao)}</option>`).join('');
+const optProds = (sel, avulso = false) => '<option value="">— escolha o produto —</option>' + PRODS.filter(p => (p.situacao === 'ativo' && (p.aprovacao || 'aprovado') === 'aprovado') || p.id === sel)
+  .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo || '—') + ' · ' + p.descricao)}</option>`).join('')
+  + `<option value="avulso"${avulso ? ' selected' : ''}>✎ item sem cadastro (descrever)</option>`;
 // categorias em ordem de código (1.2 antes de 1.10), agrupadas pela categoria-mãe: a lista tem busca por qualquer parte do nome
 const ordCod = c => String(c || '').split('.').map(n => n.padStart(4, '0')).join('.');
 function optCats(sel) {
@@ -273,8 +277,8 @@ function prazoLivre(m) {
 }
 const linhaItem = (x = {}, rec = false) => x.tipo_item === 'servico_usinagem' ? linhaServico(x, rec) : x.servico_id ? linhaServ(x, rec) : linhaProduto(x, rec);
 const linhaProduto = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
-  <td style="min-width:220px">${selTipo('produto')}<select data-k="produto_id" style="margin-top:3px">${optProds(x.produto_id)}</select>
-    <input data-k="descricao" placeholder="Descrição do item (sem cadastro)" value="${esc(x.produto_id ? '' : x.descricao || '')}" style="margin-top:3px;${x.produto_id ? 'display:none' : ''}">
+  <td style="min-width:220px">${selTipo('produto')}<select data-k="produto_id" style="margin-top:3px">${optProds(x.produto_id, !x.produto_id && !!x.descricao)}</select>
+    <input data-k="descricao" placeholder="Descrição do item (sem cadastro)" value="${esc(x.produto_id ? '' : x.descricao || '')}" style="margin-top:3px;${!x.produto_id && x.descricao ? '' : 'display:none'}">
     <label class="ro" style="display:flex;gap:5px;align-items:center;margin-top:3px"><input type="checkbox" data-k="uso_consumo"${x.uso_consumo ? ' checked' : ''}> uso e consumo interno (manutenção, não entra no estoque)</label>
     <div class="ro" data-k="info">${!x.produto_id && x.id ? '<span class="tg alerta">sem cadastro · precisa de liberação do administrador</span>' : ''}</div><div class="ro" data-k="preco"></div></td>
   <td style="width:58px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
@@ -299,7 +303,7 @@ function lerItens() {
     const sid = srv || gen ? Number(g('servico_id')?.value) || null : null, det = gen ? g('descricao').value.trim() : '';
     return { ...(srv ? { tipo_item: 'servico_usinagem', barra_mm: lerNumero(g('barra_mm').value) || null } : {}), linha: gen ? 'servico' : srv ? 'usinagem' : 'produto',
       produto_id: pid, servico_id: sid,
-      descricao: srv ? g('descricao').value.trim() : gen ? [serv(sid)?.nome, det].filter(Boolean).join(' · ') : pid ? prod(pid)?.descricao : g('descricao').value.trim(), unidade: g('unidade').value.trim() || null,
+      descricao: srv ? g('descricao').value.trim() : gen ? [serv(sid)?.nome, det].filter(Boolean).join(' · ') : pid ? prod(pid)?.descricao : g('produto_id').value === 'avulso' ? g('descricao').value.trim() : '', unidade: g('unidade').value.trim() || null,
       quantidade: lerNumero(g('quantidade').value) || 0, valor_unitario: lerNumero(g('valor_unitario').value) || 0, desconto: lerNumero(g('desconto').value) || 0,
       categoria_financeira_id: Number(g('categoria_financeira_id').value) || null, uso_consumo: !srv && !gen && !!g('uso_consumo')?.checked,
       codigo_fornecedor: pid ? PF.find(x => x.produto_id === pid && x.fornecedor_id === Number(modalAtual.querySelector('#f_fornecedor_id')?.value))?.codigo_fornecedor || null : null };
@@ -343,9 +347,10 @@ function aoEscolherServ(tr) {
 }
 function aoEscolherProduto(tr) {
   const pid = Number(tr.querySelector('[data-k=produto_id]').value) || null, p = prod(pid), fid = Number(modalAtual.querySelector('#f_fornecedor_id')?.value);
-  tr.querySelector('[data-k=descricao]').style.display = pid ? 'none' : '';
+  const avulso = tr.querySelector('[data-k=produto_id]').value === 'avulso';
+  tr.querySelector('[data-k=descricao]').style.display = avulso ? '' : 'none';
   const info = tr.querySelector('[data-k=info]');
-  if (!p) { info.innerHTML = '<span class="tg alerta">sem cadastro · precisa de liberação do administrador</span>'; return; }
+  if (!p) { info.innerHTML = avulso ? '<span class="tg alerta">sem cadastro · precisa de liberação do administrador</span>' : ''; if (avulso) tr.querySelector('[data-k=descricao]').focus(); return; }
   const un = tr.querySelector('[data-k=unidade]'); if (!un.value) un.value = p.unidade_compra || p.unidade || '';
   travarCategoria(tr);
   const up = ultimoPreco(pid, fid), vu = tr.querySelector('[data-k=valor_unitario]');
@@ -901,7 +906,6 @@ const cfg = {
     { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
     { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Gera as parcelas previstas e as da NF. Sem condição: prazo padrão do fornecedor.' },
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', cadastro: false, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })), ajuda: 'Obrigatória para enviar à aprovação: a forma combinada com o fornecedor no fechamento da compra (Pix, boleto…).' },
-    { id: 'conta_bancaria_id', label: 'Conta prevista (pagar)', tipo: 'select', opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
     { id: 'frete', label: 'Frete (R$)', tipo: 'moeda', secao: 'Valores' },
     { id: 'outras_despesas', label: 'Outras despesas (R$)', tipo: 'moeda' },
     { id: 'desconto', label: 'Desconto no pedido (R$)', tipo: 'moeda' },
@@ -983,7 +987,7 @@ const cfg = {
     const box = document.createElement('div');
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
-        ${editavel && podeEd ? `<button type="button" class="btn fino" id="addItem" style="margin-top:4px">+ Item</button>${CONJ.size ? ' <button type="button" class="btn fino" id="addConj" style="margin-top:4px" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}${CTX.pode('produtos', 'criar') ? ` <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''} ${linkServ()}` : ''}
+        ${editavel && podeEd ? `<div class="itens-acoes"><button type="button" class="btn fino" id="addItem">+ Item</button>${CONJ.size ? '<button type="button" class="btn fino" id="addConj" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}<span class="itens-links">${CTX.pode('produtos', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${linkServ()}</span></div>` : ''}
         <div id="matBox" style="margin-top:8px"></div>
         <div class="tot-ped" id="totPed"></div></div>`;
     box.addEventListener('click', e => { const b = e.target.closest('[data-hist]'); if (b) { e.preventDefault(); mostrarHistorico(b.closest('tr')); } });
@@ -1037,7 +1041,7 @@ const cfg = {
   },
   // Voltou do "+ cadastrar": refaz a lista de produtos de cada item sem perder o que foi escolhido
   aoRecarregarListas(m) {
-    m.querySelectorAll('tr:not([data-tipo]) [data-k=produto_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optProds(Number(v) || null); sel.value = v; });
+    m.querySelectorAll('tr:not([data-tipo]) [data-k=produto_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optProds(Number(v) || null, v === 'avulso'); sel.value = v; });
     m.querySelectorAll('[data-k=servico_id]').forEach(sel => { const v = sel.value; sel.innerHTML = optServs(Number(v) || null); sel.value = v; });
   },
   tituloRegistro: r => `${r.origem === 'tiny' ? 'TINY ' + r.numero_tiny + ' (' + r.numero + ')' : r.numero} · ${nomeComFantasia(forn(r.fornecedor_id))}`,
