@@ -11,4 +11,7 @@ for p in list(raiz.glob('*.html')) + list(raiz.glob('pages/*/*.html')):
     novo = re.sub(r'(assets/(?:js|css)/[\w-]+\.(?:js|css))(\?v=\w+)?"', rf'\1?v={v}"', t)
     if novo != t:
         p.write_text(novo, encoding='utf-8'); n += 1
+js = raiz / 'assets/js/layout.js'
+t = js.read_text(encoding='utf-8'); novo = re.sub(r"const VERSAO_TELAS = '\w*';", f"const VERSAO_TELAS = '{v}';", t)
+if novo != t: js.write_text(novo, encoding='utf-8')
 print(f'versão {v} em {n} página(s)')

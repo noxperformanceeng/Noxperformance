@@ -5,6 +5,10 @@
    exige: 'modulo' → o item só aparece se a pessoa também tiver essa outra tela.
    Os ids precisam ser os mesmos da tabela "modulos" do banco.
    ===================================================================== */
+// versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
+// para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
+const VERSAO_TELAS = '202611010359';
+const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html' },
@@ -342,7 +346,7 @@ function montarBarraTelas(ctx, app) {
   }
   function criarPainel(a) {
     const p = document.createElement('div'); p.className = 'tela-painel'; p.dataset.caminho = a.caminho; p.hidden = true;
-    const f = document.createElement('iframe'); f.src = RAIZ + a.caminho; f.title = a.titulo;
+    const f = document.createElement('iframe'); f.src = urlTela(a.caminho); f.title = a.titulo;
     p.appendChild(f); telas.appendChild(p);
   }
   function ativar(c) {
@@ -377,7 +381,7 @@ function montarBarraTelas(ctx, app) {
         delete info[existente.caminho];
         const p = painel(existente.caminho); if (p) p.dataset.caminho = caminho;
         existente.caminho = caminho;
-        if (f) f.src = RAIZ + caminho;
+        if (f) f.src = urlTela(caminho);
       }
       return ativar(existente.caminho);
     }
@@ -397,7 +401,7 @@ function montarBarraTelas(ctx, app) {
     const aba = e.target.closest('.aba-tela'); if (!aba) return;
     const c = aba.dataset.c;
     if (e.target.closest('[data-fechar]')) return fechar(c);
-    if (e.target.closest('[data-recarregar]')) { const f = iframeDe(c); if (f) { delete info[c]; f.src = RAIZ + c; } return ativar(c); }
+    if (e.target.closest('[data-recarregar]')) { const f = iframeDe(c); if (f) { delete info[c]; f.src = urlTela(c); } return ativar(c); }
     ativar(c);
   });
   barra.addEventListener('auxclick', e => { const aba = e.target.closest('.aba-tela:not(.fixa)'); if (aba && e.button === 1) fechar(aba.dataset.c); });
