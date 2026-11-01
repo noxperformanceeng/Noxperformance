@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611010352">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611010354">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,11 +49,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611010352"></script>
-<script src="../../assets/js/ui.js?v=202611010352"></script>
-<script src="../../assets/js/auth.js?v=202611010352"></script>
-<script src="../../assets/js/layout.js?v=202611010352"></script>
-<script src="../../assets/js/cadastro.js?v=202611010352"></script>
+<script src="../../assets/js/supabase.js?v=202611010354"></script>
+<script src="../../assets/js/ui.js?v=202611010354"></script>
+<script src="../../assets/js/auth.js?v=202611010354"></script>
+<script src="../../assets/js/layout.js?v=202611010354"></script>
+<script src="../../assets/js/cadastro.js?v=202611010354"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -390,7 +390,7 @@ function abrirConjunto() {
   m.querySelector('.modal').style.maxWidth = '1040px';
   const box = m.querySelector('#cjBox'), qtd = () => lerNumero(m.querySelector('#cjQ').value) || 0, pintor = () => Number(m.querySelector('#cjF').value) || null;
   let D = null;
-  const sug = p => p.controla_estoque === false ? Number(p.necessario) : Math.max(0, Number(p.necessario) - Math.max(0, Number(p.saldo)));
+  const sug = p => p.obrigatorio || p.controla_estoque === false ? Number(p.necessario) : Math.max(0, Number(p.necessario) - Math.max(0, Number(p.saldo)));
   const desenhar = () => {
     const bt = m.querySelector('#cjS'); bt.disabled = !D;
     bt.textContent = pintor() ? 'Incluir peças + gerar OC de pintura' : 'Incluir peças';
@@ -398,14 +398,14 @@ function abrirConjunto() {
     const q = qtd(), pecas = D.pecas.map(p => ({ ...p, necessario: Number(p.por_conjunto) * q }));
     if (!pecas.length) { box.innerHTML = '<div class="aviso-box erro">Este conjunto não tem peças cadastradas. Cadastre em Produtos › Componentes do conjunto.</div>'; bt.disabled = true; return; }
     const mont = (D.conjunto.arquivos || []).filter(a => a.finalidade === 'montagem'), pc = pecas.filter(ehCorte);
-    const comEst = pecas.filter(p => ehCorte(p) && Number(p.saldo) > 0);
+    const comEst = pecas.filter(p => ehCorte(p) && !p.obrigatorio && Number(p.saldo) > 0);
     box.innerHTML = `${comEst.length ? `<div class="aviso-box"><b>⚠ Já tem em estoque:</b> ${comEst.map(p => `${esc(p.descricao)} (${num(p.saldo)})`).join(' · ')}. A quantidade a comprar já desconta o estoque; ajuste se essas peças estiverem reservadas.</div>` : ''}
       <div class="secao">Peças de corte e dobra · entram neste pedido</div>
       <table><thead><tr><th></th><th>Peça</th><th class="num">Por conj.</th><th class="num">Precisa</th><th class="num">Estoque</th><th class="num">Em pedido</th><th>Comprar</th><th>Desenhos</th></tr></thead><tbody>
       ${pecas.map((p, k) => { const corte = ehCorte(p), dxf = (p.arquivos || []).some(a => a.finalidade === 'corte_dxf');
-        const tags = [p.situacao !== 'ativo' ? '<span class="tg erro">produto inativo</span>' : '', !corte ? '<span class="tg neutro">não é corte a laser</span>' : !dxf ? '<span class="tg erro">sem DXF de corte</span>' : '',
+        const tags = [p.obrigatorio ? '<span class="tg erro">compra obrigatória junto · não pode ficar de fora</span>' : '', p.situacao !== 'ativo' ? '<span class="tg erro">produto inativo</span>' : '', !corte ? '<span class="tg neutro">não é corte a laser</span>' : !dxf ? '<span class="tg erro">sem DXF de corte</span>' : '',
           Number(p.em_pedido) > 0 ? `<span class="tg info">${num(p.em_pedido)} já em pedido aberto</span>` : ''].filter(Boolean).join(' ');
-        return `<tr data-k="${k}"><td><input type="checkbox" data-ok${corte && p.situacao === 'ativo' ? ' checked' : ''}></td>
+        return `<tr data-k="${k}"><td><input type="checkbox" data-ok${p.obrigatorio ? ' checked disabled title="Peça obrigatória: vai sempre junto com o conjunto"' : corte && p.situacao === 'ativo' ? ' checked' : ''}></td>
           <td><b>${esc(p.codigo)}</b> ${esc(p.descricao)}${tags ? '<div class="ro">' + tags + '</div>' : ''}</td>
           <td class="num">${num(p.por_conjunto)}</td><td class="num">${num(p.necessario)}</td>
           <td class="num">${Number(p.saldo) > 0 ? `<b style="color:#b45309">${num(p.saldo)}</b>` : num(p.saldo)}</td><td class="num">${num(p.em_pedido)}</td>
@@ -433,7 +433,10 @@ function abrirConjunto() {
   m.querySelector('#cjS').onclick = async () => {
     const q = qtd(), fp = pintor(), bt = m.querySelector('#cjS');
     if (!(q > 0)) return aviso('Informe quantos conjuntos', true);
-    const sel = [...m.querySelectorAll('#cjBox tr[data-k]')].map(tr => ({ p: D._pecas[Number(tr.dataset.k)], q: lerNumero(tr.querySelector('[data-q]').value) || 0, ok: tr.querySelector('[data-ok]').checked })).filter(x => x.ok && x.q > 0);
+    const todas = [...m.querySelectorAll('#cjBox tr[data-k]')].map(tr => ({ p: D._pecas[Number(tr.dataset.k)], q: lerNumero(tr.querySelector('[data-q]').value) || 0, ok: tr.querySelector('[data-ok]').checked }));
+    const falta = todas.filter(x => x.p.obrigatorio && x.q < Number(x.p.necessario));
+    if (falta.length) return aviso(`Peça obrigatória com quantidade menor que a necessária: ${falta.map(x => `${x.p.codigo} (precisa ${num(x.p.necessario)})`).join(', ')}`, true);
+    const sel = todas.filter(x => x.ok && x.q > 0);
     if (!sel.length && !fp) return aviso('Marque ao menos uma peça com quantidade', true);
     if (fp && !sp) return aviso('Cadastre o serviço de pintura em Cadastros › Serviços terceirizados', true);
     let oc = '';
