@@ -3,7 +3,7 @@
 // Chamado pela agenda (pg_cron, chave interna). Trabalha ~100 s e se chama de novo para continuar.
 // Auditoria: só os últimos 2 dias (é enorme; somando os dias guardados, nada se perde).
 // Guarda os últimos 14 dias + o domingo das últimas 8 semanas; apaga o resto.
-// Se os segredos GDRIVE_* existirem, manda também cada arquivo para o Google Drive (pasta "Backups ERP NOX/AAAA-MM-DD", 90 dias).
+// Se os segredos GDRIVE_* existirem, manda também cada arquivo para o Google Drive (pasta "Backups ERP NOX/AAAA-MM-DD", guarda tudo, sem apagar).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -57,7 +57,7 @@ async function limparAntigos() {
 
 // ---------- Cópia no Google Drive (só se os segredos GDRIVE_* estiverem cadastrados) ----------
 // Acesso "drive.file": o sistema só enxerga as pastas e arquivos que ele mesmo criou no Drive.
-const DRIVE = 'https://www.googleapis.com/drive/v3/files', PASTA_RAIZ = 'Backups ERP NOX', DIAS_DRIVE = 90;
+const DRIVE = 'https://www.googleapis.com/drive/v3/files', PASTA_RAIZ = 'Backups ERP NOX';   // no Drive nada é apagado: fica todo o histórico
 type Drive = { token: string; raiz: string; dia: string };
 async function driveToken(): Promise<string | null> {
   const id = Deno.env.get('GDRIVE_CLIENT_ID'), segredo = Deno.env.get('GDRIVE_CLIENT_SECRET'), rt = Deno.env.get('GDRIVE_REFRESH_TOKEN');
@@ -89,12 +89,6 @@ async function driveEnviar(d: Drive, nome: string, bytes: Uint8Array, tipo: stri
   await driveApi(d.token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
     { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${b}` }, body: corpo });
 }
-async function driveLimpar(d: Drive) {
-  const corte = new Date(Date.now() - DIAS_DRIVE * 86400_000).toISOString().slice(0, 10);
-  const l = await driveApi(d.token, `${DRIVE}?q=${encodeURIComponent(`'${d.raiz}' in parents and trashed=false`)}&fields=files(id,name)&pageSize=1000`);
-  for (const f of l?.files ?? []) if (/^\d{4}-\d{2}-\d{2}$/.test(f.name) && f.name < corte) await driveApi(d.token, `${DRIVE}/${f.id}`, { method: 'DELETE' });
-}
-
 async function continuar(chave: string) {
   await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/backup-diario`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-nox-chave': chave }, body: JSON.stringify({ acao: 'continuar' }) });
@@ -147,7 +141,6 @@ async function rodar(chave: string) {
     const resumo = new TextEncoder().encode(JSON.stringify({ dia, gerado_em: new Date().toISOString(), tabelas: tabs.length, linhas, bytes }, null, 1));
     await enviar(`${dia}/_resumo.json`, resumo, 'application/json');
     await noDrive('_resumo.json', resumo, 'application/json');
-    if (drive) { try { await driveLimpar(drive); } catch { /* limpeza fica para o próximo dia */ } }
     const driveFim = drive ? 'ok' : driveErro ? 'erro: ' + driveErro : (Deno.env.get('GDRIVE_REFRESH_TOKEN') ? 'erro: interrompido' : null);
     const apagados = await limparAntigos();
     await salvar({ situacao: 'ok', bytes, concluido_em: new Date().toISOString(), drive: driveFim,
