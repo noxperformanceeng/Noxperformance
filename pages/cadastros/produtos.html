@@ -6,7 +6,7 @@
 <title>Produtos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611010656">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611011451">
 <style>
   td.foto { width: 64px; padding: 4px 8px; }
   td.foto img { display: block; width: 52px; height: 52px; object-fit: contain; background: #fff; border: 1px solid var(--linha); border-radius: 6px; cursor: zoom-in; }
@@ -96,10 +96,10 @@
 <datalist id="dlForn"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611010656"></script>
-<script src="../../assets/js/ui.js?v=202611010656"></script>
-<script src="../../assets/js/auth.js?v=202611010656"></script>
-<script src="../../assets/js/layout.js?v=202611010656"></script>
+<script src="../../assets/js/supabase.js?v=202611011451"></script>
+<script src="../../assets/js/ui.js?v=202611011451"></script>
+<script src="../../assets/js/auth.js?v=202611011451"></script>
+<script src="../../assets/js/layout.js?v=202611011451"></script>
 <script>
 /* ===================== CONFIGURAÇÃO ===================== */
 /* "Origem" = como a peça chega na NOX (quem cadastra sabe olhando a peça, o desenho ou a nota de compra).
@@ -153,7 +153,7 @@ const PEND = [
 ];
 
 let ctx, podeEditar = false;
-let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {}, categorias = [], GRUPOS = [], VENDAS = {};
+let produtos = [], vinculos = [], fornecedores = [], nomes = {}, dups = {}, categorias = [], GRUPOS = [], VENDAS = {}, LOCAIS = null;
 // etiqueta automática "Vendido": anúncio ou pedido de venda (ninguém informa)
 const vendaDe = id => VENDAS[id];
 const tgVendido = (id, longo) => { const v = vendaDe(id); if (!v) return '<span class="tg neutro" title="Sem anúncio e sem pedido de venda">Não vendido</span>';
@@ -212,8 +212,10 @@ async function carregar() {
     try { const { data: vr } = await db.rpc('produtos_vendas_resumo'); VENDAS = Object.fromEntries((vr || []).map(x => [x.produto_id, x])); } catch { VENDAS = {}; }
     produtos = lista; vinculos = vinc; fornecedores = forn;
     // Plano de categorias (se a tabela ainda não existir, a tela segue sem ela)
-    const [cat, gr] = await Promise.all([db.from('categorias_financeiras').select('id, codigo, nome, tipo, pai_id, aceita_lancamento, aplica_produtos, situacao, aprovacao').order('codigo'),
-      db.from('produto_grupos').select('id, nome, tipo_produto, categoria_financeira_id, situacao').order('nome')]);
+    const [cat, gr, lc] = await Promise.all([db.from('categorias_financeiras').select('id, codigo, nome, tipo, pai_id, aceita_lancamento, aplica_produtos, situacao, aprovacao').order('codigo'),
+      db.from('produto_grupos').select('id, nome, tipo_produto, categoria_financeira_id, situacao').order('nome'),
+      db.from('locais_estoque').select('id, codigo, descricao, situacao').order('codigo')]);
+    LOCAIS = lc.error ? null : lc.data || [];   // null = sem acesso aos locais: o campo some e o local do produto fica como está
     categorias = cat.error ? [] : cat.data || [];
     GRUPOS = gr.error ? [] : gr.data || [];
     nomes = Object.fromEntries((nm.data || []).map(u => [u.id, u.nome]));
@@ -495,6 +497,8 @@ function abrirProduto(p) {
   const removidos = [];
   const num = v => v === null || v === undefined ? '' : String(v).replace('.', ',');
   const unidades = [...new Set([...UNIDADES, p.unidade].filter(Boolean))];
+  // local de armazenagem: só para quem enxerga os locais (estoque/almoxarifado); para os demais o local fica como está
+  const comLocal = !!LOCAIS && ['locais', 'estoque', 'almoxarifado', 'inventario'].some(m => ctx.pode(m));
 
   const m = abrirModal(`
     <h2>${novo ? 'Novo produto' : esc(p.codigo || 'Produto sem código')}</h2>
@@ -567,6 +571,7 @@ function abrirProduto(p) {
       <div class="campo"><label>Estoque mínimo <span id="minUn"></span></label><input id="pMin" inputmode="decimal" value="${num(p.estoque_minimo)}" ${ro}></div>
       <div class="campo"><label>Estoque máximo <span class="minUnX"></span></label><input id="pMax" inputmode="decimal" value="${num(p.estoque_maximo)}" ${ro}></div>
       <div class="campo"><label>Lead time (dias)</label><input id="pLead" inputmode="numeric" value="${p.lead_time_dias ?? ''}" placeholder="pedido até chegar" title="Dias corridos entre fazer o pedido de compra e a peça chegar" ${ro}></div>
+      <div class="campo l2"${comLocal ? '' : ' hidden'}><label>Localização no almoxarifado ${!ro && ctx.pode('locais', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/locais.html?novo=1">+ cadastrar</a>` : ''}</label><select id="pLocal" ${ro}><option value="">— sem local definido —</option>${(LOCAIS || []).filter(l => l.situacao === 'ativo' || l.id === p.local_id).map(l => `<option value="${l.id}"${l.id === p.local_id ? ' selected' : ''}>${esc(l.codigo)}${l.descricao ? ' · ' + esc(l.descricao) : ''}</option>`).join('')}</select></div>
       <div class="campo l4 conv" id="convTexto"></div>
       <div class="campo l2" style="display:flex;align-items:end"><label class="chk"><input type="checkbox" id="pControla" ${p.controla_estoque ? 'checked' : ''} ${ro}> Controla estoque</label></div>
     </div>
@@ -879,6 +884,7 @@ function abrirProduto(p) {
       estoque_minimo: n('#pMin'), estoque_maximo: n('#pMax'), lead_time_dias: $('#pLead').value.trim() === '' ? null : Number($('#pLead').value.trim()),
       controla_estoque: $('#pControla').checked, observacoes: $('#pObs').value.trim() || null
     };
+    if (comLocal) dados.local_id = Number($('#pLocal').value) || null;
     if (COM_ENGENHARIA.includes(dados.tipo)) Object.assign(dados, {
       codigo_desenho: $('#pDesenho').value.trim() || null, peso_kg: n('#pPeso'), comprimento_cm: n('#pComp'), largura_cm: n('#pLarg'), altura_cm: n('#pAlt')
     });

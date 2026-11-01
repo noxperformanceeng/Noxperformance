@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611010359';
+const VERSAO_TELAS = '202611011451';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -18,7 +18,6 @@ const MENU = [
   ]},
   { grupo: 'Estoque', icone: 'estoque', itens: [
     { id: 'estoque',       nome: 'Posição de estoque', arquivo: 'pages/estoque/posicao.html' },
-    { id: 'almoxarifado',  nome: 'Almoxarifado',      arquivo: null },
     { id: 'inventario',    nome: 'Inventário',        arquivo: 'pages/estoque/inventario.html' },
     { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' }
   ]},
