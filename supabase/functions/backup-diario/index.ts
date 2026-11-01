@@ -3,6 +3,7 @@
 // Chamado pela agenda (pg_cron, chave interna). Trabalha ~100 s e se chama de novo para continuar.
 // Auditoria: só os últimos 2 dias (é enorme; somando os dias guardados, nada se perde).
 // Guarda os últimos 14 dias + o domingo das últimas 8 semanas; apaga o resto.
+// Se os segredos GDRIVE_* existirem, manda também cada arquivo para o Google Drive (pasta "Backups ERP NOX/AAAA-MM-DD", 90 dias).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -54,6 +55,46 @@ async function limparAntigos() {
   return apagar;
 }
 
+// ---------- Cópia no Google Drive (só se os segredos GDRIVE_* estiverem cadastrados) ----------
+// Acesso "drive.file": o sistema só enxerga as pastas e arquivos que ele mesmo criou no Drive.
+const DRIVE = 'https://www.googleapis.com/drive/v3/files', PASTA_RAIZ = 'Backups ERP NOX', DIAS_DRIVE = 90;
+type Drive = { token: string; raiz: string; dia: string };
+async function driveToken(): Promise<string | null> {
+  const id = Deno.env.get('GDRIVE_CLIENT_ID'), segredo = Deno.env.get('GDRIVE_CLIENT_SECRET'), rt = Deno.env.get('GDRIVE_REFRESH_TOKEN');
+  if (!id || !segredo || !rt) return null;
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: id, client_secret: segredo, refresh_token: rt, grant_type: 'refresh_token' }) });
+  const j = await r.json().catch(() => ({}));
+  if (!j.access_token) throw new Error('Google Drive: acesso recusado (' + (j.error_description || j.error || r.status) + ')');
+  return j.access_token;
+}
+async function driveApi(token: string, url: string, init: RequestInit = {}) {
+  const r = await fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
+  if (!r.ok && r.status !== 404) throw new Error(`Google Drive ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return r.status === 204 || r.status === 404 ? null : r.json();
+}
+async function drivePasta(token: string, nome: string, pai?: string, recriar = false): Promise<string> {
+  const q = `name='${nome}' and mimeType='application/vnd.google-apps.folder' and trashed=false` + (pai ? ` and '${pai}' in parents` : '');
+  const l = await driveApi(token, `${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id)`);
+  for (const f of (recriar ? l?.files ?? [] : [])) await driveApi(token, `${DRIVE}/${f.id}`, { method: 'DELETE' });
+  if (!recriar && l?.files?.length) return l.files[0].id;
+  const c = await driveApi(token, DRIVE, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.folder', ...(pai ? { parents: [pai] } : {}) }) });
+  return c.id;
+}
+async function driveEnviar(d: Drive, nome: string, bytes: Uint8Array, tipo: string) {
+  const b = 'nox' + crypto.randomUUID(), enc = new TextEncoder();
+  const corpo = new Blob([enc.encode(`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: nome, parents: [d.dia] })}\r\n--${b}\r\nContent-Type: ${tipo}\r\n\r\n`),
+    bytes, enc.encode(`\r\n--${b}--`)]);
+  await driveApi(d.token, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+    { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${b}` }, body: corpo });
+}
+async function driveLimpar(d: Drive) {
+  const corte = new Date(Date.now() - DIAS_DRIVE * 86400_000).toISOString().slice(0, 10);
+  const l = await driveApi(d.token, `${DRIVE}?q=${encodeURIComponent(`'${d.raiz}' in parents and trashed=false`)}&fields=files(id,name)&pageSize=1000`);
+  for (const f of l?.files ?? []) if (/^\d{4}-\d{2}-\d{2}$/.test(f.name) && f.name < corte) await driveApi(d.token, `${DRIVE}/${f.id}`, { method: 'DELETE' });
+}
+
 async function continuar(chave: string) {
   await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/backup-diario`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-nox-chave': chave }, body: JSON.stringify({ acao: 'continuar' }) });
@@ -75,22 +116,41 @@ async function rodar(chave: string) {
     }
     let linhas = Number(ex!.linhas), bytes = Number(ex!.bytes);
     await salvar({ tabelas: tabs.length });
+    // Google Drive: falha no Drive não derruba o backup (fica anotada e o arquivo continua no Storage)
+    let drive: Drive | null = null, driveErro = '';
+    try {
+      const token = await driveToken();
+      if (token) { const raiz = await drivePasta(token, PASTA_RAIZ); drive = { token, raiz, dia: await drivePasta(token, dia, raiz, !feitas.size) }; }
+    } catch (e) { driveErro = String((e as Error).message ?? e).slice(0, 300); }
+    if (String(ex!.drive ?? '').startsWith('erro')) { drive = null; driveErro ||= String(ex!.drive).slice(6); }   // cópia do dia já falhou: não fica pela metade como "ok"
+    const noDrive = async (nome: string, b: Uint8Array, tipo: string) => {
+      if (!drive) return;
+      try { await driveEnviar(drive, nome, b, tipo); }
+      catch (e) { driveErro = String((e as Error).message ?? e).slice(0, 300); drive = null; await salvar({ drive: 'erro: ' + driveErro }); }
+    };
+    if (driveErro) await salvar({ drive: 'erro: ' + driveErro });
     for (const t of tabs as { nome: string; ordem: string | null }[]) {
       if (feitas.has(t.nome)) continue;
       if (Date.now() - inicio > LIMITE_MS) { await continuar(chave); return; }
       const cont = { n: 0 };
       const arq = await gz(paginasDaTabela(t.nome, t.ordem, cont));
       await enviar(`${dia}/${t.nome}.json.gz`, arq, 'application/gzip');
+      await noDrive(`${t.nome}.json.gz`, arq, 'application/gzip');
       feitas.add(t.nome); linhas += cont.n; bytes += arq.length;
       await salvar({ feitas: [...feitas], linhas, bytes });
     }
     const { data: estr } = await db.rpc('backup_estrutura');
     const e = await gz((async function* () { yield new TextEncoder().encode(String(estr ?? '')); })());
     await enviar(`${dia}/_estrutura.sql.gz`, e, 'application/gzip');
+    await noDrive('_estrutura.sql.gz', e, 'application/gzip');
     bytes += e.length;
-    await enviar(`${dia}/_resumo.json`, new TextEncoder().encode(JSON.stringify({ dia, gerado_em: new Date().toISOString(), tabelas: tabs.length, linhas, bytes }, null, 1)), 'application/json');
+    const resumo = new TextEncoder().encode(JSON.stringify({ dia, gerado_em: new Date().toISOString(), tabelas: tabs.length, linhas, bytes }, null, 1));
+    await enviar(`${dia}/_resumo.json`, resumo, 'application/json');
+    await noDrive('_resumo.json', resumo, 'application/json');
+    if (drive) { try { await driveLimpar(drive); } catch { /* limpeza fica para o próximo dia */ } }
+    const driveFim = drive ? 'ok' : driveErro ? 'erro: ' + driveErro : (Deno.env.get('GDRIVE_REFRESH_TOKEN') ? 'erro: interrompido' : null);
     const apagados = await limparAntigos();
-    await salvar({ situacao: 'ok', bytes, concluido_em: new Date().toISOString(),
+    await salvar({ situacao: 'ok', bytes, concluido_em: new Date().toISOString(), drive: driveFim,
       mensagem: `${tabs.length} tabelas, ${linhas} registros` + (apagados.length ? ` · apagados backups antigos: ${apagados.join(', ')}` : '') });
   } catch (err) {
     await salvar({ situacao: 'erro', mensagem: String((err as Error).message ?? err).slice(0, 500) });

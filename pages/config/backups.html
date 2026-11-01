@@ -6,7 +6,7 @@
 <title>Backups · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202610312124">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202610312129">
 <style>
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .bk-info { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
@@ -23,21 +23,22 @@
   <div class="bk-info">
     <b>O que é guardado:</b> todas as tabelas (cadastros, compras, financeiro, RH, estoque, produção…) e a estrutura do banco (funções e regras de acesso), compactadas, numa pasta privada por dia.
     A auditoria vai só com os últimos 2 dias em cada backup. Ficam os últimos 14 dias e o domingo das últimas 8 semanas.<br>
+    <b>Cópia fora do sistema:</b> quando o Google Drive estiver ligado, cada backup também vai para a pasta <b>Backups ERP NOX</b> do Drive (90 dias).<br>
     <b>Não entram:</b> os arquivos anexados (desenhos, fotos, PDFs, documentos do RH), que já ficam guardados no Storage.<br>
     <b>Restaurar:</b> peça ao administrador do sistema (Claude ou Alexandre). Dá para voltar uma tabela inteira ou só alguns registros de um dia escolhido.
   </div>
   <div class="cartao tabela-rolagem">
     <table>
-      <thead><tr><th>Dia</th><th>Situação</th><th class="num">Tabelas</th><th class="num">Registros</th><th class="num">Tamanho</th><th>Início</th><th>Fim</th><th>Detalhe</th></tr></thead>
-      <tbody id="lista"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody>
+      <thead><tr><th>Dia</th><th>Situação</th><th class="num">Tabelas</th><th class="num">Registros</th><th class="num">Tamanho</th><th>Google Drive</th><th>Início</th><th>Fim</th><th>Detalhe</th></tr></thead>
+      <tbody id="lista"><tr><td colspan="9" class="vazio">Carregando…</td></tr></tbody>
     </table>
   </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202610312124"></script>
-<script src="../../assets/js/ui.js?v=202610312124"></script>
-<script src="../../assets/js/auth.js?v=202610312124"></script>
-<script src="../../assets/js/layout.js?v=202610312124"></script>
+<script src="../../assets/js/supabase.js?v=202610312129"></script>
+<script src="../../assets/js/ui.js?v=202610312129"></script>
+<script src="../../assets/js/auth.js?v=202610312129"></script>
+<script src="../../assets/js/layout.js?v=202610312129"></script>
 <script>
 /* Lista as execuções (backup_execucoes) e os arquivos de cada dia no bucket privado "backups"
    (leitura liberada só para administrador). Baixar = link temporário de 5 minutos. */
@@ -48,7 +49,7 @@ let LISTA = [], aberto = null;
 
 async function carregar() {
   const [e, d] = await Promise.all([db.from('backup_execucoes').select('*').order('id', { ascending: false }).limit(60), db.storage.from('backups').list('', { limit: 200 })]);
-  if (e.error) { $('#lista').innerHTML = `<tr><td colspan="8" class="vazio">Erro: ${esc(e.error.message)}</td></tr>`; return; }
+  if (e.error) { $('#lista').innerHTML = `<tr><td colspan="9" class="vazio">Erro: ${esc(e.error.message)}</td></tr>`; return; }
   const pastas = new Set((d.data || []).map(x => x.name));
   LISTA = (e.data || []).map(x => ({ ...x, guardado: pastas.has(x.dia) }));
   desenhar();
@@ -57,9 +58,10 @@ function desenhar() {
   $('#lista').innerHTML = LISTA.length ? LISTA.map(x => { const s = x.mensagem?.startsWith('Substituído') ? ['Substituído', 'neutro'] : SIT[x.situacao];
     return `<tr data-id="${x.id}" style="cursor:pointer"><td><b>${x.dia.split('-').reverse().join('/')}</b></td><td><span class="tg ${s[1]}">${s[0]}</span>${x.situacao === 'ok' && !x.guardado ? ' <span class="tg neutro">apagado (antigo)</span>' : ''}</td>
       <td class="num">${x.situacao === 'rodando' ? `${(x.feitas || []).length} de ${x.tabelas ?? '…'}` : x.tabelas ?? ''}</td><td class="num">${Number(x.linhas).toLocaleString('pt-BR')}</td><td class="num">${tam(x.bytes)}</td>
+      <td>${x.drive === 'ok' ? '<span class="tg ok">copiado</span>' : x.drive ? `<span class="tg erro" title="${esc(x.drive)}">falhou</span>` : '<span class="sub">—</span>'}</td>
       <td>${dataHoraBR(x.iniciado_em)}</td><td>${dataHoraBR(x.concluido_em)}</td><td class="sub">${esc(x.mensagem || '')}</td></tr>
-      ${aberto === x.id ? `<tr class="det"><td colspan="8"><div id="arqs" class="sub">Carregando arquivos…</div></td></tr>` : ''}`; }).join('')
-    : '<tr><td colspan="8" class="vazio">Nenhum backup ainda. O primeiro roda esta madrugada, ou clique em "Fazer backup agora".</td></tr>';
+      ${aberto === x.id ? `<tr class="det"><td colspan="9"><div id="arqs" class="sub">Carregando arquivos…</div></td></tr>` : ''}`; }).join('')
+    : '<tr><td colspan="9" class="vazio">Nenhum backup ainda. O primeiro roda esta madrugada, ou clique em "Fazer backup agora".</td></tr>';
   $('#lista').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { const id = +tr.dataset.id; aberto = aberto === id ? null : id; desenhar(); if (aberto) arquivos(LISTA.find(x => x.id === id)); });
 }
 async function arquivos(x) {

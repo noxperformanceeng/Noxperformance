@@ -90,3 +90,6 @@ begin
 end $$;
 revoke execute on function public.backup_agora() from public, anon;
 grant execute on function public.backup_agora() to authenticated;
+
+-- cópia no Google Drive (se configurada): situação da cópia de cada dia (null = Drive não configurado)
+alter table public.backup_execucoes add column if not exists drive text;
