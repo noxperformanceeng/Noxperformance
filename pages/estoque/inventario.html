@@ -6,7 +6,7 @@
 <title>Inventário · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611031319">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611032320">
 <style>
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.num input { width: 120px; text-align: right; }
@@ -50,10 +50,10 @@
   </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611031319"></script>
-<script src="../../assets/js/ui.js?v=202611031319"></script>
-<script src="../../assets/js/auth.js?v=202611031319"></script>
-<script src="../../assets/js/layout.js?v=202611031319"></script>
+<script src="../../assets/js/supabase.js?v=202611032320"></script>
+<script src="../../assets/js/ui.js?v=202611032320"></script>
+<script src="../../assets/js/auth.js?v=202611032320"></script>
+<script src="../../assets/js/layout.js?v=202611032320"></script>
 <script>
 /* Contagem em lote: o digitado fica guardado na tela (CONTADO) enquanto troca filtros; salva tudo de uma vez.
    "Saldo do sistema" fica escondido por padrão para a contagem ser às cegas. */
@@ -69,11 +69,11 @@ const guardar = () => { try { localStorage.setItem(CHAVE, JSON.stringify([...CON
 async function carregar() {
   const [p, s, l] = await Promise.all([
     buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, tipo, grupo, local_id').eq('situacao', 'ativo').eq('controla_estoque', true).neq('tipo', 'despesa').order('codigo')),
-    db.rpc('estoque_saldos'), db.from('locais_estoque').select('id, codigo, descricao, situacao').order('codigo')]);
+    db.rpc('estoque_saldos'), db.from('locais_estoque').select(CAMPOS_LOCAL).order('codigo')]);
   if (s.error) return aviso('Erro: ' + s.error.message, true);
   PRODUTOS = p || []; LOCAIS = l.data || []; SALDOS = new Map((s.data || []).map(x => [x.produto_id, Number(x.saldo)]));
   const lv = $('#fLocal').value, gv = $('#fGrupo').value;
-  $('#fLocal').innerHTML = '<option value="">Todos os locais</option><option value="-">Sem local</option>' + LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(x.codigo)}</option>`).join('');
+  $('#fLocal').innerHTML = '<option value="">Todos os locais</option><option value="-">Sem local</option>' + LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(nomeLocal(x))}</option>`).join('');
   $('#fGrupo').innerHTML = '<option value="">Todos os grupos</option>' + [...new Set(PRODUTOS.map(x => x.grupo).filter(Boolean))].sort().map(g => `<option>${esc(g)}</option>`).join('');
   $('#fLocal').value = lv; $('#fGrupo').value = gv;
   desenhar();
@@ -82,7 +82,7 @@ const local = id => LOCAIS.find(x => x.id === id);
 function filtrados() {
   const b = $('#fBusca').value, fl = $('#fLocal').value, fg = $('#fGrupo').value;
   return PRODUTOS.filter(p => (!aba || p.tipo === aba) && (fl === '-' ? !p.local_id : !fl || String(p.local_id) === fl) && (!fg || p.grupo === fg)
-    && (!b || combinaBusca([p.codigo, p.descricao, p.grupo, local(p.local_id)?.codigo].join(' '), b)));
+    && (!b || combinaBusca([p.codigo, p.descricao, p.grupo, local(p.local_id)?.codigo, nomeLocal(local(p.local_id))].join(' '), b)));
 }
 function desenhar() {
   const mostra = $('#fSaldo').checked;
@@ -93,7 +93,7 @@ function desenhar() {
   $('#contagem').textContent = `${ls.length} produto(s)`;
   $('#lista').innerHTML = ls.length ? ls.slice(0, MAX).map(p => { const c = CONTADO.get(p.id), s = SALDOS.get(p.id) || 0;
     return `<tr data-id="${p.id}" class="${c == null ? '' : mostra && c !== s ? 'difere' : 'contado'}"><td><b>${esc(p.codigo || '—')}</b></td><td>${esc(p.descricao)}</td>
-      <td>${local(p.local_id) ? esc(local(p.local_id).codigo) : ''}</td><td>${esc(p.unidade || '')}</td>
+      <td>${esc(nomeLocal(local(p.local_id)))}</td><td>${esc(p.unidade || '')}</td>
       <td class="num col-saldo${s < 0 ? ' neg' : ''}"${mostra ? '' : ' hidden'}>${qt(s)}</td>
       <td class="num"><input data-c="${p.id}" inputmode="decimal" value="${c == null ? '' : qt(c)}"></td></tr>`; }).join('')
     : '<tr><td colspan="6" class="vazio">Nenhum produto com esses filtros.</td></tr>';
@@ -133,7 +133,7 @@ function folha() {
   if (!ls.length) return aviso('Nada para imprimir com esses filtros', true);
   imprimirRelatorio({ arquivo: 'folha_contagem', titulo: 'Folha de contagem' + ($('#fLocal').value ? ' · local ' + ($('#fLocal').selectedOptions[0].text) : ''),
     colunas: ['Código', 'Descrição', 'Local', 'Un', ...(mostra ? ['Sistema'] : []), 'Contado'],
-    linhas: ls.map(p => [p.codigo, p.descricao, local(p.local_id)?.codigo || '', p.unidade || '', ...(mostra ? [qt(SALDOS.get(p.id) || 0)] : []), '____________']) });
+    linhas: ls.map(p => [p.codigo, p.descricao, nomeLocal(local(p.local_id)), p.unidade || '', ...(mostra ? [qt(SALDOS.get(p.id) || 0)] : []), '____________']) });
 }
 (async () => {
   CTX = await iniciarTela(); if (!CTX) return;

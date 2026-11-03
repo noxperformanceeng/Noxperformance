@@ -144,6 +144,13 @@ function combinaBusca(texto, busca) {
   return semAcento(busca).split(/\s+/).filter(Boolean).every(p => t.includes(p));
 }
 
+// Local de estoque: mostra o endereço (rua-prateleira-posição) e a descrição; o código só quando não há outro nome
+const CAMPOS_LOCAL = 'id, codigo, descricao, rua, prateleira, posicao, situacao';
+function nomeLocal(l) {
+  if (!l) return '';
+  return [[l.rua, l.prateleira, l.posicao].filter(Boolean).join('-'), l.descricao].filter(Boolean).join(' · ') || l.codigo || '';
+}
+
 function dataHoraBR(v) {
   return v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 }

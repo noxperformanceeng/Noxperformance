@@ -6,8 +6,8 @@
 <title>Posição de estoque · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611031319">
-<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611031319">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611032320">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611032320">
 <style>
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .neg { color: #b42318; font-weight: 600; }
@@ -51,10 +51,10 @@
   <p class="sub" id="rodape" style="margin-top:10px"></p>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611031319"></script>
-<script src="../../assets/js/ui.js?v=202611031319"></script>
-<script src="../../assets/js/auth.js?v=202611031319"></script>
-<script src="../../assets/js/layout.js?v=202611031319"></script>
+<script src="../../assets/js/supabase.js?v=202611032320"></script>
+<script src="../../assets/js/ui.js?v=202611032320"></script>
+<script src="../../assets/js/auth.js?v=202611032320"></script>
+<script src="../../assets/js/layout.js?v=202611032320"></script>
 <script>
 /* Saldo = soma dos movimentos (compras, produção, consumo, vendas, contagens, avulsos). Só produtos ativos que
    controlam estoque. Contagem e local também em lote na tela Inventário. */
@@ -70,12 +70,12 @@ let CTX = null, PRODUTOS = [], SALDOS = new Map(), LOCAIS = [], aba = '', seleci
 async function carregar() {
   const [p, s, l] = await Promise.all([
     buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, tipo, grupo, estoque_minimo, local_id').eq('situacao', 'ativo').eq('controla_estoque', true).neq('tipo', 'despesa').order('codigo')),
-    db.rpc('estoque_saldos'), db.from('locais_estoque').select('id, codigo, descricao, situacao').order('codigo')]);
+    db.rpc('estoque_saldos'), db.from('locais_estoque').select(CAMPOS_LOCAL).order('codigo')]);
   if (s.error) return aviso('Erro: ' + s.error.message, true);
   PRODUTOS = p || []; LOCAIS = l.data || [];
   SALDOS = new Map((s.data || []).map(x => [x.produto_id, x]));
   const lv = $('#fLocal').value, gv = $('#fGrupo').value;
-  $('#fLocal').innerHTML = '<option value="">Todos</option><option value="-">Sem local</option>' + LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(x.codigo)}${x.descricao ? ' · ' + esc(x.descricao) : ''}</option>`).join('');
+  $('#fLocal').innerHTML = '<option value="">Todos</option><option value="-">Sem local</option>' + LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(nomeLocal(x))}</option>`).join('');
   const grupos = [...new Set(PRODUTOS.map(x => x.grupo).filter(Boolean))].sort();
   $('#fGrupo').innerHTML = '<option value="">Todos</option>' + grupos.map(g => `<option>${esc(g)}</option>`).join('');
   $('#fLocal').value = lv; $('#fGrupo').value = gv;
@@ -98,7 +98,7 @@ function filtrados() {
     if (fg && p.grupo !== fg) return false;
     if (fc === 'nunca' && info?.ultima_contagem) return false;
     if (fc === '30' && (!info?.ultima_contagem || new Date(info.ultima_contagem) > lim)) return false;
-    return !b || combinaBusca([p.codigo, p.descricao, p.grupo, local(p.local_id)?.codigo, local(p.local_id)?.descricao].join(' '), b);
+    return !b || combinaBusca([p.codigo, p.descricao, p.grupo, local(p.local_id)?.codigo, nomeLocal(local(p.local_id))].join(' '), b);
   });
 }
 
@@ -110,7 +110,7 @@ function desenhar() {
   $('#contagem').textContent = `${ls.length} produto(s)` + (ls.length ? ` · ${ls.filter(p => saldo(p) > 0).length} com saldo` : '');
   $('#lista').innerHTML = ls.length ? ls.slice(0, MAX).map(p => { const s = saldo(p), i = SALDOS.get(p.id), l = local(p.local_id);
     return `<tr class="clic" data-id="${p.id}"><td class="nao-imprimir"><input type="checkbox" data-sel="${p.id}"${selecionados.has(p.id) ? ' checked' : ''}></td>
-      <td><b>${esc(p.codigo || '—')}</b></td><td>${esc(p.descricao)}</td><td>${l ? esc(l.codigo) : '<span class="sub">—</span>'}</td><td>${esc(p.unidade || '')}</td>
+      <td><b>${esc(p.codigo || '—')}</b></td><td>${esc(p.descricao)}</td><td>${l ? esc(nomeLocal(l)) : '<span class="sub">—</span>'}</td><td>${esc(p.unidade || '')}</td>
       <td class="num${s < 0 ? ' neg' : p.estoque_minimo > 0 && s < p.estoque_minimo ? ' baixo' : ''}">${qt(s)}</td>
       <td class="num">${p.estoque_minimo ? qt(p.estoque_minimo) : ''}</td><td>${dia(i?.ultima_contagem)}</td><td>${dia(i?.ultimo_mov)}</td></tr>`; }).join('')
     : '<tr><td colspan="9" class="vazio">Nenhum produto com esses filtros.</td></tr>';
@@ -123,7 +123,7 @@ function desenhar() {
 function lote() {
   const el = $('#lote'), n = selecionados.size, pode = CTX.pode('estoque', 'alterar') || CTX.pode('almoxarifado', 'alterar');
   el.hidden = !n || !pode; if (el.hidden) return;
-  el.innerHTML = `${n} selecionado(s) · <select id="loteLocal" data-simples><option value="">— local —</option>${LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(x.codigo)}</option>`).join('')}<option value="-">Tirar o local</option></select> <button class="btn fino" id="loteOk">Definir local</button> <button class="btn discreto fino" id="loteLimpa">Limpar seleção</button>`;
+  el.innerHTML = `${n} selecionado(s) · <select id="loteLocal" data-simples><option value="">— local —</option>${LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(nomeLocal(x))}</option>`).join('')}<option value="-">Tirar o local</option></select> <button class="btn fino" id="loteOk">Definir local</button> <button class="btn discreto fino" id="loteLimpa">Limpar seleção</button>`;
   $('#loteOk').onclick = async () => { const v = $('#loteLocal').value; if (!v) return aviso('Escolha o local', true);
     const { error } = await db.rpc('estoque_definir_local', { p_produtos: [...selecionados], p_local: v === '-' ? null : Number(v) });
     if (error) return aviso('Não salvou: ' + error.message, true); aviso('Local definido'); selecionados.clear(); carregar(); };
@@ -136,7 +136,7 @@ async function abrir(id) {
   const podeLocal = CTX.pode('estoque', 'alterar') || CTX.pode('almoxarifado', 'alterar');
   const m = abrirModal(`<h2>${esc(p.codigo || '')} · ${esc(p.descricao)}</h2>
     <div class="es-topo"><div><div class="sub">Saldo</div><div class="grande${saldo(p) < 0 ? ' neg' : ''}">${qt(saldo(p))} ${esc(p.unidade || '')}</div></div>
-      <div><div class="sub">Local</div><div>${local(p.local_id) ? esc(local(p.local_id).codigo) : '—'}</div></div>
+      <div><div class="sub">Local</div><div>${local(p.local_id) ? esc(nomeLocal(local(p.local_id))) : '—'}</div></div>
       ${p.estoque_minimo ? `<div><div class="sub">Mínimo</div><div>${qt(p.estoque_minimo)}</div></div>` : ''}</div>
     <div class="es-acoes">
       ${podeCont ? '<button class="btn fino primario" data-f="cont">Contagem</button>' : ''}
@@ -167,7 +167,7 @@ async function abrir(id) {
       <div class="${f === 'ent' ? 'l2' : 'l3'}"><label>Motivo</label><input id="fO" placeholder="${f === 'ent' ? 'ex.: devolução de cliente, sobra de obra' : 'ex.: amostra, uso interno, brinde'}"></div>
       ${f === 'ent' ? '<div><label>Custo unitário (opcional)</label><input id="fC" inputmode="decimal" placeholder="R$"></div>' : ''}</div>
       <div class="fb-bts"><button class="btn primario" id="fOk">${f === 'ent' ? 'Dar entrada' : 'Dar saída'}</button></div></div>`;
-    else box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div class="l3"><label>Local de armazenagem</label><select id="fL"><option value="">— sem local —</option>${LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}"${x.id === p.local_id ? ' selected' : ''}>${esc(x.codigo)}${x.descricao ? ' · ' + esc(x.descricao) : ''}</option>`).join('')}</select></div></div>
+    else box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div class="l3"><label>Local de armazenagem</label><select id="fL"><option value="">— sem local —</option>${LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}"${x.id === p.local_id ? ' selected' : ''}>${esc(nomeLocal(x))}</option>`).join('')}</select></div></div>
       ${LOCAIS.length ? '' : `<p class="sub">Nenhum local cadastrado. <a href="${RAIZ}pages/cadastros/locais.html?novo=1">Cadastrar locais</a></p>`}
       <div class="fb-bts"><button class="btn primario" id="fOk">Salvar local</button></div></div>`;
     q('#fQ')?.focus();
@@ -196,7 +196,7 @@ async function abrir(id) {
   $('#selTodos').onchange = e => { filtrados().slice(0, 600).forEach(p => e.target.checked ? selecionados.add(p.id) : selecionados.delete(p.id)); desenhar(); };
   botoesRelatorio('rel', () => ({ arquivo: 'posicao_estoque', titulo: 'Posição de estoque',
     colunas: ['Código', 'Descrição', 'Origem', 'Grupo', 'Local', 'Un', 'Saldo', 'Mínimo', 'Última contagem', 'Último movimento'],
-    linhas: filtrados().map(p => [p.codigo, p.descricao, ORIG.find(o => o.id === p.tipo)?.nome || p.tipo, p.grupo, local(p.local_id)?.codigo || '', p.unidade,
+    linhas: filtrados().map(p => [p.codigo, p.descricao, ORIG.find(o => o.id === p.tipo)?.nome || p.tipo, p.grupo, nomeLocal(local(p.local_id)), p.unidade,
       qt(saldo(p)), p.estoque_minimo ? qt(p.estoque_minimo) : '', dia(SALDOS.get(p.id)?.ultima_contagem), dia(SALDOS.get(p.id)?.ultimo_mov)]) }));
   window.addEventListener('aba-ativa', carregar);
   carregar();
