@@ -158,7 +158,8 @@ async function montarCadastro(cfg) {
     ultimaCarga = Date.now(); carregar();
   });
 
-  const colunas = campos.filter(c => c.lista);
+  const colunas = cfg.colunasLista ? cfg.colunasLista.map(id => C[id]) : campos.filter(c => c.lista);   // colunasLista: ordem própria da lista
+  const listaExtras = (cfg.colunasExtras || []).filter(x => !x.soExportar);   // soExportar: só no Excel, fora da lista
   botoesRelatorio('cRel', () => ({
     arquivo: cfg.tabela,
     colunas: [...campos.filter(c => !c.semExportar).map(c => c.label), ...(cfg.colunasExtras || []).map(x => x.label),
@@ -222,12 +223,14 @@ async function montarCadastro(cfg) {
   }
 
   /* ---------- Lista ---------- */
-  function filtrar(ignorarPend) {
+  // ignorarExtra: id de um filtro extra que não entra na conta (ex.: botões de situação contam sem o próprio filtro)
+  function filtrar(ignorarPend, ignorarExtra) {
     const busca = $('#fBusca').value, de = $('#fDe').value, ate = $('#fAte').value, pc = $('#fPerCampo').value;
     return linhas.filter(r => {
       if (cfg.abas && aba !== '' && !naAba(r, aba)) return false;
       if (cfg.porEmpresa && ctx.empresa && r.empresa_id !== ctx.empresa) return false;
       for (const f of cfg.filtrosExtras || []) {
+        if (f.id === ignorarExtra) continue;
         const v = cont.querySelector(`[data-filtro-extra="${f.id}"]`).value;
         if (v && !f.teste(r, v, extra)) return false;
       }
@@ -271,24 +274,24 @@ async function montarCadastro(cfg) {
 
     $('#cHead').innerHTML = (podeEditar ? '<th style="width:28px" class="nao-imprimir"><input type="checkbox" id="cTodos"></th>' : '') +
       colunas.map(c => `<th class="ord" data-ord="${c.id}">${esc(c.label)}${ordem.campo === c.id ? (ordem.asc ? ' ▲' : ' ▼') : ''}</th>`).join('') +
-      (cfg.colunasExtras || []).map(x => `<th>${esc(x.label)}</th>`).join('') +
+      listaExtras.map(x => `<th>${esc(x.label)}</th>`).join('') +
       (cfg.revisao ? `<th class="ord" data-ord="_rev">Revisão${ordem.campo === '_rev' ? (ordem.asc ? ' ▲' : ' ▼') : ''}</th>` : '') + '<th>Pendências</th>';
     cont.querySelectorAll('th.ord').forEach(th => th.onclick = () => { ordem = { campo: th.dataset.ord, asc: ordem.campo === th.dataset.ord ? !ordem.asc : true }; desenhar(); });
 
-    const LIM = 400, ncol = colunas.length + (cfg.colunasExtras || []).length + (cfg.revisao ? 1 : 0) + 1 + (podeEditar ? 1 : 0);
+    const LIM = 400, ncol = colunas.length + listaExtras.length + (cfg.revisao ? 1 : 0) + 1 + (podeEditar ? 1 : 0);
     $('#cLista').innerHTML = mostrados.length ? mostrados.slice(0, LIM).map(r => {
       const rv = statusRev(r);
       const pend = r._pend.filter(p => !p.startsWith('_')).map(p => { const d = PEND.find(x => x.id === p); return `<span class="tg ${d.cor}">${esc(d.nome)}</span>`; }).join('');
       return `<tr data-id="${r.id}" class="${cfg.apagado?.(r) ? 'apagado' : ''}" style="cursor:pointer">
         ${podeEditar ? `<td class="nao-imprimir"><input type="checkbox" class="sel" data-id="${r.id}" ${selecionados.has(r.id) ? 'checked' : ''}></td>` : ''}
         ${colunas.map((c, i) => `<td class="${i === 0 ? 'forte' : ''}${['moeda', 'numero'].includes(c.tipo) ? ' num' : ''}${['data', 'moeda', 'empresa', 'mes'].includes(c.tipo) ? ' nw' : ''}">${i === 0 && cfg.arvore ? seta(r) : ''}${celula(c, r)}${i === 0 && cfg.subtituloLinha && cfg.subtituloLinha(r, extra) ? `<small class="sub2">${esc(cfg.subtituloLinha(r, extra))}</small>` : ''}</td>`).join('')}
-        ${(cfg.colunasExtras || []).map(x => `<td>${x.html ? x.html(r, extra) : esc(x.texto(r, extra))}</td>`).join('')}
+        ${listaExtras.map(x => `<td>${x.html ? x.html(r, extra) : esc(x.texto(r, extra))}</td>`).join('')}
         ${rv ? `<td class="rev"><span class="tg ${rv.cls}">${rv.t}</span>${rv.cls === 'ok' ? `<small>${dataBR(r.revisado_em)} · ${esc(nomes[r.revisado_por] || '')}</small>` : rv.cls === 'alerta' ? `<small>alterado ${dataBR(r.atualizado_em)} · ${esc(nomes[r.atualizado_por] || '')}</small>` : ''}</td>` : ''}
         <td>${pend}</td></tr>`;
     }).join('') : `<tr><td colspan="${ncol}" class="vazio">Nenhum registro com esses filtros.</td></tr>`;
     if (cfg.totais) {
       const tot = c => visiveis.reduce((s, r) => s + Number(cfg.valorTotal ? cfg.valorTotal(r, c.id) : r[c.id] || 0), 0);
-      $('#cTotais').innerHTML = visiveis.length ? `<tr>${podeEditar ? '<td class="nao-imprimir"></td>' : ''}${colunas.map((c, i) => `<td class="${cfg.totais.includes(c.id) ? 'num' : ''}">${i === 0 ? 'Total' : cfg.totais.includes(c.id) ? esc(mostrar(c, tot(c))) : ''}</td>`).join('')}<td colspan="${(cfg.colunasExtras || []).length + (cfg.revisao ? 1 : 0) + 1}"></td></tr>` : '';
+      $('#cTotais').innerHTML = visiveis.length ? `<tr>${podeEditar ? '<td class="nao-imprimir"></td>' : ''}${colunas.map((c, i) => `<td class="${cfg.totais.includes(c.id) ? 'num' : ''}">${i === 0 ? 'Total' : cfg.totais.includes(c.id) ? esc(mostrar(c, tot(c))) : ''}</td>`).join('')}<td colspan="${listaExtras.length + (cfg.revisao ? 1 : 0) + 1}"></td></tr>` : '';
     }
     $('#cCont').textContent = `${visiveis.length} ${visiveis.length === 1 ? cfg.singular : (cfg.plural || cfg.singular + 's')}`;
     if (cfg.resumo) { let el = $('#cResumo'); if (!el) { $('#cCont').insertAdjacentHTML('afterend', '<span class="resumo" id="cResumo"></span>'); el = $('#cResumo'); } el.innerHTML = cfg.resumo(visiveis, extra); }
@@ -308,6 +311,7 @@ async function montarCadastro(cfg) {
       cont.querySelectorAll('#cLista .sel').forEach(c => c.onchange = () => { c.checked ? selecionados.add(+c.dataset.id) : selecionados.delete(+c.dataset.id); desenharLote(); });
     }
     desenharLote();
+    cfg.depoisDesenhar?.(visiveis, { semFiltro: id => filtrar(false, id), extra, ctx });
   }
 
   function seta(r) {
