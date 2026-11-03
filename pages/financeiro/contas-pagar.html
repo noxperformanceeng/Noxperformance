@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611031253">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611031312">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611031253"></script>
-<script src="../../assets/js/ui.js?v=202611031253"></script>
-<script src="../../assets/js/auth.js?v=202611031253"></script>
-<script src="../../assets/js/layout.js?v=202611031253"></script>
-<script src="../../assets/js/cadastro.js?v=202611031253"></script>
-<script src="../../assets/js/comprovante.js?v=202611031253"></script>
+<script src="../../assets/js/supabase.js?v=202611031312"></script>
+<script src="../../assets/js/ui.js?v=202611031312"></script>
+<script src="../../assets/js/auth.js?v=202611031312"></script>
+<script src="../../assets/js/layout.js?v=202611031312"></script>
+<script src="../../assets/js/cadastro.js?v=202611031312"></script>
+<script src="../../assets/js/comprovante.js?v=202611031312"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -417,7 +417,7 @@ const cfg = {
   periodos: [{ campo: 'data_vencimento', label: 'Vencimento' }, { campo: 'data_pagamento', label: 'Pagamento' }, { campo: 'data_emissao', label: 'Emissão' },
     { campo: 'data_competencia', label: 'Competência' }, { campo: 'data_programada', label: 'Programado para' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
   // Lista: vencimento (com o prazo), empresa, fornecedor (com a descrição), documento (com a parcela), valor, saldo, situação
-  colunasLista: ['data_vencimento', 'empresa_id', 'fornecedor_id', 'documento', 'valor', 'saldo', 'situacao'],
+  colunasLista: ['data_vencimento', 'empresa_id', 'fornecedor_id', 'documento', 'parcela', 'valor', 'saldo', 'situacao', 'observacoes'],
   campos: [
     // Formulário: quem/o quê › valor e datas (+ parcelamento) › como vai ser pago › origem e pagamento
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true,
@@ -429,16 +429,18 @@ const cfg = {
           : r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : '') + d; } },
     { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato',
       listaHtml: r => (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '')
-        + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '')
-        + (r.parcela && r.parcelas ? ` <span class="tg neutro" title="Parcela ${r.parcela} de ${r.parcelas}">${r.parcela}/${r.parcelas}</span>` : '') },
+        + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '') },
     { id: 'descricao', label: 'Descrição / histórico', col: 2, ajuda: 'Nos títulos do Tiny: o histórico de lá.' },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
       opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Obrigatória. Para dividir em várias categorias, use "Dividir em mais de uma categoria" no fim do formulário.' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, ajuda: 'Aparece na lista. No parcelado, vai para todas as parcelas.',
+      listaHtml: r => r.observacoes ? `<span class="texto-curto" style="max-width:220px" title="${esc(r.observacoes)}">${esc(r.observacoes)}</span>` : '' },
     { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true, secao: 'Valor e datas' },
     { id: 'data_emissao', label: 'Emissão', tipo: 'data', obrig: true, ajuda: 'Data da nota, boleto ou contrato. A competência segue esta data.' },
     { id: 'data_vencimento', label: 'Vencimento', tipo: 'data', obrig: true, lista: true,
       listaHtml: r => `${dataCurta(r.data_vencimento)}${ABERTOS.includes(r.situacao) ? `<small class="sub2"><span class="prazo p-${faixa(r)}">${textoPrazo(r)}</span></small>` : ''}` },
-    { id: 'parcela', label: 'Parcela', tipo: 'numero', oculto: r => !r.id },
+    { id: 'parcela', label: 'Parcela', tipo: 'numero', oculto: r => !r.id,
+      listaHtml: r => r.parcela && r.parcelas ? `<span class="nw" title="Parcela ${r.parcela} de ${r.parcelas}">${r.parcela}/${r.parcelas}</span>` : '<span class="sub">única</span>' },
     { id: 'parcelas', label: 'de (total de parcelas)', tipo: 'numero', oculto: r => !r.id },
     { id: 'data_competencia', label: 'Competência', tipo: 'data', somenteLeitura: true, oculto: r => !r.id, ajuda: 'Automática: igual à data de emissão.' },
     { id: 'saldo', label: 'Saldo (R$)', tipo: 'moeda', somenteLeitura: true, lista: true, oculto: r => !r.id },
@@ -451,8 +453,7 @@ const cfg = {
     { id: 'conta_bancaria_id', label: 'Conta prevista', tipo: 'select', filtro: true, opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', filtro: true, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
     { id: 'projecao', label: 'Projeção', tipo: 'bool', textoBool: 'Valor estimado', ajuda: 'Valor ainda estimado (ex.: conta de luz antes de chegar). Desmarque quando chegar a conta/boleto real.' },
-    { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 2 },
-    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 2 },
+    { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 4 },
     { id: 'data_pagamento', label: 'Pagamento', tipo: 'data', somenteLeitura: true, secao: 'Origem e pagamento', oculto: r => !r.id, ajuda: 'Preenchida ao registrar o pagamento (data do último pagamento).' },
     { id: 'valor_pago', label: 'Pago (R$)', tipo: 'moeda', somenteLeitura: true, oculto: r => !r.id },
     { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, oculto: r => !r.id },
