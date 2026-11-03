@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611011513">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611031312">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -21,17 +21,43 @@
   .pg-form .acao { display: flex; align-items: flex-end; }
   .mini-modal .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 12px 0; }
   tr.estornado td { text-decoration: line-through; color: var(--texto-suave); }
+  /* Botões de situação (contagem e total) e período rápido — lista única */
+  .situ-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 10px; }
+  .situ { border: 1px solid var(--linha); background: var(--superficie); border-radius: 10px; padding: 8px 14px; min-width: 128px; text-align: left; cursor: pointer; font: 500 12.5px var(--fonte); color: var(--texto-suave); }
+  .situ b { display: block; font-size: 15px; font-weight: 600; color: var(--texto); margin-top: 2px; white-space: nowrap; }
+  .situ small { font-weight: 400; font-size: 11.5px; }
+  .situ:hover { border-color: #c9ccd2; }
+  .situ.ativa { border-color: var(--destaque); box-shadow: 0 0 0 1px var(--destaque); color: var(--texto); }
+  .situ.vermelho b { color: var(--erro); } .situ.laranja b { color: var(--alerta); } .situ.verde b { color: var(--ok); }
+  .situ.zero { opacity: .5; }
+  .periodo-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; font-size: 12.5px; color: var(--texto-suave); }
+  .periodo-bar select { width: auto; padding: 4px 8px; font-size: 12.5px; }
+  .chip { border: 1px solid var(--linha); background: var(--superficie); border-radius: 20px; padding: 4px 12px; font: 500 12.5px var(--fonte); color: var(--texto); cursor: pointer; white-space: nowrap; }
+  .chip:hover { border-color: #c9ccd2; }
+  .chip.ativa { background: var(--destaque-suave); border-color: var(--destaque); color: var(--destaque-texto); }
+  .chip.seta { padding: 4px 9px; }
+  /* Parcelamento no lançamento */
+  .parc { border: 1px solid var(--linha); border-radius: 10px; padding: 12px; background: #fafbfc; }
+  .parc .opcoes { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 4px; }
+  .parc .grade-campos { margin-top: 8px; }
+  .parc table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  .parc th { font-size: 11.5px; padding: 0 6px 4px; }
+  .parc td { padding: 3px 6px; border: 0; }
+  .parc td input { padding: 6px 8px; font-size: 13px; }
+  .parc .soma { font-size: 12px; margin-top: 6px; color: var(--texto-suave); }
+  .parc .soma.erro { color: var(--erro); font-weight: 600; }
+  .parc[hidden] { display: none; }
 </style>
 </head>
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611011513"></script>
-<script src="../../assets/js/ui.js?v=202611011513"></script>
-<script src="../../assets/js/auth.js?v=202611011513"></script>
-<script src="../../assets/js/layout.js?v=202611011513"></script>
-<script src="../../assets/js/cadastro.js?v=202611011513"></script>
-<script src="../../assets/js/comprovante.js?v=202611011513"></script>
+<script src="../../assets/js/supabase.js?v=202611031312"></script>
+<script src="../../assets/js/ui.js?v=202611031312"></script>
+<script src="../../assets/js/auth.js?v=202611031312"></script>
+<script src="../../assets/js/layout.js?v=202611031312"></script>
+<script src="../../assets/js/cadastro.js?v=202611031312"></script>
+<script src="../../assets/js/comprovante.js?v=202611031312"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -62,7 +88,7 @@ const textoPrazo = r => { if (r.situacao === 'pago') return 'pago'; if (r.situac
 const vencido = r => ABERTOS.includes(r.situacao) && dias(r) < 0;
 let ACOES = new Set();   // ações liberadas para quem está usando (estornar, cancelar…)
 
-let FORN = [], CATS = [], CONTAS = [], FORMAS = [], EMPRESAS = [], modalAtual = null, extraAtual = {};
+let LINHAS = [], FORN = [], CATS = [], CONTAS = [], FORMAS = [], EMPRESAS = [], modalAtual = null, extraAtual = {};
 const cat = id => CATS.find(c => c.id === id);
 const conta = id => CONTAS.find(c => c.id === id);
 const forma = id => FORMAS.find(f => f.id === id);
@@ -83,6 +109,128 @@ function conferirRateio() {
   const linhas = lerRateio(), soma = linhas.reduce((s, x) => s + (x.valor || 0), 0), valor = lerNumero(modalAtual.querySelector('#f_valor').value) || 0;
   el.textContent = linhas.length ? `Soma das categorias: ${reais(soma)} de ${reais(valor)}${Math.abs(soma - valor) > 0.005 ? ` · falta ${reais(valor - soma)}` : ' · fechado'}` : 'O título vai inteiro para a categoria escolhida acima.';
   el.classList.toggle('erro', linhas.length > 0 && Math.abs(soma - valor) > 0.005);
+}
+
+/* ---------- Parcelamento (só no lançamento novo) ----------
+   Gera N títulos ligados pelo mesmo grupo_parcelas. Emissão: fixa (a da nota, igual para todas)
+   ou igual ao vencimento de cada parcela. Vencimentos mensais (mesmo dia) ou a cada X dias.
+   O rateio por categoria é dividido proporcionalmente em cada parcela. */
+let PARC = [];
+const parcelado = () => !!modalAtual?.querySelector('#pcSim')?.checked;
+const emissaoFixa = () => modalAtual?.querySelector('input[name=pcEm]:checked')?.value !== 'venc';
+const centavos = v => Math.round((Number(v) || 0) * 100);
+function somaMeses(iso, k) {
+  const [a, m, d] = iso.split('-').map(Number), alvo = new Date(a, m - 1 + k, 1), ult = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  return new Date(alvo.getFullYear(), alvo.getMonth(), Math.min(d, ult)).toLocaleDateString('sv-SE');
+}
+function gerarParcelas() {
+  const q = s => modalAtual.querySelector(s), n = Math.min(Math.max(parseInt(q('#pcN').value) || 0, 0), 120);
+  const v1 = q('#f_data_vencimento').value, valor = lerNumero(q('#f_valor').value) || 0, cada = q('#pcModo').value === 'cada';
+  const intervalo = q('#pcInt').value, passo = parseInt(q('#pcDias').value) || 30;
+  q('#pcDias').closest('.campo').style.visibility = intervalo === 'dias' ? '' : 'hidden';
+  const tot = cada ? centavos(valor) * n : centavos(valor), base = n ? Math.floor(tot / n) : 0;
+  PARC = Array.from({ length: n }, (_, i) => ({
+    venc: v1 ? (intervalo === 'mensal' ? somaMeses(v1, i) : somaDias(v1, i * passo)) : '',
+    valor: (cada ? centavos(valor) : base + (i === n - 1 ? tot - base * n : 0)) / 100 }));   // diferença de centavos na última
+  desenharParcelas();
+}
+function desenharParcelas() {
+  const q = s => modalAtual.querySelector(s), fixa = emissaoFixa(), em = q('#f_data_emissao');
+  if (PARC[0]?.venc) q('#f_data_vencimento').value = PARC[0].venc;
+  // emissão = vencimento: guarda a emissão digitada para voltar se trocar para "fixa"
+  if (!fixa) { if (em.dataset.fixa === undefined) em.dataset.fixa = em.value; if (PARC[0]?.venc) em.value = PARC[0].venc; } else restaurarEmissao();
+  em.readOnly = !fixa;
+  q('#pcLista').innerHTML = PARC.map((p, i) => `<tr><td>${i + 1}/${PARC.length}</td>
+    <td class="sub">${dataCurta(fixa ? em.value : p.venc) || '—'}</td>
+    <td style="width:170px"><input type="date" data-pv="${i}" value="${p.venc}"></td>
+    <td style="width:150px"><input data-pval="${i}" inputmode="decimal" value="${p.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}"></td></tr>`).join('');
+  somarParcelas();
+}
+function restaurarEmissao() { const em = modalAtual.querySelector('#f_data_emissao'); if (em.dataset.fixa !== undefined) { em.value = em.dataset.fixa; delete em.dataset.fixa; } }
+function somarParcelas() {
+  const q = s => modalAtual.querySelector(s), el = q('#pcSoma'), soma = PARC.reduce((s, p) => s + centavos(p.valor), 0) / 100;
+  const total = q('#pcModo').value === 'total' ? lerNumero(q('#f_valor').value) || 0 : null;
+  const dif = total != null && Math.abs(soma - total) > 0.005;
+  el.textContent = PARC.length ? `${PARC.length} parcela(s) · total ${reais(soma)}${dif ? ` · diferente do valor informado (${reais(total)}): falta ${reais(total - soma)}` : ''}` : 'Informe o número de parcelas';
+  el.classList.toggle('erro', dif);
+}
+function conferirParcelas(d) {
+  if (PARC.length < 2) return 'Parcelado: informe 2 parcelas ou mais (ou marque "Pagamento único")';
+  if (PARC.some(p => !p.venc)) return 'Parcelado: informe o vencimento de todas as parcelas';
+  if (PARC.some(p => !(p.valor > 0))) return 'Parcelado: todas as parcelas precisam de valor';
+  if (emissaoFixa() && PARC.some(p => p.venc < d.data_emissao)) return 'Parcelado: há parcela vencendo antes da emissão';
+  if (modalAtual.querySelector('#pcModo').value === 'total' && Math.abs(PARC.reduce((s, p) => s + centavos(p.valor), 0) - centavos(d.valor)) > 0) return 'Parcelado: a soma das parcelas precisa fechar com o valor total';
+  return null;
+}
+// Rateio dividido na proporção do valor da parcela (a última categoria fica com os centavos)
+function ratear(rat, valor) {
+  const tot = rat.reduce((s, x) => s + x.valor, 0); let usado = 0;
+  return rat.map((x, i) => { const v = i === rat.length - 1 ? centavos(valor) - usado : Math.round(centavos(valor) * x.valor / tot); usado += v; return { ...x, valor: v / 100 }; });
+}
+async function salvarParcelas(dados, rat) {
+  const grupo = crypto.randomUUID(), fixa = emissaoFixa(), n = PARC.length;
+  const titulos = PARC.map((p, i) => ({ ...dados, id: null, valor: p.valor, data_vencimento: p.venc, data_emissao: fixa ? dados.data_emissao : p.venc,
+    parcela: i + 1, parcelas: n, grupo_parcelas: grupo, data_programada: null }));
+  const rateios = rat.length ? PARC.map(p => ratear(rat, p.valor)) : null;
+  const { data, error } = await db.rpc('salvar_parcelas_pagar', { p_titulos: titulos, p_rateios: rateios });
+  if (!error) { aviso(`${n} parcelas lançadas`); return data; }
+  if (error.code !== 'PGRST202') throw error;
+  // Banco ainda sem a função de parcelas (SQL 108 não rodado): grava uma a uma
+  let primeiro = null;
+  for (const [i, t] of titulos.entries()) {
+    const r = await db.rpc('salvar_titulo_pagar', { p_titulo: t, p_rateio: rateios ? rateios[i] : null });
+    if (r.error) throw new Error(`parcela ${i + 1} de ${n}: ${r.error.message}${i ? ` (as ${i} primeiras foram gravadas)` : ''}`);
+    primeiro ??= r.data;
+  }
+  aviso(`${n} parcelas lançadas`); return primeiro;
+}
+function montarParcelamento(m) {
+  const fVe = m.querySelector('#f_data_vencimento'), grade = fVe.closest('.grade-campos');
+  grade.insertAdjacentHTML('afterend', `<div class="secao">Parcelamento</div>
+    <div class="parc-tipo" style="display:flex;gap:18px;flex-wrap:wrap"><label class="chk"><input type="radio" name="pcTipo" id="pcNao" checked> Pagamento único</label>
+      <label class="chk"><input type="radio" name="pcTipo" id="pcSim"> Parcelado (gera um título por parcela)</label></div>
+    <div class="parc" id="pcCorpo" hidden style="margin-top:8px">
+      <div class="grade-campos" style="margin-top:0">
+        <div class="campo"><label>Nº de parcelas</label><input id="pcN" inputmode="numeric" value="3"></div>
+        <div class="campo"><label>O valor informado é</label><select id="pcModo" data-simples><option value="total">O total (dividir)</option><option value="cada">O de cada parcela</option></select></div>
+        <div class="campo"><label>Vencimentos</label><select id="pcInt" data-simples><option value="mensal">Todo mês, no mesmo dia</option><option value="dias">A cada X dias</option></select></div>
+        <div class="campo"><label>Dias entre parcelas</label><input id="pcDias" inputmode="numeric" value="30"></div>
+      </div>
+      <div class="campo" style="margin-top:6px"><label>Data de emissão das parcelas</label>
+        <div style="display:flex;gap:18px;flex-wrap:wrap"><label class="chk"><input type="radio" name="pcEm" value="fixa" checked> Fixa: a mesma para todas (data da nota / compra)</label>
+          <label class="chk"><input type="radio" name="pcEm" value="venc"> Igual ao vencimento de cada parcela</label></div></div>
+      <table><thead><tr><th>Parcela</th><th>Emissão</th><th>Vencimento</th><th>Valor (R$)</th></tr></thead><tbody id="pcLista"></tbody></table>
+      <div class="soma" id="pcSoma"></div>
+      <p class="ajuda">Dá para ajustar o vencimento ou o valor de uma parcela direto na tabela (mudar os campos acima refaz a tabela). Para programar o pagamento, use "Programar pagamento" na lista depois de lançar.</p>
+    </div>`);
+  const q = s => m.querySelector(s), corpo = q('#pcCorpo'), rotVe = q('[data-campo=data_vencimento] label');
+  const textoVe = rotVe.firstChild.textContent;
+  const alternar = () => {
+    const sim = parcelado(), chk = q('#emIgualVenc');
+    corpo.hidden = !sim; q('#emIgualBox').style.display = sim ? 'none' : '';
+    rotVe.firstChild.textContent = sim ? '1º vencimento ' : textoVe;
+    if (sim) { chk.checked = false; gerarParcelas(); } else { restaurarEmissao(); q('#f_data_emissao').readOnly = chk.checked; }
+    const fProg = q('#f_data_programada'); if (fProg) { fProg.disabled = sim; if (sim) fProg.value = ''; }
+  };
+  q('#pcSim').onchange = q('#pcNao').onchange = alternar;
+  ['#pcN', '#pcModo', '#pcInt', '#pcDias', '#f_valor', '#f_data_vencimento'].forEach(s => ['input', 'change'].forEach(ev => q(s).addEventListener(ev, () => parcelado() && gerarParcelas())));
+  q('#f_data_emissao').addEventListener('change', () => parcelado() && desenharParcelas());
+  m.querySelectorAll('input[name=pcEm]').forEach(x => x.onchange = desenharParcelas);
+  q('#pcLista').addEventListener('change', e => {
+    const i = e.target.dataset.pv ?? e.target.dataset.pval; if (i === undefined) return;
+    if (e.target.dataset.pv !== undefined) PARC[+i].venc = e.target.value; else PARC[+i].valor = lerNumero(e.target.value) || 0;
+    desenharParcelas();
+  });
+}
+
+// No título já lançado: as outras parcelas da mesma compra (link para abrir cada uma)
+function htmlParcelasGrupo(r) {
+  if (!r.grupo_parcelas) return '';
+  const ps = LINHAS.filter(x => x.grupo_parcelas === r.grupo_parcelas).sort((a, b) => (a.parcela || 0) - (b.parcela || 0));
+  if (ps.length < 2) return '';
+  return `<div class="secao">Parcelas desta compra · ${ps.length}</div><table class="lista-mini"><thead><tr><th>Parcela</th><th>Emissão</th><th>Vencimento</th><th>Valor</th><th>Situação</th></tr></thead><tbody>
+    ${ps.map(x => `<tr${x.id === r.id ? ' style="font-weight:600"' : ''}><td>${x.id === r.id ? `${x.parcela}/${x.parcelas} (este)` : `<a href="?abrir=${x.id}" style="color:var(--destaque)">${x.parcela}/${x.parcelas}</a>`}</td>
+      <td>${dataCurta(x.data_emissao)}</td><td>${dataCurta(x.data_vencimento)}</td><td class="num">${reais(x.valor)}</td><td>${cfg.campos.find(c => c.id === 'situacao').listaHtml(x)}</td></tr>`).join('')}</tbody></table>`;
 }
 
 /* ---------- Rastreio da compra até o pagamento ---------- */
@@ -251,12 +399,12 @@ function janela(titulo, corpo, botao, aoConfirmar) {
 
 const cfg = {
   tabela: 'titulos_pagar', modulo: 'pagar', titulo: 'Contas a pagar', singular: 'título', plural: 'títulos',
-  subtitulo: 'Títulos por empresa. Compra de produto entra pela NF/pedido de compra; aqui, manualmente, só despesas. Saldo e situação são calculados pelos pagamentos.',
+  subtitulo: 'Despesas e títulos por empresa. Compra de produto entra pelo pedido de compra / NF; aqui, manualmente, só despesas.',
   dicaBusca: 'fornecedor, documento, categoria, conta…', ordem: 'data_vencimento', revisao: false, porEmpresa: true,
   filtrosExtras: [
-    { id: 'grupo', label: 'Situação', opcoes: [{ v: 'abertos', n: 'Em aberto (a pagar)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'programados', n: 'Programados' },
+    { id: 'grupo', label: 'Situação', padrao: 'abertos', opcoes: [{ v: 'abertos', n: 'Em aberto (a pagar)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'hoje', n: 'Vencem hoje' }, { v: 'programados', n: 'Programados' },
         { v: 'parcial', n: 'Pago parcial' }, { v: 'pago', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }],
-      teste: (r, v) => v === 'abertos' ? ABERTOS.includes(r.situacao) : v === 'vencidos' ? vencido(r) : v === 'programados' ? r.situacao === 'programado' : r.situacao === v },
+      teste: (r, v) => v === 'abertos' ? ABERTOS.includes(r.situacao) : v === 'vencidos' ? vencido(r) : v === 'hoje' ? ABERTOS.includes(r.situacao) && dias(r) === 0 : v === 'programados' ? r.situacao === 'programado' : r.situacao === v },
     { id: 'prazo', label: 'Prazo (data prevista)', opcoes: FAIXAS.map(f => ({ v: f.v, n: f.n })), teste: (r, v) => faixa(r) === v },
     { id: 'tipo', label: 'Real ou projeção', opcoes: [{ v: 'real', n: 'Só reais' }, { v: 'projecao', n: 'Só projeções' }], teste: (r, v) => (v === 'projecao') === !!r.projecao },
     { id: 'conc', label: 'Conciliação', opcoes: [{ v: 'nao', n: 'Pago e não conciliado' }, { v: 'sim', n: 'Conciliado' }],
@@ -268,40 +416,51 @@ const cfg = {
   ordenarPor: { data_vencimento: r => (ABERTOS.includes(r.situacao) ? '0' + prevista(r) : '1' + (9e15 - Date.parse(r.data_pagamento || r.data_vencimento))) },
   periodos: [{ campo: 'data_vencimento', label: 'Vencimento' }, { campo: 'data_pagamento', label: 'Pagamento' }, { campo: 'data_emissao', label: 'Emissão' },
     { campo: 'data_competencia', label: 'Competência' }, { campo: 'data_programada', label: 'Programado para' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
+  // Lista: vencimento (com o prazo), empresa, fornecedor (com a descrição), documento (com a parcela), valor, saldo, situação
+  colunasLista: ['data_vencimento', 'empresa_id', 'fornecedor_id', 'documento', 'parcela', 'valor', 'saldo', 'situacao', 'observacoes'],
   campos: [
-    { id: 'data_vencimento', label: 'Vencimento', tipo: 'data', obrig: true, lista: true },
-    { id: 'data_emissao', label: 'Emissão', tipo: 'data', obrig: true, lista: true, ajuda: 'A competência segue esta data.' },
-    { id: 'data_pagamento', label: 'Pagamento', tipo: 'data', somenteLeitura: true, lista: true, ajuda: 'Preenchida ao registrar o pagamento (data do último pagamento).' },
+    // Formulário: quem/o quê › valor e datas (+ parcelamento) › como vai ser pago › origem e pagamento
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true,
       opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN,
-      // sem cadastro: mostra o nome que veio do Tiny (ou o colaborador, nos títulos do RH)
-      listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n;
-        return n ? `<span class="texto-curto" title="${esc(n)}">${esc(n)}</span>`
-          : (r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : ''); } },
-    { id: 'documento', label: 'Documento', col: 2, lista: true, placeholder: 'NF, boleto, guia, contrato', listaHtml: r => (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '') + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '') },
-    { id: 'descricao', label: 'Descrição / histórico', col: 2, lista: true, ajuda: 'Nos títulos do Tiny: o histórico de lá.',
-      listaHtml: r => r.descricao ? `<span class="texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</span>` : '' },
-    { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true },
-    { id: 'saldo', label: 'Saldo (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
-    { id: 'categoria_financeira_id', label: 'Categoria financeira (obrigatória, ou rateio)', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
-      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Para dividir em várias categorias, use o rateio abaixo.' },
-    { id: 'parcela', label: 'Parcela', tipo: 'numero' },
-    { id: 'parcelas', label: 'de (total de parcelas)', tipo: 'numero' },
-    { id: 'data_programada', label: 'Programado para', tipo: 'data', secao: 'Pagamento e situação' },
+      // sem cadastro: mostra o nome que veio do Tiny (ou o colaborador, nos títulos do RH); embaixo, a descrição
+      listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n, d = r.descricao && r.descricao !== r.documento ? `<small class="sub2 texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</small>` : '';
+        return (n ? `<span class="texto-curto" title="${esc(n)}">${esc(n)}</span>`
+          : r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : '') + d; } },
+    { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato',
+      listaHtml: r => (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '')
+        + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '') },
+    { id: 'descricao', label: 'Descrição / histórico', col: 2, ajuda: 'Nos títulos do Tiny: o histórico de lá.' },
+    { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
+      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Obrigatória. Para dividir em várias categorias, use "Dividir em mais de uma categoria" no fim do formulário.' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, ajuda: 'Aparece na lista. No parcelado, vai para todas as parcelas.',
+      listaHtml: r => r.observacoes ? `<span class="texto-curto" style="max-width:220px" title="${esc(r.observacoes)}">${esc(r.observacoes)}</span>` : '' },
+    { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true, secao: 'Valor e datas' },
+    { id: 'data_emissao', label: 'Emissão', tipo: 'data', obrig: true, ajuda: 'Data da nota, boleto ou contrato. A competência segue esta data.' },
+    { id: 'data_vencimento', label: 'Vencimento', tipo: 'data', obrig: true, lista: true,
+      listaHtml: r => `${dataCurta(r.data_vencimento)}${ABERTOS.includes(r.situacao) ? `<small class="sub2"><span class="prazo p-${faixa(r)}">${textoPrazo(r)}</span></small>` : ''}` },
+    { id: 'parcela', label: 'Parcela', tipo: 'numero', oculto: r => !r.id,
+      listaHtml: r => r.parcela && r.parcelas ? `<span class="nw" title="Parcela ${r.parcela} de ${r.parcelas}">${r.parcela}/${r.parcelas}</span>` : '<span class="sub">única</span>' },
+    { id: 'parcelas', label: 'de (total de parcelas)', tipo: 'numero', oculto: r => !r.id },
+    { id: 'data_competencia', label: 'Competência', tipo: 'data', somenteLeitura: true, oculto: r => !r.id, ajuda: 'Automática: igual à data de emissão.' },
+    { id: 'saldo', label: 'Saldo (R$)', tipo: 'moeda', somenteLeitura: true, lista: true, oculto: r => !r.id },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'aberto', oculto: r => !r.id,
+      listaHtml: r => { const c = { aberto: vencido(r) ? 'erro' : 'neutro', programado: 'alerta', parcial: 'alerta', pago: 'ok', cancelado: 'neutro' }[r.situacao] || 'neutro';
+        const t = r.situacao === 'pago' ? 'Pago ' + dataCurta(r.data_pagamento) : r.situacao === 'programado' ? 'Programado ' + dataCurta(r.data_programada)
+          : r.situacao === 'aberto' && vencido(r) ? 'Vencido' : SIT.find(x => x.v === r.situacao)?.n || r.situacao;
+        return `<span class="tg ${c}">${esc(t)}</span>`; } },
+    { id: 'data_programada', label: 'Programado para', tipo: 'data', secao: 'Como vai ser pago', ajuda: 'Dia em que o financeiro vai pagar (entra na previsão de caixa).' },
     { id: 'conta_bancaria_id', label: 'Conta prevista', tipo: 'select', filtro: true, opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', filtro: true, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
-    { id: 'valor_pago', label: 'Pago (R$)', tipo: 'moeda', somenteLeitura: true },
-    { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true },
-    { id: 'projecao', label: 'Projeção', tipo: 'bool', textoBool: 'Valor estimado (projeção)', ajuda: 'Desmarque quando chegar a conta/boleto real.' },
-    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'aberto' },
-    { id: 'data_competencia', label: 'Competência', tipo: 'data', somenteLeitura: true, ajuda: 'Automática: igual à data de emissão.' },
-    { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 2 },
-    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 2 },
+    { id: 'projecao', label: 'Projeção', tipo: 'bool', textoBool: 'Valor estimado', ajuda: 'Valor ainda estimado (ex.: conta de luz antes de chegar). Desmarque quando chegar a conta/boleto real.' },
+    { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 4 },
+    { id: 'data_pagamento', label: 'Pagamento', tipo: 'data', somenteLeitura: true, secao: 'Origem e pagamento', oculto: r => !r.id, ajuda: 'Preenchida ao registrar o pagamento (data do último pagamento).' },
+    { id: 'valor_pago', label: 'Pago (R$)', tipo: 'moeda', somenteLeitura: true, oculto: r => !r.id },
+    { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, oculto: r => !r.id },
     { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
   ],
   async carregarExtra(linhas, ctx) {
-    window.__ctxNox = ctx;
+    window.__ctxNox = ctx; LINHAS = linhas;
     const [f, c, cb, fp, pg, ra, an] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao, cnpj').order('nome')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, aplica_produtos, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
@@ -325,19 +484,16 @@ const cfg = {
   colunasExtras: [
     { label: 'Categoria', texto: (r, e) => (e.rateio[r.id] || []).length ? 'Rateio: ' + e.rateio[r.id].map(x => `${cat(x.categoria_financeira_id)?.nome || '?'} ${reais(x.valor)}`).join(' | ') : (cat(r.categoria_financeira_id)?.nome || ''),
       html: (r, e) => (e.rateio[r.id] || []).length ? `<span title="${esc(e.rateio[r.id].map(x => `${cat(x.categoria_financeira_id)?.nome}: ${reais(x.valor)}`).join('\n'))}">${esc(cat(e.rateio[r.id][0].categoria_financeira_id)?.nome || '')} <small class="sub2" style="display:inline">+${e.rateio[r.id].length - 1}</small></span>` : esc(cat(r.categoria_financeira_id)?.nome || '') },
-    { label: 'Prazo', texto: r => textoPrazo(r), html: r => `<span class="prazo p-${faixa(r)}">${textoPrazo(r)}</span>` },
-    { label: 'Conta', texto: (r, e) => { const p = (e.pagamentos[r.id] || []).filter(x => !x.estornado); return conta(p.length ? p.at(-1).conta_bancaria_id : r.conta_bancaria_id)?.descricao || ''; } }
+    { label: 'Prazo', soExportar: true, texto: r => textoPrazo(r) },
+    { label: 'Conta', soExportar: true, texto: (r, e) => { const p = (e.pagamentos[r.id] || []).filter(x => !x.estornado); return conta(p.length ? p.at(-1).conta_bancaria_id : r.conta_bancaria_id)?.descricao || ''; } }
   ],
   textoBuscaExtra: r => `${cat(r.categoria_financeira_id)?.codigo || ''} ${conta(r.conta_bancaria_id)?.descricao || ''} ${r.descricao || ''} ${r.origem_ref?.fornecedor_tiny || ''} ${r.origem_ref?.categoria_tiny || ''} ${r.origem_ref?.tiny_id || ''} ${Number(r.valor || 0).toFixed(2).replace('.', ',')}`,
-  subtituloLinha: r => [r.projecao ? 'projeção' : '', extraAtual.anexos?.[r.id]?.length ? `📎 ${extraAtual.anexos[r.id].length}` : '', r.parcela && r.parcelas ? `parcela ${r.parcela}/${r.parcelas}` : ''].filter(Boolean).join(' · '),
+  subtituloLinha: r => [r.projecao ? 'projeção' : '', extraAtual.anexos?.[r.id]?.length ? `📎 ${extraAtual.anexos[r.id].length}` : ''].filter(Boolean).join(' · '),
   resumo: v => {
     window.__visiveisNox = v;
-    const venc = v.filter(vencido);
-    return (venc.length ? `<span class="vermelho">Vencido <b>${reais(venc.reduce((s, r) => s + Number(r.saldo), 0))}</b> (${venc.length})</span>` : '')
-      + `<button type="button" class="btn discreto fino nao-imprimir" id="btnAging" title="Saldo a pagar por faixa de prazo, por empresa">Relatório de prazos (aging)</button>`;
+    return `<button type="button" class="btn discreto fino nao-imprimir" id="btnAging" title="Saldo a pagar por faixa de prazo, por empresa">Relatório de prazos (aging)</button>`;
   },
   pendencias: [
-    { id: 'vencido', nome: 'Vencido', cor: 'erro', teste: vencido },
     { id: 'sem_cat', nome: 'Sem categoria (importado)', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !r.categoria_financeira_id && !(e.rateio[r.id] || []).length },
     { id: 'produto_sem_pedido', nome: 'Compra de produto sem pedido', cor: 'alerta',
       teste: (r, e) => ['manual', 'recorrente'].includes(r.origem) && [r.categoria_financeira_id, ...(e.rateio[r.id] || []).map(x => x.categoria_financeira_id)].some(id => cat(id)?.aplica_produtos) },
@@ -346,6 +502,7 @@ const cfg = {
     { id: 'nao_conc', nome: 'Pago e não conciliado', cor: 'neutro', teste: (r, e) => (e.pagamentos[r.id] || []).some(p => !p.estornado && !p.conciliado) }
   ],
   apagado: r => r.situacao === 'cancelado' || r.situacao === 'pago',
+  depoisDesenhar: (v, api) => desenharBarras(api),
   aoAbrir(m, r, ctx) {
     window.__ctxNox = ctx;
     modalAtual = m;
@@ -360,13 +517,14 @@ const cfg = {
       };
       fEmp.addEventListener('change', filtrarContas); filtrarContas();
     }
-    // Lançamento manual de projeção: emissão acompanha o vencimento
+    // Emissão x vencimento: título avulso pode ter a emissão igual ao vencimento; lançamento novo pode ser parcelado
     const fEm = m.querySelector('#f_data_emissao'), fVe = m.querySelector('#f_data_vencimento');
     if (pode && fEm && ['manual', 'recorrente', undefined].includes(r.origem)) {
-      fEm.closest('.campo').insertAdjacentHTML('beforeend', `<label class="chk" style="margin-top:6px"><input type="checkbox" id="emIgualVenc" ${r.id && r.data_emissao && r.data_emissao === r.data_vencimento ? 'checked' : ''}> Emissão = vencimento (projeção)</label>`);
+      fEm.closest('.campo').insertAdjacentHTML('beforeend', `<label class="chk" id="emIgualBox" style="margin-top:6px"><input type="checkbox" id="emIgualVenc" ${r.id && r.data_emissao && r.data_emissao === r.data_vencimento ? 'checked' : ''}> Mesma data do vencimento</label>`);
       const chk = m.querySelector('#emIgualVenc');
-      const sincronizar = () => { if (chk.checked) fEm.value = fVe.value; fEm.readOnly = chk.checked; };
+      const sincronizar = () => { if (m.querySelector('#pcSim')?.checked) return; if (chk.checked) fEm.value = fVe.value; fEm.readOnly = chk.checked; };
       chk.onchange = sincronizar; fVe.addEventListener('input', sincronizar); fVe.addEventListener('change', sincronizar); sincronizar();
+      if (!r.id) montarParcelamento(m);
     }
     // Rateio
     const el = document.createElement('div');
@@ -403,7 +561,7 @@ const cfg = {
       aviso(c.checked ? 'Conciliado' : 'Conciliação desfeita');
     });
   },
-  secaoExtra: r => htmlRastreio(r) + htmlPagamentos(r) + htmlAnexos(r),
+  secaoExtra: r => htmlParcelasGrupo(r) + htmlRastreio(r) + htmlPagamentos(r) + htmlAnexos(r),
   antesSalvar: d => {
     ['empresa_id', 'fornecedor_id', 'categoria_financeira_id', 'conta_bancaria_id', 'forma_pagamento_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); });
     if (d.codigo_barras) d.codigo_barras = soDigitos(d.codigo_barras) || d.codigo_barras;
@@ -415,6 +573,7 @@ const cfg = {
     if (rat.length && Math.abs(rat.reduce((s, x) => s + x.valor, 0) - d.valor) > 0.005) return 'O rateio precisa somar exatamente o valor do título';
     if (!rat.length && !d.categoria_financeira_id) return 'Informe a categoria financeira (ou faça o rateio)';
     if (d.data_emissao && d.data_vencimento < d.data_emissao) return 'O vencimento não pode ser antes da emissão';
+    if (!r?.id && parcelado()) { const e = conferirParcelas(d); if (e) return e; }
     if (d.parcela && d.parcelas && d.parcela > d.parcelas) return 'A parcela não pode ser maior que o total de parcelas';
     if (d.conta_bancaria_id && conta(d.conta_bancaria_id)?.empresa_id !== d.empresa_id) return 'A conta prevista é de outra empresa';
     if (r?.id && Number(r.valor_pago) > d.valor) return `O valor não pode ficar abaixo do que já foi pago (${reais(r.valor_pago)})`;
@@ -422,6 +581,7 @@ const cfg = {
   },
   async salvar(dados, r, m, novo) {
     const rat = lerRateio();
+    if (novo && parcelado()) return salvarParcelas(dados, rat);
     const { data, error } = await db.rpc('salvar_titulo_pagar', { p_titulo: { ...dados, id: novo ? null : r.id }, p_rateio: rat.length || (r.id && (extraAtual.rateio[r.id] || []).length) ? rat : null });
     if (error) throw error;
     return data;
@@ -480,6 +640,52 @@ const cfg = {
   chaveHistorico: r => r.documento || r.id,
   msgDuplicado: 'Título duplicado'
 };
+/* ---------- Lista única: botões de situação (contagem e total) e período rápido ----------
+   Os botões só mexem nos filtros do painel (Situação / Período por / De / Até): o "Filtros" continua valendo
+   e os atalhos da página inicial (?f_grupo=…&per=…&de=…&ate=…) caem no botão certo. */
+const BOTOES = [
+  { v: 'abertos', n: 'Em aberto' }, { v: 'vencidos', n: 'Vencidos', cor: 'vermelho' }, { v: 'hoje', n: 'Vencem hoje', cor: 'laranja' },
+  { v: 'programados', n: 'Programados' }, { v: 'pago', n: 'Pagos', cor: 'verde', soma: r => Number(r.valor_pago) },
+  { v: 'cancelado', n: 'Cancelados', soma: r => Number(r.valor) }, { v: '', n: 'Todos', soma: r => r.situacao === 'cancelado' ? 0 : Number(r.saldo) }];
+const fimMes = iso => somaDias(somaMeses(iso.slice(0, 8) + '01', 1), -1);
+function periodos() {
+  const h = hoje(), dw = (new Date(h + 'T12:00:00').getDay() + 6) % 7, ini = somaDias(h, -dw);
+  return [{ v: 'todo', n: 'Todo o período', de: '', ate: '' }, { v: 'hoje', n: 'Hoje', de: h, ate: h },
+    { v: 'semana', n: 'Esta semana', de: ini, ate: somaDias(ini, 6) }, { v: 'prox30', n: 'Próximos 30 dias', de: h, ate: somaDias(h, 30) }];
+}
+function desenharBarras(api) {
+  const cont = document.getElementById('conteudo'), $ = s => cont.querySelector(s);
+  if (!$('#pgSitu')) $('#cPend').insertAdjacentHTML('beforebegin', '<div class="situ-bar nao-imprimir" id="pgSitu"></div><div class="periodo-bar nao-imprimir" id="pgPer"></div>');
+  const sel = $('[data-filtro-extra=grupo]'), per = $('#fPerCampo'), de = $('#fDe'), ate = $('#fAte');
+  const teste = cfg.filtrosExtras.find(f => f.id === 'grupo').teste, base = api.semFiltro('grupo');
+  // Situação
+  $('#pgSitu').innerHTML = BOTOES.map(b => {
+    const rs = b.v ? base.filter(r => teste(r, b.v)) : base, tot = rs.reduce((s, r) => s + (b.soma ? b.soma(r) : Number(r.saldo)), 0);
+    return `<button type="button" class="situ ${b.cor || ''}${sel.value === b.v ? ' ativa' : ''}${rs.length ? '' : ' zero'}" data-situ="${b.v}">${b.n} <small>· ${rs.length}</small><b>${reais(tot)}</b></button>`;
+  }).join('');
+  cont.querySelectorAll('[data-situ]').forEach(b => b.onclick = () => {
+    sel.value = b.dataset.situ;
+    // filtro inteligente: pagos olham a data do pagamento; o resto, o vencimento
+    if (sel.value === 'pago' && per.value === 'data_vencimento') per.value = 'data_pagamento';
+    else if (sel.value !== 'pago' && sel.value !== '' && per.value === 'data_pagamento') per.value = 'data_vencimento';
+    sel.dispatchEvent(new Event('change'));
+  });
+  // Período
+  const ps = periodos(), atual = ps.find(p => p.de === de.value && p.ate === ate.value)?.v;
+  const mesBase = de.value && de.value.endsWith('-01') && ate.value === fimMes(de.value) ? de.value : null;
+  const mesRef = mesBase || hoje().slice(0, 8) + '01';
+  const nomeMes = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('.', '').replace(' de ', '/');
+  $('#pgPer').innerHTML = `<span>Período por</span><select id="pgPerCampo" data-simples>${[...per.options].map(o => `<option value="${o.value}"${o.value === per.value ? ' selected' : ''}>${esc(o.text)}</option>`).join('')}</select>
+    ${ps.map(p => `<button type="button" class="chip${atual === p.v ? ' ativa' : ''}" data-per="${p.v}">${p.n}</button>`).join('')}
+    <button type="button" class="chip seta" data-mes="-1" title="Mês anterior">‹</button><button type="button" class="chip${mesBase ? ' ativa' : ''}" data-mes="0" title="Mês inteiro">${nomeMes(mesRef)}</button><button type="button" class="chip seta" data-mes="1" title="Próximo mês">›</button>
+    <button type="button" class="chip${!atual && !mesBase ? ' ativa' : ''}" id="pgPerOutro">${!atual && !mesBase ? `${dataCurta(de.value) || '…'} a ${dataCurta(ate.value) || '…'}` : 'Outro período…'}</button>`;
+  const aplicar = (d, a) => { de.value = d; ate.value = a; de.dispatchEvent(new Event('change')); };
+  $('#pgPerCampo').onchange = e => { per.value = e.target.value; per.dispatchEvent(new Event('change')); };
+  cont.querySelectorAll('[data-per]').forEach(b => b.onclick = () => { const p = ps.find(x => x.v === b.dataset.per); aplicar(p.de, p.ate); });
+  cont.querySelectorAll('[data-mes]').forEach(b => b.onclick = () => { const m = somaMeses(mesRef, +b.dataset.mes); aplicar(m, fimMes(m)); });
+  $('#pgPerOutro').onclick = () => { const btn = $('#cFiltBtn'); if ($('#cFilt').hidden) btn.click(); de.focus(); };
+}
+
 /* ---------- Projeção: títulos estimados de uma vez (ex.: aluguel até dezembro) ---------- */
 function abrirProjecao(ctx) {
   const ano = hoje().slice(0, 4), mes = hoje().slice(0, 7);
