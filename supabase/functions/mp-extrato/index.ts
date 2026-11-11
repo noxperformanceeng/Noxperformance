@@ -26,17 +26,23 @@ const num = (v: string) => { const n = Number(String(v ?? '').replace(',', '.'))
 
 async function importar(db: ReturnType<typeof adminDb>, contaId: number, arquivo: string, csv: string) {
   const ls = lerCsv(csv).filter(r => r.SOURCE_ID || r.DESCRIPTION);
+  // Identidade da linha SEM o saldo: o saldo do relatório começa do zero em cada período pedido, então a mesma
+  // movimentação vinha com saldo diferente em relatórios que se sobrepõem e entrava duplicada.
+  // Linhas idênticas no mesmo arquivo (movimentos repetidos de verdade) são numeradas: #1, #2…
+  const vistas = new Map<string, number>();
   const regs = ls.map(r => {
     const dh = r.DATE || r.TRANSACTION_APPROVAL_DATE;
     const valor = Math.round((num(r.NET_CREDIT_AMOUNT) - num(r.NET_DEBIT_AMOUNT)) * 100) / 100;
-    const base = [dh, r.SOURCE_ID, r.DESCRIPTION, valor.toFixed(2), r.BALANCE_AMOUNT, r.GROSS_AMOUNT].join('|');
+    const chave = [dh, r.SOURCE_ID, r.DESCRIPTION, valor.toFixed(2), r.GROSS_AMOUNT].join('|');
+    const n = (vistas.get(chave) ?? 0) + 1; vistas.set(chave, n);
+    const base = chave + '#' + n;
     return { conta_bancaria_id: contaId, data: dh.slice(0, 10), data_hora: dh || null, tipo: r.DESCRIPTION || null,
       descricao: [r.DESCRIPTION, r.PAYMENT_METHOD, r.BUSINESS_UNIT].filter(Boolean).join(' · ') || null,
       id_operacao: r.SOURCE_ID || null, referencia: r.EXTERNAL_REFERENCE || r.PURCHASE_ID || null,
       pedido_externo: r.ORDER_ID || null, pack_id: r.PACK_ID || null, envio_id: r.SHIPPING_ID || null,
       valor, valor_bruto: r.GROSS_AMOUNT ? num(r.GROSS_AMOUNT) : null,
       tarifas: { mp: num(r.MP_FEE_AMOUNT), impostos: num(r.TAXES_AMOUNT), financiamento: num(r.FINANCING_FEE_AMOUNT), envio: num(r.SHIPPING_FEE_AMOUNT), cupom: num(r.COUPON_AMOUNT) },
-      saldo_apos: r.BALANCE_AMOUNT ? num(r.BALANCE_AMOUNT) : null, arquivo, linha_original: r, hash: 'mpapi:' + base };
+      saldo_apos: r.BALANCE_AMOUNT ? num(r.BALANCE_AMOUNT) : null, arquivo, linha_original: r, hash: 'mp2:' + base };
   }).filter(r => r.valor !== 0 || r.id_operacao);
   let novas = 0;
   for (let i = 0; i < regs.length; i += 500) {
@@ -88,7 +94,9 @@ Deno.serve(async req => {
           if (rel.status !== 'enabled' || feitos.includes(rel.file_name)) continue;
           const arq = await mp(token, 'GET', `/v1/account/release_report/${encodeURIComponent(rel.file_name)}`);
           if (arq.status !== 200 || typeof arq.corpo !== 'string') { res.push({ arquivo: rel.file_name, erro: arq.status }); continue; }
-          res.push({ arquivo: rel.file_name, ...(await importar(db, canal!.conta_bancaria_id, rel.file_name, arq.corpo)) });
+          // um arquivo com erro não trava os seguintes (fica de fora de 'feitos' e é tentado de novo na próxima hora)
+          try { res.push({ arquivo: rel.file_name, ...(await importar(db, canal!.conta_bancaria_id, rel.file_name, arq.corpo)) }); }
+          catch (e) { res.push({ arquivo: rel.file_name, erro: String((e as Error).message ?? e) }); continue; }
           feitos.push(rel.file_name);
           await db.from('integracao_config').upsert({ chave: chaveImp, valor: JSON.stringify(feitos) });
         }
