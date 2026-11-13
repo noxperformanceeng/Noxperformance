@@ -11,7 +11,10 @@
 --    Depois gera os pedidos:
 --    um pedido de compra em rascunho por fornecedor vencedor, já com preços, condição, frete e entrega.
 --    O valor continua passando pela escala de aprovação do pedido de compra.
---  · Os preços cotados atualizam o cadastro produto × fornecedor (preço e data da cotação).
+--  · Os preços confirmados na cotação atualizam o cadastro produto × fornecedor (preço e data da cotação);
+--    o último preço que entra só como sugestão não é regravado como se fosse cotação nova.
+--  · Frete: no pedido vai a parte proporcional aos itens que o fornecedor venceu.
+--  · Não gera pedido com proposta vencida nem de solicitação que deixou de estar aprovada.
 --  · Rastreio: solicitação → cotação → pedido, na linha do tempo do pedido e nas telas.
 --  · A solicitação aprovada não gera mais pedido direto: passa sempre pela cotação.
 --  · Contadores do menu: solicitações aguardando aprovação (amarelo) e aprovadas esperando o comprador
@@ -76,8 +79,9 @@ create table if not exists public.cotacoes_compra_precos (
   id              bigserial primary key,
   cotacao_forn_id bigint not null references public.cotacoes_compra_fornecedores(id) on delete cascade,
   cotacao_item_id bigint not null references public.cotacoes_compra_itens(id) on delete cascade,
-  valor_unitario  numeric not null check (valor_unitario >= 0),
+  valor_unitario  numeric not null check (valor_unitario > 0),
   ipi_pct         numeric check (ipi_pct is null or ipi_pct between 0 and 100),
+  sugerido        boolean not null default false,   -- veio do último preço do cadastro e não foi confirmado nesta cotação
   unique (cotacao_forn_id, cotacao_item_id)
 );
 create index if not exists cotacoes_compra_precos_item_idx on public.cotacoes_compra_precos (cotacao_item_id);
@@ -133,6 +137,30 @@ $$;
 revoke execute on function public.sc_cotacoes() from public, anon;
 grant execute on function public.sc_cotacoes() to authenticated;
 
+-- ---------- Solicitação em cotação aberta não pode ser cancelada (retire o item da cotação antes) ----------
+create or replace function public.solicitacao_compra_cancelar(p_id bigint, p_motivo text)
+returns void language plpgsql security definer set search_path = public as $$
+declare s public.solicitacoes_compra; v_mot text := nullif(trim(coalesce(p_motivo, '')), '');
+begin
+  if v_mot is null then raise exception 'Informe o motivo do cancelamento'; end if;
+  select * into s from public.solicitacoes_compra where id = p_id for update;
+  if s.id is null then raise exception 'Solicitação não encontrada'; end if;
+  if not public.pode('solicitacoes_compra', 'alterar') or (s.solicitante_id <> auth.uid() and not public.pode('solicitacoes_compra', 'total')) then
+    raise exception 'Só quem pediu (ou Compras) cancela a solicitação'; end if;
+  if s.situacao = 'cancelado' then return; end if;
+  if exists (select 1 from public.solicitacoes_compra_itens i join public.pedidos_compra p on p.id = i.pedido_id
+              where i.solicitacao_id = p_id and p.situacao <> 'cancelado') then
+    raise exception 'Já existe pedido de compra para itens desta solicitação: cancele o pedido antes';
+  end if;
+  if exists (select 1 from public.solicitacoes_compra_itens i join public.cotacoes_compra c on c.id = i.cotacao_id
+              where i.solicitacao_id = p_id and c.situacao = 'aberta') then
+    raise exception 'Há itens desta solicitação em cotação aberta: peça ao comprador para retirar da cotação antes';
+  end if;
+  update public.solicitacoes_compra set situacao = 'cancelado', motivo_cancelamento = upper(v_mot) where id = p_id;
+end $$;
+revoke execute on function public.solicitacao_compra_cancelar(bigint, text) from public, anon;
+grant execute on function public.solicitacao_compra_cancelar(bigint, text) to authenticated;
+
 -- ---------- Criar a cotação a partir dos itens aprovados ----------
 create or replace function public.cotacao_criar(p_itens bigint[], p_empresa integer)
 returns bigint language plpgsql security definer set search_path = public as $$
@@ -161,8 +189,8 @@ begin
     union select sv.fornecedor_id from public.cotacoes_compra_itens ci join public.servicos sv on sv.id = ci.servico_id where ci.cotacao_id = v_id and sv.fornecedor_id is not null) x
   join public.fornecedores f on f.id = x.fornecedor_id and coalesce(f.situacao, 'ativo') = 'ativo'
   on conflict do nothing;
-  insert into public.cotacoes_compra_precos (cotacao_forn_id, cotacao_item_id, valor_unitario, ipi_pct)
-  select cf.id, ci.id, pf.preco, pf.ipi_pct
+  insert into public.cotacoes_compra_precos (cotacao_forn_id, cotacao_item_id, valor_unitario, ipi_pct, sugerido)
+  select cf.id, ci.id, pf.preco, pf.ipi_pct, true
     from public.cotacoes_compra_itens ci join public.produto_fornecedores pf on pf.produto_id = ci.produto_id and pf.preco > 0
     join public.cotacoes_compra_fornecedores cf on cf.cotacao_id = v_id and cf.fornecedor_id = pf.fornecedor_id
    where ci.cotacao_id = v_id
@@ -189,14 +217,21 @@ begin
   if exists (select 1 from jsonb_array_elements(p_forn) x group by x->>'fornecedor_id' having count(*) > 1) then
     raise exception 'O mesmo fornecedor aparece duas vezes na cotação';
   end if;
+  if exists (select 1 from jsonb_array_elements(coalesce(p_forn, '[]')) x left join public.fornecedores fo on fo.id = nullif(x->>'fornecedor_id', '')::bigint
+              where fo.id is null or coalesce(fo.situacao, 'ativo') <> 'ativo') then
+    raise exception 'Fornecedor inexistente ou inativo na cotação';
+  end if;
   update public.cotacoes_compra set empresa_id = nullif(p_cab->>'empresa_id', '')::int, data_limite = nullif(p_cab->>'data_limite', '')::date,
     observacoes = upper(nullif(trim(coalesce(p_cab->>'observacoes', '')), '')) where id = p_id;
   -- itens retirados: voltam para a fila
   update public.solicitacoes_compra_itens si set cotacao_id = null
     from public.cotacoes_compra_itens ci
    where ci.cotacao_id = p_id and si.id = ci.solicitacao_item_id
-     and ci.id not in (select (x->>'id')::bigint from jsonb_array_elements(p_itens) x);
-  delete from public.cotacoes_compra_itens where cotacao_id = p_id and id not in (select (x->>'id')::bigint from jsonb_array_elements(p_itens) x);
+     and ci.id not in (select (x->>'id')::bigint from jsonb_array_elements(p_itens) x where nullif(x->>'id', '') is not null);
+  delete from public.cotacoes_compra_itens where cotacao_id = p_id and id not in (select (x->>'id')::bigint from jsonb_array_elements(p_itens) x where nullif(x->>'id', '') is not null);
+  if not exists (select 1 from public.cotacoes_compra_itens where cotacao_id = p_id) then
+    raise exception 'A cotação precisa de pelo menos um item (para desistir, cancele a cotação)';
+  end if;
   -- fornecedores: refaz a lista (preços vão junto)
   update public.cotacoes_compra_itens set vencedor_id = null where cotacao_id = p_id;
   delete from public.cotacoes_compra_fornecedores where cotacao_id = p_id;
@@ -206,11 +241,11 @@ begin
             nullif(f->>'prazo_entrega_dias', '')::int, coalesce(nullif(f->>'frete', '')::numeric, 0), nullif(f->>'validade', '')::date,
             nullif(trim(coalesce(f->>'contato', '')), ''), upper(nullif(trim(coalesce(f->>'observacao', '')), '')))
     returning id into v_cf;
-    insert into public.cotacoes_compra_precos (cotacao_forn_id, cotacao_item_id, valor_unitario, ipi_pct)
-    select v_cf, (x->>'item_id')::bigint, (x->>'valor_unitario')::numeric, nullif(x->>'ipi_pct', '')::numeric
+    insert into public.cotacoes_compra_precos (cotacao_forn_id, cotacao_item_id, valor_unitario, ipi_pct, sugerido)
+    select v_cf, (x->>'item_id')::bigint, (x->>'valor_unitario')::numeric, nullif(x->>'ipi_pct', '')::numeric, coalesce((x->>'sugerido')::boolean, false)
       from jsonb_array_elements(coalesce(f->'precos', '[]')) x
       join public.cotacoes_compra_itens ci on ci.id = (x->>'item_id')::bigint and ci.cotacao_id = p_id
-     where nullif(x->>'valor_unitario', '') is not null;
+     where coalesce(nullif(x->>'valor_unitario', '')::numeric, 0) > 0;
   end loop;
   -- vencedor de cada item (precisa ter preço do fornecedor escolhido)
   update public.cotacoes_compra_itens ci set vencedor_id = cf.id, motivo_escolha = upper(nullif(trim(coalesce(x->>'motivo_escolha', '')), ''))
@@ -282,6 +317,18 @@ begin
   if c.id is null then raise exception 'Cotação não encontrada'; end if;
   if c.situacao <> 'aberta' then raise exception 'Cotação % não está aberta', c.numero; end if;
   if c.empresa_id is null then raise exception 'Escolha a empresa da cotação (CNPJ dos pedidos)'; end if;
+  if not exists (select 1 from public.cotacoes_compra_itens where cotacao_id = p_id) then raise exception 'Cotação sem itens'; end if;
+  -- solicitação de origem precisa continuar aprovada (não pode ter sido cancelada enquanto estava em cotação)
+  perform 1 from public.solicitacoes_compra s join public.solicitacoes_compra_itens si on si.solicitacao_id = s.id
+    join public.cotacoes_compra_itens ci on ci.solicitacao_item_id = si.id where ci.cotacao_id = p_id for update of s;
+  if exists (select 1 from public.cotacoes_compra_itens ci join public.solicitacoes_compra_itens si on si.id = ci.solicitacao_item_id
+              join public.solicitacoes_compra s on s.id = si.solicitacao_id where ci.cotacao_id = p_id and s.situacao <> 'aprovado') then
+    raise exception 'Há item de solicitação que não está mais aprovada: retire o item da cotação';
+  end if;
+  if exists (select 1 from public.cotacoes_compra_itens ci join public.cotacoes_compra_fornecedores cf on cf.id = ci.vencedor_id
+              where ci.cotacao_id = p_id and cf.validade < current_date) then
+    raise exception 'A proposta de um fornecedor vencedor está vencida (validade): atualize a validade ou escolha outro';
+  end if;
   if exists (select 1 from public.cotacoes_compra_itens where cotacao_id = p_id and vencedor_id is null) then
     raise exception 'Escolha o fornecedor vencedor de todos os itens (ou retire o item da cotação)';
   end if;
@@ -290,13 +337,19 @@ begin
               where ci.cotacao_id = p_id and ci.vencedor_id <> a.cotacao_forn_id and ci.motivo_escolha is null) then
     raise exception 'Há item com fornecedor diferente do indicado pela análise sem justificativa da escolha';
   end if;
-  for f in select cf.*, fo.email, fo.telefone, fo.contato as contato_cad from public.cotacoes_compra_fornecedores cf join public.fornecedores fo on fo.id = cf.fornecedor_id
+  -- frete: cotado para todos os itens do fornecedor; no pedido vai a parte dos itens que ele venceu (rateio pelo valor)
+  for f in select cf.*, fo.email, fo.telefone, fo.contato as contato_cad,
+                  round(cf.frete * coalesce((select sum(pr.valor_unitario * ci.quantidade) from public.cotacoes_compra_precos pr join public.cotacoes_compra_itens ci on ci.id = pr.cotacao_item_id
+                                               where pr.cotacao_forn_id = cf.id and ci.vencedor_id = cf.id)
+                                            / nullif((select sum(pr.valor_unitario * ci.quantidade) from public.cotacoes_compra_precos pr join public.cotacoes_compra_itens ci on ci.id = pr.cotacao_item_id
+                                               where pr.cotacao_forn_id = cf.id), 0), 0), 2) as frete_pedido
+             from public.cotacoes_compra_fornecedores cf join public.fornecedores fo on fo.id = cf.fornecedor_id
             where cf.cotacao_id = p_id and exists (select 1 from public.cotacoes_compra_itens ci where ci.vencedor_id = cf.id) order by cf.id loop
     select string_agg(distinct s.numero, ', ') into v_scs
       from public.cotacoes_compra_itens ci join public.solicitacoes_compra_itens si on si.id = ci.solicitacao_item_id join public.solicitacoes_compra s on s.id = si.solicitacao_id
      where ci.vencedor_id = f.id;
     v_ped := public.pedido_compra_salvar(jsonb_build_object('empresa_id', c.empresa_id, 'fornecedor_id', f.fornecedor_id,
-               'condicao_pagamento_id', f.condicao_pagamento_id, 'forma_pagamento_id', f.forma_pagamento_id, 'frete', f.frete,
+               'condicao_pagamento_id', f.condicao_pagamento_id, 'forma_pagamento_id', f.forma_pagamento_id, 'frete', f.frete_pedido,
                'data_entrega_prevista', case when f.prazo_entrega_dias is not null then current_date + f.prazo_entrega_dias end,
                'contato_fornecedor', coalesce(f.contato, f.contato_cad), 'email_fornecedor', f.email, 'whatsapp_fornecedor', f.telefone,
                'observacoes_internas', 'GERADO DA COTAÇÃO ' || c.numero || coalesce(' · SOLICITAÇÕES ' || v_scs, '')),
@@ -320,7 +373,7 @@ begin
   select ci.produto_id, cf.fornecedor_id, pr.valor_unitario, pr.ipi_pct, current_date, c.numero
     from public.cotacoes_compra_precos pr join public.cotacoes_compra_itens ci on ci.id = pr.cotacao_item_id
     join public.cotacoes_compra_fornecedores cf on cf.id = pr.cotacao_forn_id
-   where ci.cotacao_id = p_id and ci.produto_id is not null and pr.valor_unitario > 0
+   where ci.cotacao_id = p_id and ci.produto_id is not null and pr.valor_unitario > 0 and not pr.sugerido   -- só preço confirmado nesta cotação
   on conflict (produto_id, fornecedor_id) do update set preco = excluded.preco, ipi_pct = coalesce(excluded.ipi_pct, produto_fornecedores.ipi_pct),
     cotacao_data = excluded.cotacao_data, cotacao_ref = excluded.cotacao_ref;
   update public.cotacoes_compra set situacao = 'concluida', concluida_em = now() where id = p_id;

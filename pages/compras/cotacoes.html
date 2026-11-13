@@ -6,7 +6,7 @@
 <title>Cotações de fornecedores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131952">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131957">
 <style>
   .mapa { overflow: auto; max-height: 64vh; border: 1px solid var(--linha); border-radius: 10px; }
   .mapa table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 100%; }
@@ -37,11 +37,11 @@
 <body data-modulo="cotacoes_compra" data-titulo="Cotações de fornecedores">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131952"></script>
-<script src="../../assets/js/ui.js?v=202611131952"></script>
-<script src="../../assets/js/auth.js?v=202611131952"></script>
-<script src="../../assets/js/layout.js?v=202611131952"></script>
-<script src="../../assets/js/cadastro.js?v=202611131952"></script>
+<script src="../../assets/js/supabase.js?v=202611131957"></script>
+<script src="../../assets/js/ui.js?v=202611131957"></script>
+<script src="../../assets/js/auth.js?v=202611131957"></script>
+<script src="../../assets/js/layout.js?v=202611131957"></script>
+<script src="../../assets/js/cadastro.js?v=202611131957"></script>
 <script>
 /* =====================================================================
    Cotações de fornecedores (entre a solicitação aprovada e o pedido de compra)
@@ -83,8 +83,9 @@ function colForn(f, ed) {
 function celula(f, it, ed) {
   const p = f.id ? preco(f.id, it.id) : null, a = ANALISE.find(x => x.cotacao_forn_id === f.id && x.item_id === it.id);
   return `<td class="cel${a?.recomendado ? ' indicado' : ''}${it.vencedor_id && it.vencedor_id === f.id ? ' vencedor' : ''}" data-it="${it.id}">
-    <div class="lin"><input data-k="valor_unitario" inputmode="decimal" placeholder="unitário" value="${p ? num(p.valor_unitario) : ''}"${ed ? '' : ' disabled'}>
+    <div class="lin"><input data-k="valor_unitario" inputmode="decimal" placeholder="unitário" value="${p ? num(p.valor_unitario) : ''}"${p?.sugerido ? ' data-sug="1" title="Último preço do cadastro: confirme com o fornecedor (ao digitar, passa a valer como cotado)" style="font-style:italic;color:var(--texto-suave)"' : ''}${ed ? '' : ' disabled'}>
       <input data-k="ipi_pct" inputmode="decimal" placeholder="IPI%" title="IPI (%)" value="${p?.ipi_pct ? num(p.ipi_pct) : ''}" style="width:52px"${ed ? '' : ' disabled'}></div>
+    ${p?.sugerido ? '<div class="nota" style="color:#b45309">último preço do cadastro · confirme</div>' : ''}
     ${a ? `<div class="nota" title="Preço ${num(a.n_preco)} · pagamento ${num(a.n_pagamento)} (${num(a.dias_pagamento)} dias) · entrega ${num(a.n_entrega)} · histórico ${num(a.n_historico)} (${a.no_prazo}/${a.compras_recebidas} no prazo)">nota <b>${num(a.nota)}</b>${a.recomendado ? ' · <b style="color:var(--ok)">indicado</b>' : ''} · ef. ${reais(a.preco_efetivo)}</div>` : ''}</td>`;
 }
 function linhaItem(r, it, ed) {
@@ -101,7 +102,7 @@ function htmlMapa(r) {
   const ed = editavel(r), fs = fornsDe(r), its = itensDe(r);
   const tot = f => its.reduce((s, it) => { const p = preco(f.id, it.id); return s + (p ? Number(p.valor_unitario) * (1 + Number(p.ipi_pct || 0) / 100) * Number(it.quantidade) : 0); }, 0) + Number(f.frete || 0);
   return `<div class="secao">Mapa da cotação</div>
-    <div class="cot-leg">Lance o preço de cada fornecedor (unitário e IPI). A <b>nota</b> pesa preço com IPI e frete rateado (50%), prazo de pagamento (20%), prazo de entrega (15%) e histórico de entregas no prazo com o fornecedor (15%). Fundo verde = indicado; contorno = vencedor escolhido.</div>
+    <div class="cot-leg">Lance o preço de cada fornecedor (unitário e IPI). A <b>nota</b> pesa preço com IPI e frete rateado (50%), prazo de pagamento (20%), prazo de entrega (15%) e histórico de entregas no prazo com o fornecedor (15%). Fundo verde = indicado; contorno = vencedor escolhido. Preço em itálico = último preço do cadastro, ainda não confirmado (digite para confirmar). No pedido, o frete vai proporcional aos itens que o fornecedor venceu.</div>
     <div class="mapa"><table><thead><tr><th class="fixa">Item</th>${fs.map(f => colForn(f, ed)).join('')}${ed ? '<th style="min-width:120px"><button type="button" class="btn fino" id="addForn">+ Fornecedor</button></th>' : ''}<th class="venc">Vencedor</th></tr></thead>
       <tbody>${its.map(it => linhaItem(r, it, ed)).join('')}</tbody>
       <tfoot><tr><td class="fixa">Total com IPI e frete</td>${fs.map(f => `<td class="cel">${reais(tot(f))}</td>`).join('')}${ed ? '<td></td>' : ''}<td></td></tr></tfoot></table></div>
@@ -116,8 +117,9 @@ function lerMapa(m) {
   const forns = cols.map((th, ci) => {
     const g = k => th.querySelector(`[data-k=${k}]`)?.value || null;
     const precos = [...m.querySelectorAll('.mapa tbody tr[data-item]')].map(tr => { const td = tr.querySelectorAll('td.cel')[ci];
-      return { item_id: Number(tr.dataset.item), valor_unitario: lerNumero(td.querySelector('[data-k=valor_unitario]').value), ipi_pct: lerNumero(td.querySelector('[data-k=ipi_pct]').value) }; })
-      .filter(p => p.valor_unitario != null && !isNaN(p.valor_unitario));
+      const vu = td.querySelector('[data-k=valor_unitario]');
+      return { item_id: Number(tr.dataset.item), valor_unitario: lerNumero(vu.value), ipi_pct: lerNumero(td.querySelector('[data-k=ipi_pct]').value), sugerido: !!vu.dataset.sug }; })
+      .filter(p => p.valor_unitario > 0);
     return { fornecedor_id: Number(g('fornecedor_id')) || null, condicao_pagamento_id: Number(g('condicao_pagamento_id')) || null, forma_pagamento_id: Number(g('forma_pagamento_id')) || null,
       prazo_entrega_dias: g('prazo_entrega_dias') ? parseInt(g('prazo_entrega_dias')) : null, frete: lerNumero(g('frete')) || 0, validade: g('validade'), contato: g('contato'), precos };
   }).filter(f => f.fornecedor_id);
@@ -253,6 +255,8 @@ const cfg = {
         const { error } = await db.rpc('cotacao_cancelar', { p_id: r.id, p_motivo: mot }); if (error) return aviso('Não cancelou: ' + error.message, true);
         m.remove(); aviso(`${r.numero} cancelada`); cfg.recarregar(); }
     });
+    // digitou no preço que veio do cadastro: passa a valer como preço cotado
+    box.addEventListener('input', e => { if (e.target.dataset.sug) { delete e.target.dataset.sug; e.target.style.fontStyle = ''; e.target.style.color = ''; } });
     // escolheu vencedor diferente do indicado: pede justificativa
     box.addEventListener('change', e => { if (e.target.dataset.k !== 'vencedor') return;
       const tr = e.target.closest('tr'), a = ANALISE.find(x => x.item_id === Number(tr.dataset.item) && x.recomendado), mot = tr.querySelector('[data-k=motivo_escolha]');
