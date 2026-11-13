@@ -6,7 +6,7 @@
 <title>Notas fiscais · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131915">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131950">
 <style>
   .nf-cnpjs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 12px; }
   .nf-cnpj { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
@@ -30,11 +30,11 @@
 <body data-modulo="notas" data-titulo="Notas fiscais" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131915"></script>
-<script src="../../assets/js/ui.js?v=202611131915"></script>
-<script src="../../assets/js/auth.js?v=202611131915"></script>
-<script src="../../assets/js/layout.js?v=202611131915"></script>
-<script src="../../assets/js/cadastro.js?v=202611131915"></script>
+<script src="../../assets/js/supabase.js?v=202611131950"></script>
+<script src="../../assets/js/ui.js?v=202611131950"></script>
+<script src="../../assets/js/auth.js?v=202611131950"></script>
+<script src="../../assets/js/layout.js?v=202611131950"></script>
+<script src="../../assets/js/cadastro.js?v=202611131950"></script>
 <script>
 /* =====================================================================
    Notas fiscais de entrada (NF-e emitidas contra a NOX), separadas por CNPJ
@@ -51,11 +51,24 @@ const SEFAZ = [{ v: 'autorizada', n: 'Autorizada' }, { v: 'cancelada', n: 'Cance
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtCnpj = d => (d || '').replace(/\D/g, '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
-let NO_TINY = {}, CTX = null, FORN = [], PEDS = [], CATS = [], CONTAS = [], EMPRESAS = [], CTRL = [], USU = {}, modalAtual = null;
+let NO_TINY = {}, CTX = null, PFS = [], FORN = [], PEDS = [], CATS = [], CONTAS = [], EMPRESAS = [], CTRL = [], USU = {}, modalAtual = null;
 const forn = id => FORN.find(f => f.id === id);
 const ped = id => PEDS.find(p => p.id === id);
 const nomePed = p => p ? (p.origem === 'tiny' ? `TINY ${p.numero_tiny}` : p.numero) : '';
 const PORTAL_SEFAZ = 'https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx?tipoConsulta=resumo&tipoConteudo=7PhJ+gAVw2g=';
+
+/* ---------- Conversão de unidade na entrada do estoque (mesma regra da função fator_entrada, SQL 117) ----------
+   NF já na unidade do estoque → 1; senão fator do vínculo produto × fornecedor; senão o padrão do produto. */
+const qtdBR = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+function entradaEstoque(r, i) {
+  const pf = PFS.find(x => x.fornecedor_id === r.fornecedor_id && x.codigo_fornecedor && x.codigo_fornecedor === i.codigo), pr = pf?.produtos;
+  if (!pf || !pr) return `<span class="tg neutro" title="Cadastre o código ${esc(i.codigo || '')} deste fornecedor no produto (aba Fornecedores)">sem vínculo</span>`;
+  if (!pr.controla_estoque) return `<span class="sub">${esc(pr.codigo || '')} · não controla estoque</span>`;
+  const un = String(i.unidade || '').trim().toUpperCase(), mesma = un && un === String(pr.unidade || '').trim().toUpperCase();
+  const f = mesma ? 1 : Number(pf.fator_compra) || Number(pr.fator_compra) || 1, q = Number(i.quantidade || 0) * f;
+  const semFator = !mesma && f === 1 && un && ['MM', 'CM', 'M', 'KG', 'G', 'L', 'ML'].includes(String(pr.unidade || '').toUpperCase()) ? ` <span class="tg alerta" title="NF em ${esc(un)} e estoque em ${esc(pr.unidade)} sem fator: cadastre o fator no produto">sem fator</span>` : '';
+  return `<b>${qtdBR(q)} ${esc(pr.unidade || '')}</b>${f !== 1 ? ` <small class="sub">(×${qtdBR(f)})</small>` : ''}${semFator}<small class="sub2">${esc(pr.codigo || '')}</small>`;
+}
 
 /* ---------- Checagens antifraude (mostradas na nota) ---------- */
 function checagens(r) {
@@ -105,9 +118,9 @@ function secaoNF(r) {
         ${['nova', 'conferida'].includes(r.situacao) && r.fornecedor_id ? ' <button type="button" class="btn fino" data-nf="tiny">Ordem de compra do Tiny…</button>' : ''}</div>` : ''}
     <div class="acoes-nf">${ac.join('')}</div>
     <div class="secao">Itens da NF</div>
-    ${itens.length ? `<table class="lista-mini"><thead><tr><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead><tbody>
+    ${itens.length ? `<table class="lista-mini"><thead><tr><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th><th>Entra no estoque</th></tr></thead><tbody>
       ${itens.map(i => `<tr><td>${esc(i.codigo || '')}</td><td>${esc(i.descricao || '')}</td><td>${esc(i.ncm || '')}</td><td>${esc(i.cfop || '')}</td><td>${esc(i.unidade || '')}</td>
-        <td class="num">${Number(i.quantidade || 0).toLocaleString('pt-BR')}</td><td class="num">${reais(i.valor_unitario)}</td><td class="num">${reais(i.valor)}</td></tr>`).join('')}</tbody></table>`
+        <td class="num">${Number(i.quantidade || 0).toLocaleString('pt-BR')}</td><td class="num">${reais(i.valor_unitario)}</td><td class="num">${reais(i.valor)}</td><td>${entradaEstoque(r, i)}</td></tr>`).join('')}</tbody></table>`
       : '<p class="sub" style="margin:0">Sem itens (só o resumo). Importe o XML da nota.</p>'}
     ${dups.length ? `<div class="secao">Duplicatas (parcelas)</div><table class="lista-mini"><thead><tr><th>Nº</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>
       ${dups.map(d => `<tr><td>${esc(d.numero || '')}</td><td>${dataCurta(d.vencimento)}</td><td class="num">${reais(d.valor)}</td></tr>`).join('')}</tbody></table>` : ''}`;
@@ -261,14 +274,16 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     CTX = ctx; linhas.forEach(r => r.emissao_dia = String(r.data_emissao || '').slice(0, 10));
-    const [f, p, c, cb, em, ct, us] = await Promise.all([
+    const [f, p, c, cb, em, ct, us, pfs] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, situacao').order('nome')),
       buscarTodos(() => db.from('pedidos_compra').select('id, numero, numero_tiny, origem, empresa_id, fornecedor_id, data_pedido, situacao, valor_total, valor_recebido').order('id', { ascending: false })),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').eq('situacao', 'ativo').order('codigo')),
       ctx.pode('pagar') ? buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').eq('situacao', 'ativo').order('descricao')) : [],
       db.from('empresas').select('id, nome, cnpj').order('id'),
       db.from('sefaz_dfe_controle').select('*'),
-      db.rpc('usuarios_nomes')]);
+      db.rpc('usuarios_nomes'),
+      buscarTodos(() => db.from('produto_fornecedores').select('fornecedor_id, codigo_fornecedor, fator_compra, produtos(codigo, unidade, fator_compra, controla_estoque)').not('codigo_fornecedor', 'is', null))]);
+    PFS = pfs;
     const nt = await db.rpc('nfe_no_tiny'); NO_TINY = Object.fromEntries((nt.data || []).map(x => [x.nfe_id, x]));
     FORN = f; PEDS = p; CATS = c; CONTAS = cb.filter(x => x.tipo !== 'historico'); EMPRESAS = em.data || []; CTRL = ct.data || [];
     USU = Object.fromEntries((us.data || []).map(u => [u.id, u.nome]));

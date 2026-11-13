@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131915">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131950">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,11 +49,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131915"></script>
-<script src="../../assets/js/ui.js?v=202611131915"></script>
-<script src="../../assets/js/auth.js?v=202611131915"></script>
-<script src="../../assets/js/layout.js?v=202611131915"></script>
-<script src="../../assets/js/cadastro.js?v=202611131915"></script>
+<script src="../../assets/js/supabase.js?v=202611131950"></script>
+<script src="../../assets/js/ui.js?v=202611131950"></script>
+<script src="../../assets/js/auth.js?v=202611131950"></script>
+<script src="../../assets/js/layout.js?v=202611131950"></script>
+<script src="../../assets/js/cadastro.js?v=202611131950"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -712,6 +712,14 @@ Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. 
 }
 
 /* ---------- Recebimento da NF ---------- */
+// Quanto entra no estoque (mesma regra da função fator_entrada, SQL 117): item já na unidade do estoque → 1;
+// senão fator do vínculo produto × fornecedor do pedido; senão o padrão do produto.
+function noEstoque(i, fornId, q) {
+  const p = prod(i.produto_id); if (!p || p.controla_estoque === false || i.uso_consumo) return '';
+  const un = String(i.unidade || p.unidade_compra || p.unidade || '').trim().toUpperCase();
+  const f = un && un === String(p.unidade || '').trim().toUpperCase() ? 1 : Number(PF.find(x => x.produto_id === p.id && x.fornecedor_id === fornId)?.fator_compra) || Number(p.fator_compra) || 1;
+  return f === 1 ? '' : `= ${(q * f).toLocaleString('pt-BR', { maximumFractionDigits: 4 })} ${esc(p.unidade || '')} no estoque`;
+}
 function abrirRecebimento(r, pai) {
   const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem' || i.servico_id), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
   const itens = (ex.itens[r.id] || []).map(i => ({ ...i, pend: Math.max(0, Number(i.quantidade) - Number(i.quantidade_recebida)) }));
@@ -727,7 +735,7 @@ function abrirRecebimento(r, pai) {
     </div>
     <div class="sub-ed"><div class="secao">Itens recebidos${srvIds.size ? ' · peças usinadas que voltam entram no estoque (por enquanto só fica registrado no pedido; o serviço não é item de estoque)' : ''}</div><table><thead><tr><th>Item</th><th>Pedido</th><th>Já recebido</th><th>Nesta NF</th><th class="num">Valor</th></tr></thead><tbody>
       ${itens.map(i => `<tr data-item="${i.id}" data-unit="${Number(i.valor_total) / Number(i.quantidade)}"><td>${esc(i.descricao)}</td><td>${num(i.quantidade)} ${esc(i.unidade || '')}</td><td>${num(i.quantidade_recebida)}</td>
-        <td style="width:90px"><input data-q inputmode="decimal" value="${num(i.pend)}"></td><td class="num" data-v></td></tr>`).join('')}</tbody></table></div>
+        <td style="width:90px"><input data-q inputmode="decimal" value="${num(i.pend)}"><small class="sub" data-est style="display:block"></small></td><td class="num" data-v></td></tr>`).join('')}</tbody></table></div>
     <div class="grade-campos" style="margin-top:6px">
       <div class="campo"><label>Valor ${soServico ? 'do serviço' : 'da NF'} (R$) <span class="obrig">*</span></label><input id="rValor" inputmode="decimal"></div>
       <div class="campo l3"><label>&nbsp;</label><div class="sub" id="rSug" style="padding-top:6px"></div></div>
@@ -739,7 +747,8 @@ function abrirRecebimento(r, pai) {
   const q = s => m.querySelector(s);
   const linhaParc = (k, venc, v) => `<tr><td style="width:24px;padding-top:7px">${k}</td><td style="width:140px"><input type="date" data-venc value="${venc}"></td><td style="width:120px"><input data-val inputmode="decimal" value="${num(v)}"></td><td><input data-cb></td><td style="width:22px"><button type="button" class="rm">×</button></td></tr>`;
   let valorEditado = false;
-  const somaItens = () => { let t = 0; m.querySelectorAll('[data-item]').forEach(tr => { const v = Math.round((lerNumero(tr.querySelector('[data-q]').value) || 0) * Number(tr.dataset.unit) * 100) / 100; tr.querySelector('[data-v]').textContent = reais(v); t += v; }); return t; };
+  const somaItens = () => { let t = 0; m.querySelectorAll('[data-item]').forEach(tr => { const v = Math.round((lerNumero(tr.querySelector('[data-q]').value) || 0) * Number(tr.dataset.unit) * 100) / 100; tr.querySelector('[data-v]').textContent = reais(v); t += v;
+    const it = itens.find(x => x.id === Number(tr.dataset.item)); tr.querySelector('[data-est]').textContent = it ? noEstoque(it, r.fornecedor_id, lerNumero(tr.querySelector('[data-q]').value) || 0) : ''; }); return t; };
   const refazParcelas = () => {
     const total = lerNumero(q('#rValor').value) || 0, dias = cond?.dias?.length ? cond.dias : [Number(forn(r.fornecedor_id)?.prazo_pagamento_dias || 0)];
     let ac = 0; q('#rParc tbody').innerHTML = dias.map((d, k) => { const v = k === dias.length - 1 ? Math.round((total - ac) * 100) / 100 : Math.round(total / dias.length * 100) / 100; ac += v; return linhaParc(k + 1, somaDias(q('#rEm').value || hojeISO(), d), v); }).join('');
@@ -941,7 +950,7 @@ const cfg = {
     CTX = ctx;
     const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi, sv, es] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
-      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao').order('descricao')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, fator_compra, controla_estoque, categoria_financeira_id, situacao, tipo, aprovacao').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao, aceita_lancamento').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
@@ -951,7 +960,7 @@ const cfg = {
       buscarTodos(() => db.from('pedidos_compra_eventos').select('*').order('id')),
       buscarTodos(() => db.from('pedidos_compra_recebimentos').select('*').order('id')),
       ctx.pode('pagar') ? buscarTodos(() => db.from('titulos_pagar').select('id, pedido_compra_id, documento, valor, valor_pago, situacao, data_vencimento, projecao').not('pedido_compra_id', 'is', null).order('data_vencimento')) : [],
-      buscarTodos(() => db.from('produto_fornecedores').select('produto_id, fornecedor_id, codigo_fornecedor, preco, ipi_pct, cotacao_data, unidade_compra')),
+      buscarTodos(() => db.from('produto_fornecedores').select('produto_id, fornecedor_id, codigo_fornecedor, preco, ipi_pct, cotacao_data, unidade_compra, fator_compra')),
       db.from('empresas').select('id, nome, cnpj'),
       db.rpc('usuarios_nomes'),
       db.rpc('minhas_acoes'),
