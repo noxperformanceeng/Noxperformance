@@ -170,7 +170,7 @@ async function abrir(id) {
       ${f === 'ent' ? '<div><label>Custo unitário (opcional)</label><input id="fC" inputmode="decimal" placeholder="R$"></div>' : ''}</div>
       <div class="fb-bts"><button class="btn primario" id="fOk">${f === 'ent' ? 'Dar entrada' : 'Dar saída'}</button></div></div>`;
     else box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div class="l3"><label>Local de armazenagem</label><select id="fL"><option value="">— sem local —</option>${LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}"${x.id === (p.local_id || mesmoCodigo(p)) ? ' selected' : ''}>${esc(nomeLocal(x))}</option>`).join('')}</select></div></div>
-      ${CTX.pode('locais', 'editar') ? `<p class="sub" style="margin:6px 0 0">Não está na lista? <a href="#" id="fNovoL">Cadastrar endereço novo</a> (fica no cadastro de Locais de estoque, o mesmo para todas as telas)</p>
+      ${CTX.pode('locais', 'editar') ? `<p class="sub" style="margin:6px 0 0">O endereço ainda não existe? <a href="#" id="fNovoL">Cadastrar endereço novo</a> (vai para Locais de estoque; vários produtos podem ficar no mesmo endereço)</p>
       <div id="fNovoBox" hidden class="fb-campos c4" style="margin-top:6px"><div><label>Depósito / galpão</label><input id="nD" list="nDl" value="GALPÃO PRINCIPAL"><datalist id="nDl">${[...new Set(['GALPÃO PRINCIPAL', 'MEZANINO', ...LOCAIS.map(x => x.deposito).filter(Boolean)])].map(v => `<option value="${esc(v)}">`).join('')}</datalist></div>
         <div><label>Rua / corredor</label><input id="nR" placeholder="ex.: RUA 1"></div><div><label>Prateleira / estante</label><input id="nP" placeholder="ex.: B"></div><div><label>Posição / nível</label><input id="nN" placeholder="ex.: 021"></div></div>` : ''}
       <div class="fb-bts"><button class="btn primario" id="fOk">Salvar local</button></div></div>`;
@@ -180,7 +180,7 @@ async function abrir(id) {
       let r;
       if (f === 'loc') {
         let loc = q('#fL').value ? Number(q('#fL').value) : null;
-        if (!loc && q('#fNovoBox') && !q('#fNovoBox').hidden) { loc = await novoLocal(q, p); if (!loc) return; }
+        if (!loc && q('#fNovoBox') && !q('#fNovoBox').hidden) { loc = await novoLocal(q); if (!loc) return; }
         r = await db.rpc('estoque_definir_local', { p_produtos: [id], p_local: loc });
       }
       else {
@@ -198,13 +198,13 @@ async function abrir(id) {
 }
 
 // Endereço novo digitado na Posição: grava em locais_estoque (o mesmo cadastro da tela Locais). Se o endereço já existe, reaproveita
-async function novoLocal(q, p) {
+async function novoLocal(q) {
   const v = s => q(s).value.trim().toUpperCase() || null, d = { deposito: v('#nD'), rua: v('#nR'), prateleira: v('#nP'), posicao: v('#nN') };
   if (!d.rua) { aviso('Informe pelo menos a rua', true); return null; }
   const ig = (a, b) => (a || '') === (b || ''), ja = LOCAIS.find(x => ig(x.rua, d.rua) && ig(x.prateleira, d.prateleira) && ig(x.posicao, d.posicao) && ig(x.deposito, d.deposito));
   if (ja) { if (ja.situacao !== 'ativo') { aviso('Esse endereço existe mas está inativo: ative na tela Locais de estoque', true); return null; } return ja.id; }
-  const codigo = p.codigo && !LOCAIS.some(x => (x.codigo || '').toUpperCase() === p.codigo.toUpperCase()) ? p.codigo.toUpperCase() : [d.rua, d.prateleira, d.posicao].filter(Boolean).join('-');
-  const { data, error } = await db.from('locais_estoque').insert({ ...d, codigo, area: 'almoxarifado', situacao: 'ativo', descricao: p.descricao }).select('id').single();
+  const codigo = [d.rua, d.prateleira, d.posicao].filter(Boolean).join('-');   // o local é o endereço; o produto só aponta para ele
+  const { data, error } = await db.from('locais_estoque').insert({ ...d, codigo, area: 'almoxarifado', situacao: 'ativo' }).select('id').single();
   if (error) { aviso(error.code === '23505' ? `Já existe local com o código ${codigo}: escolha na lista` : 'Não salvou o local: ' + error.message, true); return null; }
   return data.id;
 }
