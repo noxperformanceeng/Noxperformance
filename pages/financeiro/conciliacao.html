@@ -41,15 +41,35 @@ const conta = id => CONTAS.find(c => c.id === id);
 const cat = id => CATS.find(c => c.id === id);
 const linkVenda = p => { const c = CANAIS.find(x => x.id === p?.canal_id); return c?.link_pedido && p.numero_externo ? c.link_pedido.replace('{pedido}', encodeURIComponent(p.numero_externo)).replace('{pack}', encodeURIComponent(p.pack_id || p.numero_externo)).replace('{envio}', encodeURIComponent(p.envio_id || '')) : null; };
 
-/* ---------- Leitura do arquivo (CSV ou Excel) ---------- */
+/* ---------- Leitura do arquivo (OFX, CSV ou Excel) ---------- */
 function carregarScript(src) { return new Promise((ok, erro) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = erro; document.head.appendChild(s); }); }
+// Texto do arquivo: UTF-8; se não for, Windows-1252 (padrão dos bancos)
+async function textoDe(arq) {
+  const buf = await arq.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^﻿/, ''); } catch { return new TextDecoder('windows-1252').decode(buf); }
+}
+// OFX (padrão dos bancos): vira uma grade com cabeçalho conhecido; FITID é o ID do banco para cada lançamento
+function lerOfx(txt) {
+  const tag = (b, t) => ((b.match(new RegExp('<' + t + '>([^<\\r\\n]*)', 'i')) || [])[1] || '').replace(/&amp;/g, '&').trim();
+  const grade = [['Data', 'Valor', 'Descrição', 'ID da operação']];
+  for (const b of txt.split(/<STMTTRN>/i).slice(1)) {
+    const d = tag(b, 'DTPOSTED'), nome = tag(b, 'NAME'), memo = tag(b, 'MEMO');
+    grade.push([`${d.slice(6, 8)}/${d.slice(4, 6)}/${d.slice(0, 4)}`, tag(b, 'TRNAMT'), memo.includes(nome) ? memo : [nome, memo].filter(Boolean).join(' '), tag(b, 'FITID')]);
+  }
+  grade.ofx = true; grade.agencia = tag(txt, 'BRANCHID'); grade.conta = tag(txt, 'ACCTID');
+  return grade;
+}
 async function lerArquivo(arq) {
   if (/\.(xlsx|xls)$/i.test(arq.name)) {
     if (!window.XLSX) await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-    const wb = XLSX.read(await arq.arrayBuffer(), { type: 'array', cellDates: false });
-    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+    const wb = XLSX.read(await arq.arrayBuffer(), { type: 'array', cellDates: false }), ws = wb.Sheets[wb.SheetNames[0]];
+    // o Excel do Itaú declara um tamanho menor que o real (A1:F13): recalcula pelas células de fato preenchidas
+    const cels = Object.keys(ws).filter(k => k[0] !== '!').map(k => XLSX.utils.decode_cell(k));
+    if (cels.length) ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(...cels.map(x => x.r)), c: Math.max(...cels.map(x => x.c)) } });
+    return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
   }
-  const txt = (await arq.text()).replace(/^﻿/, '');
+  const txt = await textoDe(arq);
+  if (/\.ofx$/i.test(arq.name) || /<OFX>/i.test(txt.slice(0, 2000))) return lerOfx(txt);
   const sep = (txt.split('\n')[0].match(/;/g) || []).length >= (txt.split('\n')[0].match(/,/g) || []).length ? ';' : ',';
   const linhas = []; let campo = '', linha = [], aspas = false;
   for (let i = 0; i < txt.length; i++) {
@@ -85,14 +105,16 @@ function data(v) {
     return { data: d, hora: m[4] ? `${d}T${m[4].padStart(2, '0')}:${m[5]}:${m[6] || '00'}-03:00` : null }; }
   return null;
 }
-// Colunas conhecidas (relatórios do Mercado Pago em inglês e português; bancos). Ajustável na tela.
+// Colunas conhecidas (relatórios do Mercado Pago em inglês e português; bancos: Itaú, Inter, BTG…). Ajustável na tela.
 const CAMPOS_EXT = [
-  { k: 'data', n: 'Data *', c: ['DATE', 'RELEASE_DATE', 'DATA', 'DATA DE LIBERACAO', 'DATA DA OPERACAO', 'DATA DE APROVACAO', 'FECHA'] },
+  { k: 'data', n: 'Data *', c: ['DATE', 'RELEASE_DATE', 'DATA', 'DATA DE LIBERACAO', 'DATA DA OPERACAO', 'DATA DE APROVACAO', 'FECHA', 'DATA LANCAMENTO', 'DATA DO LANCAMENTO', 'DATA MOVIMENTO'] },
   { k: 'valor', n: 'Valor (+/−)', c: ['TRANSACTION_NET_AMOUNT', 'NET_AMOUNT', 'VALOR LIQUIDO', 'VALOR', 'VALOR LIQUIDO DA OPERACAO'] },
   { k: 'credito', n: 'ou Crédito (entrada)', c: ['NET_CREDIT_AMOUNT', 'CREDITO', 'ENTRADA', 'ENTRADAS'] },
   { k: 'debito', n: 'e Débito (saída)', c: ['NET_DEBIT_AMOUNT', 'DEBITO', 'SAIDA', 'SAIDAS'] },
   { k: 'tipo', n: 'Tipo da operação', c: ['RECORD_TYPE', 'TRANSACTION_TYPE', 'TIPO', 'TIPO DE OPERACAO', 'TIPO DE TRANSACAO'] },
-  { k: 'descricao', n: 'Descrição', c: ['DESCRIPTION', 'DESCRICAO', 'DETALHE', 'HISTORICO'] },
+  { k: 'descricao', n: 'Descrição', c: ['DESCRIPTION', 'DESCRICAO', 'DETALHE', 'HISTORICO', 'LANCAMENTO', 'LANCAMENTOS'] },
+  { k: 'contraparte', n: 'Nome (quem pagou/recebeu)', c: ['RAZAO SOCIAL', 'FAVORECIDO', 'NOME', 'PAGADOR/RECEBEDOR', 'ORIGEM/DESTINO'] },
+  { k: 'documento', n: 'CPF/CNPJ', c: ['CPF/CNPJ', 'CNPJ/CPF', 'CPF', 'CNPJ'] },
   { k: 'id_operacao', n: 'ID da operação', c: ['SOURCE_ID', 'ID DA OPERACAO', 'NUMERO DA OPERACAO', 'CODIGO DA OPERACAO', 'ID DA TRANSACAO', 'REFERENCE_ID', 'DOCUMENTO'] },
   { k: 'referencia', n: 'Referência externa', c: ['EXTERNAL_REFERENCE', 'REFERENCIA EXTERNA', 'REFERENCIA'] },
   { k: 'pedido_externo', n: 'Nº da venda', c: ['ORDER_ID', 'NUMERO DA VENDA', 'N.º DE VENDA', 'NO DE VENDA', 'ID DO PEDIDO', 'PEDIDO'] },
@@ -102,60 +124,113 @@ const CAMPOS_EXT = [
   { k: 'saldo_apos', n: 'Saldo após', c: ['BALANCE_AMOUNT', 'PARTIAL_BALANCE', 'SALDO'] }
 ];
 const TARIFAS_EXT = ['MP_FEE_AMOUNT', 'FINANCING_FEE_AMOUNT', 'SHIPPING_FEE_AMOUNT', 'TAXES_AMOUNT', 'COUPON_AMOUNT', 'TARIFA', 'TARIFAS', 'TARIFA DE VENDA', 'CUSTO DE ENVIO', 'IMPOSTOS'];
-const norm = t => semAcento(String(t || '')).toUpperCase().replace(/\s+/g, ' ').trim();
+// Nome de coluna comparável: sem acento, maiúsculo, sem "(R$)" no fim ("Valor (R$)" = "VALOR")
+const norm = t => semAcento(String(t || '')).toUpperCase().replace(/\s+/g, ' ').replace(/\s*\((R\$|RS)\)$/, '').trim();
+// Linhas de saldo dos bancos ("SALDO ANTERIOR", "SALDO TOTAL DISPONÍVEL DIA"…) não são lançamentos
+const ehSaldo = t => /^SALDO\b|^S A L D O\b/.test(norm(t));
+const digitos = t => String(t || '').replace(/\D/g, '').replace(/^0+/, '');
+// Agência e conta escritas no cabeçalho do Excel/CSV do banco ("Agência: 7642", "Conta: 0097545-7")
+function contaNoArquivo(grade) {
+  const r = { agencia: grade.agencia || '', conta: grade.conta || '' };
+  grade.slice(0, 15).forEach(l => l.forEach((x, i) => { const n = norm(x).replace(/:$/, ''), v = l.slice(i + 1).find(y => String(y).trim());
+    if (v && /^AGENCIA$/.test(n)) r.agencia ||= String(v); if (v && /^(CONTA|CONTA CORRENTE)$/.test(n)) r.conta ||= String(v); }));
+  return r;
+}
+// Conta cadastrada que bate com a do arquivo (o OFX junta agência + conta no mesmo número)
+const contaDoArquivo = (lista, a) => !a.conta ? null : lista.find(c => digitos(c.conta).length >= 4 && digitos(a.conta).endsWith(digitos(c.conta))
+  && (!c.agencia || !a.agencia || digitos(a.agencia) === digitos(c.agencia)));
 
 async function abrirImportacao() {
   const contas = CONTAS.filter(c => c.situacao === 'ativo' && c.tipo !== 'historico' && (!CTX.empresa || c.empresa_id === CTX.empresa)).sort((a, b) => (b.tipo === 'pagamentos') - (a.tipo === 'pagamentos'));
   const m = abrirModal(`<h2>Importar extrato</h2>
-    <p class="sub" style="margin:0 0 8px">Mercado Pago: use o relatório de liberações / dinheiro em conta (CSV ou Excel) com o ID da operação e o nº da venda. Bancos: CSV/Excel do extrato.
+    <p class="sub" style="margin:0 0 8px">Mercado Pago: use o relatório de liberações / dinheiro em conta (CSV ou Excel) com o ID da operação e o nº da venda.
+      Bancos: arquivo OFX (melhor) ou o Excel/CSV do extrato — a tela reconhece as colunas e lembra o layout de cada conta.
       Linhas já importadas são ignoradas, então pode importar períodos que se sobrepõem.</p>
     <div class="map-grade"><div style="grid-column: span 2"><label>Conta</label><select id="imConta">${contas.map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
-      <div style="grid-column: span 2"><label>Arquivo</label><input type="file" id="imArq" accept=".csv,.txt,.xlsx,.xls"></div></div>
+      <div style="grid-column: span 2"><label>Arquivo</label><input type="file" id="imArq" accept=".ofx,.csv,.txt,.xlsx,.xls"></div></div>
     <div id="imMapa"></div>
     <div class="acoes" style="margin-top:14px"><button class="btn" id="imFechar">Fechar</button><button class="btn primario" id="imOk" disabled>Importar</button></div>`);
   m.querySelector('.modal').classList.add('form', 'largo');
   m.querySelector('#imFechar').onclick = () => m.remove();
+  // agência/conta e layout lembrado (consulta à parte: se a coluna do layout ainda não existir, a importação segue normal)
+  const extra = {};
+  const extraP = db.from('contas_bancarias').select('id, agencia, conta, layout_extrato').then(async ({ data: d, error }) => {
+    if (error) ({ data: d } = await db.from('contas_bancarias').select('id, agencia, conta'));
+    (d || []).forEach(x => extra[x.id] = x);
+  });
+  const selConta = m.querySelector('#imConta');
+  const contaSel = () => ({ ...conta(Number(selConta.value)), ...extra[selConta.value] });
   let grade = null, cab = [], ini = 0;
+  const assinatura = () => cab.map(norm).join('|');
+  const lerMapa = () => { const sel = {}; m.querySelectorAll('[data-map]').forEach(s => sel[s.dataset.map] = s.value === '' ? null : Number(s.value)); return sel; };
   const montar = () => {
-    const sel = {}; m.querySelectorAll('[data-map]').forEach(s => sel[s.dataset.map] = s.value === '' ? null : Number(s.value));
+    const sel = lerMapa(), banco = contaSel().tipo !== 'pagamentos';
     const corpo = grade.slice(ini + 1);
     const tarifasIdx = cab.map((h, i) => TARIFAS_EXT.includes(norm(h)) ? i : -1).filter(i => i >= 0);
+    // Banco sem coluna de ID: ID = data + sequência do dia (igual ao FITID do OFX do Itaú), para não duplicar ao reimportar
+    const gerarId = banco && (grade.ofx || sel.id_operacao == null), seq = {};
     return corpo.map(l => {
       const g = k => sel[k] == null ? '' : l[sel[k]];
-      const d = data(g('data'));
+      const d = data(g('data')); if (!d) return null;
+      const idGerado = gerarId && !grade.ofx ? d.data.replace(/-/g, '') + String(seq[d.data] = (seq[d.data] || 0) + 1).padStart(3, '0') : null;
       let v = sel.valor != null ? numero(g('valor')) : (numero(g('credito')) || 0) - Math.abs(numero(g('debito')) || 0);
-      if (!d || v == null || (sel.valor == null && !numero(g('credito')) && !numero(g('debito')))) return null;
+      if (v == null || (sel.valor == null && !numero(g('credito')) && !numero(g('debito')))) return null;
+      if (banco && ehSaldo(g('descricao'))) return null;
+      // banco: descrição + nome + CPF/CNPJ, como no OFX (Mercado Pago fica igual a antes, para não mudar o ID das linhas)
+      const descricao = banco ? [g('descricao'), g('contraparte'), g('documento')].map(x => String(x || '').trim()).filter(Boolean).join(' ') || null : String(g('descricao') || '') || null;
+      const id = idGerado || String(g('id_operacao') || '') || null;
       const tarifas = Object.fromEntries(tarifasIdx.map(i => [cab[i], numero(l[i])]).filter(([, x]) => x));
-      return { data: d.data, data_hora: d.hora, valor: Math.round(v * 100) / 100, tipo: String(g('tipo') || '') || null, descricao: String(g('descricao') || '') || null,
-        id_operacao: String(g('id_operacao') || '') || null, referencia: String(g('referencia') || '') || null, pedido_externo: String(g('pedido_externo') || '') || null,
+      return { data: d.data, data_hora: d.hora, valor: Math.round(v * 100) / 100, tipo: String(g('tipo') || '') || null, descricao,
+        id_operacao: id, referencia: String(g('referencia') || '') || null, pedido_externo: String(g('pedido_externo') || '') || null,
         pack_id: String(g('pack_id') || '') || null, envio_id: String(g('envio_id') || '') || null, valor_bruto: numero(g('valor_bruto')), saldo_apos: numero(g('saldo_apos')),
+        hash: gerarId && id ? 'ofx:' + id : null,
         tarifas: Object.keys(tarifas).length ? tarifas : null, original: Object.fromEntries(cab.map((h, i) => [h || 'col' + i, l[i]]).filter(([, x]) => x !== '')) };
     }).filter(Boolean);
   };
   const previa = () => {
     const ls = montar(), ent = ls.filter(x => x.valor > 0).reduce((s, x) => s + x.valor, 0), sai = ls.filter(x => x.valor < 0).reduce((s, x) => s + x.valor, 0);
-    m.querySelector('#imPrevia').innerHTML = `<p class="sub" style="margin:6px 0">${ls.length} linha(s) válidas · entradas ${reais(ent)} · saídas ${reais(sai)} · ${ls.filter(x => x.pedido_externo || x.pack_id || x.envio_id).length} com nº de venda/pacote/envio</p>
-      <div class="previa"><table><thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>ID operação</th><th>Venda</th><th>Pacote</th><th>Envio</th><th class="num">Valor</th></tr></thead><tbody>
-      ${ls.slice(0, 30).map(x => `<tr><td>${dataCurta(x.data)}</td><td>${esc(x.tipo || '')}</td><td>${esc(x.descricao || '')}</td><td>${esc(x.id_operacao || '')}</td><td>${esc(x.pedido_externo || '')}</td><td>${esc(x.pack_id || '')}</td><td>${esc(x.envio_id || '')}</td><td class="num${x.valor < 0 ? ' valor-neg' : ''}">${reais(x.valor)}</td></tr>`).join('')}</tbody></table></div>`;
+    const mp = contaSel().tipo === 'pagamentos';
+    m.querySelector('#imPrevia').innerHTML = `<p class="sub" style="margin:6px 0">${ls.length} lançamento(s) · entradas ${reais(ent)} · saídas ${reais(sai)}${mp ? ` · ${ls.filter(x => x.pedido_externo || x.pack_id || x.envio_id).length} com nº de venda/pacote/envio` : ''}</p>
+      <div class="previa"><table><thead><tr><th>Data</th>${mp ? '<th>Tipo</th>' : ''}<th>Descrição</th><th>ID operação</th>${mp ? '<th>Venda</th><th>Pacote</th><th>Envio</th>' : ''}<th class="num">Valor</th></tr></thead><tbody>
+      ${ls.slice(0, 30).map(x => `<tr><td>${dataCurta(x.data)}</td>${mp ? `<td>${esc(x.tipo || '')}</td>` : ''}<td>${esc(x.descricao || '')}</td><td>${esc(x.id_operacao || '')}</td>${mp ? `<td>${esc(x.pedido_externo || '')}</td><td>${esc(x.pack_id || '')}</td><td>${esc(x.envio_id || '')}</td>` : ''}<td class="num${x.valor < 0 ? ' valor-neg' : ''}">${reais(x.valor)}</td></tr>`).join('')}</tbody></table></div>`;
     m.querySelector('#imOk').disabled = !ls.length;
   };
+  // Monta a escolha de colunas: layout lembrado da conta > nomes conhecidos
+  const mapear = () => {
+    if (!grade) return;
+    const lay = contaSel().layout_extrato, conhecidas = new Set([...CAMPOS_EXT.flatMap(c => c.c), ...Object.values(lay?.mapa || {}).filter(Boolean)]);
+    // cabeçalho = a linha (das 30 primeiras) que mais reconhece colunas conhecidas (o Excel do Itaú começa na 10ª)
+    ini = 0; let melhor = -1;
+    grade.slice(0, 30).forEach((l, i) => { const n = l.filter(h => conhecidas.has(norm(h))).length; if (n > melhor) { melhor = n; ini = i; } });
+    cab = grade[ini].map(h => String(h).trim());
+    const mesmo = lay && lay.cab === assinatura(), usados = new Set();
+    const achar = c => {
+      if (lay?.mapa && c.k in lay.mapa && (mesmo || lay.mapa[c.k])) { const i = lay.mapa[c.k] ? cab.findIndex(h => norm(h) === lay.mapa[c.k]) : -1; if (i >= 0 || mesmo) return i; }
+      return cab.findIndex((h, j) => !usados.has(j) && c.c.includes(norm(h)));
+    };
+    const idx = Object.fromEntries(CAMPOS_EXT.map(c => { const i = achar(c); if (i >= 0) usados.add(i); return [c.k, i]; }));
+    m.querySelector('#imMapa').innerHTML = `<div class="secao">Colunas do arquivo (confira)${grade.ofx ? ' · arquivo OFX' : ''}${mesmo ? ' · layout lembrado desta conta' : ''}</div><div class="map-grade">
+      ${CAMPOS_EXT.map(c => `<div><label>${esc(c.n)}</label><select data-map="${c.k}"><option value="">— não tem —</option>${cab.map((h, j) => `<option value="${j}"${j === idx[c.k] ? ' selected' : ''}>${esc(h || 'coluna ' + (j + 1))}</option>`).join('')}</select></div>`).join('')}
+      </div><div id="imContaAviso"></div><div id="imPrevia"></div>`;
+    m.querySelectorAll('[data-map]').forEach(s => s.onchange = previa);
+    const a = contaNoArquivo(grade), certa = contaDoArquivo(contas.map(c => ({ ...c, ...extra[c.id] })), a);
+    m.querySelector('#imContaAviso').innerHTML = a.conta && certa?.id !== Number(selConta.value)
+      ? `<p class="sub" style="margin:6px 0;color:var(--perigo,#c0392b)">Atenção: o arquivo é da agência ${esc(a.agencia || '?')} conta ${esc(a.conta)}, que não é a conta escolhida acima.</p>` : '';
+    previa();
+  };
+  selConta.onchange = mapear;
   m.querySelector('#imArq').onchange = async e => {
     const arq = e.target.files[0]; if (!arq) return;
     try { grade = await lerArquivo(arq); } catch (err) { return aviso('Não consegui ler o arquivo: ' + (err.message || err), true); }
-    // cabeçalho = primeira linha (das 15 primeiras) que mais reconhece colunas conhecidas
-    const conhecidas = new Set(CAMPOS_EXT.flatMap(c => c.c));
-    ini = 0; let melhor = -1;
-    grade.slice(0, 15).forEach((l, i) => { const n = l.filter(h => conhecidas.has(norm(h))).length; if (n > melhor) { melhor = n; ini = i; } });
-    cab = grade[ini].map(h => String(h).trim());
-    const achar = c => { const i = cab.findIndex(h => c.c.includes(norm(h))); return i; };
-    m.querySelector('#imMapa').innerHTML = `<div class="secao">Colunas do arquivo (confira)</div><div class="map-grade">
-      ${CAMPOS_EXT.map(c => { const i = achar(c); return `<div><label>${esc(c.n)}</label><select data-map="${c.k}"><option value="">— não tem —</option>${cab.map((h, j) => `<option value="${j}"${j === i ? ' selected' : ''}>${esc(h || 'coluna ' + (j + 1))}</option>`).join('')}</select></div>`; }).join('')}
-      </div><div id="imPrevia"></div>`;
-    m.querySelectorAll('[data-map]').forEach(s => s.onchange = previa);
-    previa();
+    if (!grade.length) return aviso('O arquivo está vazio', true);
+    await extraP;
+    // escolhe sozinho a conta do arquivo (agência/conta do OFX ou do cabeçalho do Excel)
+    const certa = contaDoArquivo(contas.map(c => ({ ...c, ...extra[c.id] })), contaNoArquivo(grade));
+    if (certa) selConta.value = certa.id;
+    mapear();
   };
   m.querySelector('#imOk').onclick = async () => {
-    const ls = montar(), contaId = Number(m.querySelector('#imConta').value), arq = m.querySelector('#imArq').files[0]?.name;
+    const ls = montar(), contaId = Number(selConta.value), arq = m.querySelector('#imArq').files[0]?.name;
     if (!contaId) return aviso('Escolha a conta', true);
     m.querySelector('#imOk').disabled = true;
     let tot = { linhas: 0, novas: 0, repetidas: 0 };
@@ -164,6 +239,8 @@ async function abrirImportacao() {
       if (error) { m.querySelector('#imOk').disabled = false; return aviso('Não importou: ' + error.message, true); }
       tot.linhas += r.linhas; tot.novas += r.novas; tot.repetidas += r.repetidas;
     }
+    // lembra as colunas desta conta para a próxima vez (OFX não precisa)
+    if (!grade.ofx) { const sel = lerMapa(); db.rpc('salvar_layout_extrato', { p_conta: contaId, p_layout: { cab: assinatura(), mapa: Object.fromEntries(CAMPOS_EXT.map(c => [c.k, sel[c.k] == null ? null : norm(cab[sel[c.k]])])) } }).then(() => {}); }
     aviso(`${tot.novas} linha(s) nova(s) importada(s)` + (tot.repetidas ? ` · ${tot.repetidas} já existiam (ignoradas)` : ''));
     m.remove(); cfg.recarregar();
   };
