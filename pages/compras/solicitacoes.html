@@ -6,7 +6,7 @@
 <title>Solicitações de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131911">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131915">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .sub-ed th { text-align: left; font-size: 11px; color: var(--texto-suave); font-weight: 500; padding: 0 3px 3px; white-space: nowrap; }
@@ -27,11 +27,11 @@
 <body data-modulo="solicitacoes_compra" data-titulo="Solicitações de compra">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131911"></script>
-<script src="../../assets/js/ui.js?v=202611131911"></script>
-<script src="../../assets/js/auth.js?v=202611131911"></script>
-<script src="../../assets/js/layout.js?v=202611131911"></script>
-<script src="../../assets/js/cadastro.js?v=202611131911"></script>
+<script src="../../assets/js/supabase.js?v=202611131915"></script>
+<script src="../../assets/js/ui.js?v=202611131915"></script>
+<script src="../../assets/js/auth.js?v=202611131915"></script>
+<script src="../../assets/js/layout.js?v=202611131915"></script>
+<script src="../../assets/js/cadastro.js?v=202611131915"></script>
 <script>
 /* =====================================================================
    Solicitações de compra (antes do pedido)
@@ -44,6 +44,11 @@ const SIT = [
   { v: 'em_aprovacao', n: 'Aguardando aprovação', cor: 'alerta' }, { v: 'recusado', n: 'Recusada (ajustar)', cor: 'erro' },
   { v: 'aprovado', n: 'Aprovada', cor: 'ok' }, { v: 'cancelado', n: 'Cancelada', cor: 'neutro' }];
 const EDITAVEL = ['em_aprovacao', 'recusado'];
+const URG = [{ v: 'baixa', n: 'Baixa', cor: 'neutro' }, { v: 'normal', n: 'Normal', cor: 'neutro' }, { v: 'alta', n: 'Alta', cor: 'alerta' }, { v: 'urgente', n: 'Urgente', cor: 'erro' }];
+const pesoUrg = v => URG.findIndex(u => u.v === (v || 'normal'));
+const tgUrg = v => { const u = URG[pesoUrg(v)] || URG[1]; return u.v === 'normal' ? '' : `<span class="tg ${u.cor}">${u.n}</span>`; };
+// urgência da solicitação = a maior entre os itens
+const urgDe = r => (ex.itens?.[r.id] || []).reduce((m, i) => pesoUrg(i.urgencia) > pesoUrg(m) ? i.urgencia : m, 'baixa');
 const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 const hojeISO = () => new Date().toLocaleDateString('sv-SE');
 let CTX = null, CAT = [], PEDS = {}, USU = [], FORN = [], ACOES = new Set(), ex = {};
@@ -79,13 +84,14 @@ function linhaItem(x = {}, ped = false) {
       <input data-k="observacao" placeholder="Detalhe (opcional): medida, cor, aplicação…" value="${esc(x.observacao || '')}" style="margin-top:3px"></td>
     <td style="width:62px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
     <td style="width:84px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
+    <td style="width:100px"><select data-k="urgencia" data-simples>${URG.map(u => `<option value="${u.v}"${u.v === (x.urgencia || 'normal') ? ' selected' : ''}>${u.n}</option>`).join('')}</select></td>
     ${ped ? `<td>${p ? `<span class="tg ${p.situacao === 'cancelado' ? 'neutro' : 'pc'}">${esc(p.numero)} · ${esc(p.situacao)}</span>` : '<span class="sub">aguardando comprador</span>'}</td>` : ''}
     <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 }
 function lerItens(m) {
   return [...m.querySelectorAll('#itens tbody tr')].map(tr => { const g = k => tr.querySelector(`[data-k=${k}]`), t = g('tipo').value, id = Number(g('item').value) || null;
     return { produto_id: t === 'produto' ? id : null, servico_id: t === 'servico' ? id : null, unidade: g('unidade').value.trim() || null,
-      quantidade: lerNumero(g('quantidade').value) || 0, observacao: g('observacao').value.trim() || null }; })
+      quantidade: lerNumero(g('quantidade').value) || 0, urgencia: g('urgencia').value, observacao: g('observacao').value.trim() || null }; })
     .filter(i => i.produto_id || i.servico_id || i.observacao);
 }
 
@@ -107,7 +113,8 @@ async function cancelar(r) {
 
 /* ---------- Fila do comprador: gera o pedido de compra ---------- */
 function abrirFila(soDe) {
-  const sols = (cfg._linhas || []).filter(r => r.situacao === 'aprovado' && (!soDe || soDe.includes(r.id)));
+  const sols = (cfg._linhas || []).filter(r => r.situacao === 'aprovado' && (!soDe || soDe.includes(r.id)))
+    .sort((a, b) => pesoUrg(urgDe(b)) - pesoUrg(urgDe(a)) || String(a.data_necessidade || '9').localeCompare(String(b.data_necessidade || '9')) || a.id - b.id);
   const ls = sols.flatMap(r => itensDe(r).filter(pendente).map(i => ({ i, r })));
   const fornAtivos = FORN.filter(f => f.situacao === 'ativo');
   const m = abrirModal(`<h2>Fila do comprador · gerar pedido de compra</h2>
@@ -115,10 +122,10 @@ function abrirFila(soDe) {
     ${!ls.length ? '<p class="sub">Nada na fila. ✓</p>' : `
     <div class="grade-campos"><div class="campo l2"><label>Fornecedor *</label><select id="fqForn"><option value="">— escolha —</option>${fornAtivos.map(f => `<option value="${f.id}">${esc(nomeComFantasia(f))}</option>`).join('')}</select></div>
       <div class="campo"><label>Empresa do pedido *</label><select id="fqEmp" data-simples>${CTX.empresas.map(e => `<option value="${e.id}"${e.id === (sols.find(r => r.empresa_id)?.empresa_id || CTX.empresa || CTX.empresas[0]?.id) ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div></div>
-    <div class="sub-ed" style="max-height:52vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="fqTodos" title="Marcar todos"></th><th>Item</th><th class="num">Qtd</th><th>Un</th><th>Precisa até</th><th>Solicitante</th></tr></thead><tbody>
-    ${sols.filter(r => itensDe(r).some(pendente)).map(r => `<tr class="fila-grupo"><td colspan="6"><b>${esc(r.numero)}</b> <span class="sub">· ${esc(r.justificativa || '')}</span></td></tr>
+    <div class="sub-ed" style="max-height:52vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="fqTodos" title="Marcar todos"></th><th>Item</th><th class="num">Qtd</th><th>Un</th><th>Urgência</th><th>Precisa até</th><th>Solicitante</th></tr></thead><tbody>
+    ${sols.filter(r => itensDe(r).some(pendente)).map(r => `<tr class="fila-grupo"><td colspan="7"><b>${esc(r.numero)}</b> <span class="sub">· ${esc(r.justificativa || '')}</span></td></tr>
       ${itensDe(r).filter(pendente).map(i => `<tr><td><input type="checkbox" data-i="${i.id}"${soDe ? ' checked' : ''}></td><td>${esc((itemCat(i.servico_id ? 'servico' : 'produto', i.produto_id || i.servico_id)?.codigo || '') + ' ' + (i.descricao || ''))}${i.servico_id ? ' <span class="tg neutro">serviço</span>' : ''}${i.observacao ? `<div class="ro">${esc(i.observacao)}</div>` : ''}</td>
-        <td class="num">${num(i.quantidade)}</td><td>${esc(i.unidade || '')}</td><td>${r.data_necessidade ? dataCurta(r.data_necessidade) : ''}</td><td>${esc(usu(r.solicitante_id))}</td></tr>`).join('')}`).join('')}
+        <td class="num">${num(i.quantidade)}</td><td>${esc(i.unidade || '')}</td><td>${tgUrg(i.urgencia) || 'Normal'}</td><td>${r.data_necessidade ? dataCurta(r.data_necessidade) : ''}</td><td>${esc(usu(r.solicitante_id))}</td></tr>`).join('')}`).join('')}
     </tbody></table></div>`}
     <div class="acoes"><button class="btn" id="fqN">Fechar</button>${ls.length ? '<button class="btn primario" id="fqS">Gerar pedido em rascunho</button>' : ''}</div>`);
   m.querySelector('.modal').style.maxWidth = '960px';
@@ -140,7 +147,7 @@ function abrirFila(soDe) {
 const cfg = {
   textoNovo: '+ Nova solicitação',
   tabela: 'solicitacoes_compra', modulo: 'solicitacoes_compra', titulo: 'Solicitações de compra', singular: 'solicitação', plural: 'solicitações',
-  subtitulo: 'Peça aqui o que precisa comprar (produto ou serviço do cadastro, quantidade e para quê). A diretoria aprova e o comprador gera o pedido de compra.',
+  subtitulo: 'Peça aqui o que precisa comprar: produto ou serviço do cadastro (digite para buscar), quantidade, urgência e para quê. A diretoria aprova e o comprador gera o pedido de compra.',
   dicaBusca: 'nº, item, justificativa, solicitante…', ordem: 'data_solicitacao', revisao: false, porEmpresa: false,
   abas: { campo: 'situacao', padrao: 'andamento', opcoes: [
     { v: 'andamento', n: 'Em andamento', teste: r => r.situacao === 'em_aprovacao' || r.situacao === 'recusado' || (r.situacao === 'aprovado' && itensDe(r).some(pendente)) },
@@ -192,6 +199,7 @@ const cfg = {
     { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${itemCat(i.servico_id ? 'servico' : 'produto', i.produto_id || i.servico_id)?.codigo || i.descricao}`).join(', '),
       html: (r, e) => { const t = (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${itemCat(i.servico_id ? 'servico' : 'produto', i.produto_id || i.servico_id)?.codigo || i.descricao}`).join(', ');
         return `<span class="texto-curto" style="max-width:240px" title="${esc(t)}">${esc(t)}</span>`; } },
+    { label: 'Urgência', texto: r => URG[pesoUrg(urgDe(r))]?.n || '', html: r => tgUrg(urgDe(r)) },
     { label: 'Solicitante', texto: r => usu(r.solicitante_id) },
     { label: 'Pedido de compra', texto: (r, e) => [...new Set((e.itens[r.id] || []).filter(i => i.pedido_id && PEDS[i.pedido_id]).map(i => PEDS[i.pedido_id].numero))].join(', ') }
   ],
@@ -217,7 +225,7 @@ const cfg = {
     const ped = r.situacao === 'aprovado';
     const box = document.createElement('div');
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">O que precisa comprar</div>
-      <table><thead><tr><th>Tipo</th><th>Produto ou serviço (do cadastro)</th><th>Un</th><th>Qtd</th>${ped ? '<th>Pedido</th>' : ''}<th></th></tr></thead>
+      <table><thead><tr><th>Tipo</th><th>Produto ou serviço (do cadastro)</th><th>Un</th><th>Qtd</th><th>Urgência</th>${ped ? '<th>Pedido</th>' : ''}<th></th></tr></thead>
       <tbody>${(novo ? [{}] : itensDe(r)).map(x => linhaItem(x, ped)).join('')}</tbody></table>
       ${editavel ? '<div style="margin-top:6px"><button type="button" class="btn fino" id="addItem">+ Item</button> <span class="sub">Não achou o item? Use "+ cadastrar" ao lado da lista.</span></div>' : ''}</div>`;
     const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Andamento' || s.textContent === 'Histórico');

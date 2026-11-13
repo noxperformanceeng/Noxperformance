@@ -1,7 +1,8 @@
 -- =====================================================================
 -- 121 · Solicitação de compras (etapa antes do pedido de compra)
+--  · Tela própria, separada do pedido de compra (quem solicita não precisa ter acesso a pedidos).
 --  · Qualquer usuário com a tela "Solicitações de compra" pede produtos/serviços do cadastro, com quantidade,
---    data de necessidade e justificativa. Não precisa de fornecedor nem preço.
+--    urgência de cada item, data de necessidade e justificativa. Não precisa de fornecedor nem preço.
 --  · A solicitação vai para a central de Aprovações. Aprova o administrador e quem tiver a nova ação
 --    "Aprovar solicitações de compra" (Usuários e perfis). Recusada volta para quem pediu ajustar e reenviar.
 --  · Aprovada, cai na fila do comprador (quem cria pedidos de compra): ele marca itens de uma ou várias
@@ -52,6 +53,7 @@ create table if not exists public.solicitacoes_compra_itens (
   descricao       text,
   unidade         text,
   quantidade      numeric not null check (quantidade > 0),
+  urgencia        text not null default 'normal' check (urgencia in ('baixa','normal','alta','urgente')),
   observacao      text,
   pedido_id       bigint references public.pedidos_compra(id) on delete set null,
   constraint solicitacao_item_do_cadastro check ((produto_id is not null) <> (servico_id is not null))
@@ -152,9 +154,12 @@ begin
     where id = v_id;
     delete from public.solicitacoes_compra_itens where solicitacao_id = v_id;
   end if;
-  insert into public.solicitacoes_compra_itens (solicitacao_id, produto_id, servico_id, descricao, unidade, quantidade, observacao)
+  if exists (select 1 from jsonb_array_elements(p_itens) x where coalesce(nullif(x->>'urgencia', ''), 'normal') not in ('baixa','normal','alta','urgente')) then
+    raise exception 'Urgência inválida (use baixa, normal, alta ou urgente)';
+  end if;
+  insert into public.solicitacoes_compra_itens (solicitacao_id, produto_id, servico_id, descricao, unidade, quantidade, urgencia, observacao)
   select v_id, pr.id, sv.id, coalesce(pr.descricao, sv.nome), coalesce(nullif(x->>'unidade', ''), pr.unidade, sv.unidade),
-         (x->>'quantidade')::numeric, upper(nullif(trim(coalesce(x->>'observacao', '')), ''))
+         (x->>'quantidade')::numeric, coalesce(nullif(x->>'urgencia', ''), 'normal'), upper(nullif(trim(coalesce(x->>'observacao', '')), ''))
     from jsonb_array_elements(p_itens) x
     left join public.produtos pr on pr.id = nullif(x->>'produto_id', '')::bigint and pr.situacao = 'ativo' and coalesce(pr.aprovacao, 'aprovado') <> 'recusado'
     left join public.servicos sv on sv.id = nullif(x->>'servico_id', '')::bigint and sv.situacao = 'ativo';
@@ -226,7 +231,7 @@ begin
            'unidade', i.unidade, 'quantidade', i.quantidade,
            'valor_unitario', coalesce(case when i.produto_id is not null then pf.preco end, 0),
            'codigo_fornecedor', pf.codigo_fornecedor,
-           'observacao', s.numero || coalesce(' · ' || i.observacao, '')) order by s.id, i.id)
+           'observacao', s.numero || case when i.urgencia in ('alta', 'urgente') then ' · ' || upper(i.urgencia) else '' end || coalesce(' · ' || i.observacao, '')) order by s.id, i.id)
     into v_scs, v_its
     from public.solicitacoes_compra_itens i join public.solicitacoes_compra s on s.id = i.solicitacao_id
     left join public.servicos sv on sv.id = i.servico_id
@@ -267,6 +272,7 @@ begin
     d := replace(d, a, a || '
   if (select public.pode_acao(''compras.aprovar_solicitacao'')) then
     select coalesce(jsonb_agg(jsonb_build_object(''id'', s.id, ''texto'', s.numero || '' · '' ||
+             coalesce((select ''⚠ '' || upper(max(i.urgencia)) || '' · '' from public.solicitacoes_compra_itens i where i.solicitacao_id = s.id and i.urgencia in (''alta'', ''urgente'')), '''') ||
              (select string_agg(trim(to_char(i.quantidade, ''FM999999990.999''), ''.'') || ''× '' || coalesce(pr.codigo, i.descricao), '', '' order by i.id)
                 from public.solicitacoes_compra_itens i left join public.produtos pr on pr.id = i.produto_id where i.solicitacao_id = s.id)
              || '' · '' || s.justificativa || coalesce('' · precisa até '' || to_char(s.data_necessidade, ''DD/MM/YYYY''), ''''),
