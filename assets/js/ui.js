@@ -144,6 +144,19 @@ function combinaBusca(texto, busca) {
   return semAcento(busca).split(/\s+/).filter(Boolean).every(p => t.includes(p));
 }
 
+// Campo de busca das listas: só refaz a lista quando a pessoa para de digitar (ms), para a digitação não travar.
+// Campo vazio (apagou tudo ou clicou no X) e Enter respondem na hora. Desliga o histórico do navegador, que
+// abria uma lista de buscas antigas por cima do campo.
+function ligarBusca(el, fn, ms = 250) {
+  if (typeof el === 'string') el = document.getElementById(el);
+  if (!el) return;
+  el.setAttribute('autocomplete', 'off');
+  let t;
+  const ja = () => { clearTimeout(t); fn(); };
+  el.addEventListener('input', () => { clearTimeout(t); if (el.value.trim()) t = setTimeout(fn, ms); else fn(); });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ja(); } });
+}
+
 // Local de estoque: mostra o endereço (rua-prateleira-posição) e a descrição; o código só quando não há outro nome
 const CAMPOS_LOCAL = 'id, codigo, descricao, rua, prateleira, posicao, situacao';
 function nomeLocal(l) {

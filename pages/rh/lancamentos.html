@@ -6,7 +6,7 @@
 <title>Lançamentos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611032320">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131646">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -24,12 +24,12 @@
 <body data-modulo="lancamentos" data-titulo="Lançamentos" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611032320"></script>
-<script src="../../assets/js/ui.js?v=202611032320"></script>
-<script src="../../assets/js/auth.js?v=202611032320"></script>
-<script src="../../assets/js/layout.js?v=202611032320"></script>
-<script src="../../assets/js/cadastro.js?v=202611032320"></script>
-<script src="../../assets/js/rh.js?v=202611032320"></script>
+<script src="../../assets/js/supabase.js?v=202611131646"></script>
+<script src="../../assets/js/ui.js?v=202611131646"></script>
+<script src="../../assets/js/auth.js?v=202611131646"></script>
+<script src="../../assets/js/layout.js?v=202611131646"></script>
+<script src="../../assets/js/cadastro.js?v=202611131646"></script>
+<script src="../../assets/js/rh.js?v=202611131646"></script>
 <script>
 /* =====================================================================
    Lançamentos do mês (competência)
@@ -63,7 +63,7 @@ const MULT_HORA = { '150': 1.5, '9161': 2, '8069': 1, 'N002': 1.5 };   // horas 
     <div class="cartao tabela-rolagem"><table><thead><tr id="head"></tr></thead><tbody id="lista"><tr><td class="vazio">Carregando…</td></tr></tbody><tfoot id="totais"></tfoot></table></div>`;
   const comp = document.getElementById('comp'); comp.value = COMP;
   comp.onchange = () => { if (!comp.value) return; COMP = comp.value; gravarCompetencia(COMP); carregar(); };
-  document.getElementById('busca').addEventListener('input', desenhar);
+  ligarBusca('busca', desenhar);
   document.querySelectorAll('#abas .aba').forEach(b => b.onclick = () => { visao = b.dataset.v; document.querySelectorAll('#abas .aba').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); });
   if (PODE) document.getElementById('bFixos').onclick = gerarFixos;
   document.getElementById('bFechar').onclick = fecharReabrir;

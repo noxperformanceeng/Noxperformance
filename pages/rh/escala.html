@@ -6,7 +6,7 @@
 <title>Escala · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611032320">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131646">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -30,12 +30,12 @@
 <body data-modulo="escala" data-titulo="Escala" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611032320"></script>
-<script src="../../assets/js/ui.js?v=202611032320"></script>
-<script src="../../assets/js/auth.js?v=202611032320"></script>
-<script src="../../assets/js/layout.js?v=202611032320"></script>
-<script src="../../assets/js/cadastro.js?v=202611032320"></script>
-<script src="../../assets/js/rh.js?v=202611032320"></script>
+<script src="../../assets/js/supabase.js?v=202611131646"></script>
+<script src="../../assets/js/ui.js?v=202611131646"></script>
+<script src="../../assets/js/auth.js?v=202611131646"></script>
+<script src="../../assets/js/layout.js?v=202611131646"></script>
+<script src="../../assets/js/cadastro.js?v=202611131646"></script>
+<script src="../../assets/js/rh.js?v=202611131646"></script>
 <script>
 /* =====================================================================
    Escala de trabalho
@@ -61,7 +61,7 @@ const SIGLA = { trabalho: 'T', folga: 'F', feriado: 'FE', compensacao: 'C' };
   const mes = document.getElementById('mes'); mes.value = MES;
   mes.onchange = async () => { if (!mes.value) return; MES = mes.value; gravarCompetencia(MES); await carregarEscalas(MES); desenhar(); };
   document.querySelectorAll('#abas .aba').forEach(b => b.onclick = () => { aba = b.dataset.v; document.querySelectorAll('#abas .aba').forEach(x => x.classList.toggle('ativa', x === b)); desenhar(); });
-  document.getElementById('busca').addEventListener('input', desenhar);
+  ligarBusca('busca', desenhar);
   if (PODE) document.getElementById('bNovo').onclick = () => editarModelo(null);
   window.addEventListener('empresa', desenhar);
   botoesRelatorio('rel', () => aba === 'mod'
