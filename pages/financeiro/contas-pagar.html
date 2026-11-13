@@ -238,6 +238,8 @@ function htmlParcelasGrupo(r) {
 const parcelaDe = r => { if (r.parcela && r.parcelas) return [r.parcela, r.parcelas];
   const m = r.origem === 'importacao' && String(r.descricao || '').match(/parcela\s*\(?\s*(\d{1,3})\s*\/\s*(\d{1,3})/i);
   return m && +m[1] >= 1 && +m[1] <= +m[2] ? [+m[1], +m[2]] : []; };
+// Título do RH: quem recebe é o colaborador (funcionario_id), não um fornecedor. O nome vem no fim da descrição ("Adiantamento salarial 10/2026 · NOME").
+const colaborador = r => r.origem === 'rh' && r.funcionario_id ? (r.descricao || '').split(' · ').pop().trim() : '';
 const mesmoNomeTiny = r => LINHAS.filter(x => x.id !== r.id && !x.fornecedor_id && x.origem_ref?.fornecedor_tiny === r.origem_ref?.fornecedor_tiny && ['aberto', 'programado'].includes(x.situacao));
 
 /* ---------- Rastreio da compra até o pagamento ---------- */
@@ -363,7 +365,7 @@ async function registrarPagamento(r) {
   const comp = [...(q('#pgComp')?.files || [])];
   if (!comp.length) return aviso('Anexe o comprovante do pagamento (obrigatório)', true);
   const forn = FORN.find(f => f.v === r.fornecedor_id);
-  const conf = await conferirComTela(comp[0], { valor: p.valor + p.juros - p.desconto, data: p.data_pagamento, nome: forn?.nome || r.origem_ref?.fornecedor_tiny || '', fantasia: forn?.fantasia, doc: forn?.doc,
+  const conf = await conferirComTela(comp[0], { valor: p.valor + p.juros - p.desconto, data: p.data_pagamento, nome: forn?.nome || r.origem_ref?.fornecedor_tiny || colaborador(r) || '', fantasia: forn?.fantasia, doc: forn?.doc,
     apelidos: apelidosDe(APELIDOS, r.fornecedor_id, r.origem_ref?.fornecedor_tiny) });
   if (!conf) return;
   if (conf.justificativa) p.observacoes = 'Comprovante com divergência: ' + conf.justificativa;
@@ -432,10 +434,12 @@ const cfg = {
     // Formulário: quem/o quê › valor e datas (+ parcelamento) › como vai ser pago › origem
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true,
       opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
-    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN,
+    // Título do RH: no lugar do fornecedor aparece o colaborador (ver aoAbrir)
+    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN, oculto: r => !!colaborador(r),
       // sem cadastro: mostra o nome que veio do Tiny (ou o colaborador, nos títulos do RH); embaixo, a descrição
       listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n, d = r.descricao && r.descricao !== r.documento ? `<small class="sub2 texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</small>` : '';
         return (n ? `<span class="texto-curto" title="${esc(n)}">${esc(n)}</span>`
+          : colaborador(r) ? `<span class="texto-curto" title="Colaborador (título gerado pelo RH)">${esc(colaborador(r))} <small class="tg neutro">colaborador</small></span>`
           : r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : '') + d; } },
     { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato',
       listaHtml: r => (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '')
@@ -528,6 +532,9 @@ const cfg = {
       };
       fEmp.addEventListener('change', filtrarContas); filtrarContas();
     }
+    // Título do RH: mostra o colaborador que recebe (no lugar do fornecedor, que não se aplica)
+    if (colaborador(r)) m.querySelector('[data-campo="empresa_id"]')?.insertAdjacentHTML('afterend', `<div class="campo l2"><label>Favorecido (colaborador)</label>
+      <input type="text" value="${esc(colaborador(r))}" disabled><p class="ajuda">Gerado pelo RH: quem recebe é o colaborador, por isso não tem fornecedor.</p></div>`);
     // Veio do Tiny sem fornecedor cadastrado: explica e oferece usar o mesmo fornecedor nos outros títulos com esse nome
     const ft = r.origem_ref?.fornecedor_tiny, fForn = m.querySelector('#f_fornecedor_id');
     if (r.id && !r.fornecedor_id && ft && fForn) {
@@ -650,7 +657,8 @@ const cfg = {
           if (!data || !contaId) { aviso('Informe data e conta', true); return false; }
           const arq = m.querySelector('#jComp').files[0]; if (!arq) { aviso('Anexe o comprovante (obrigatório)', true); return false; }
           const fs = [...new Set(abertos.map(r => r.fornecedor_id))], f1 = fs.length === 1 ? FORN.find(f => f.v === fs[0]) : null;
-          const conf = await conferirComTela(arq, { valor: total, data, nome: f1?.nome || '', fantasia: f1?.fantasia, doc: f1?.doc, apelidos: apelidosDe(APELIDOS, f1?.v) });
+          const cs = [...new Set(abertos.map(colaborador))], c1 = !f1 && cs.length === 1 ? cs[0] : '';
+          const conf = await conferirComTela(arq, { valor: total, data, nome: f1?.nome || c1, fantasia: f1?.fantasia, doc: f1?.doc, apelidos: apelidosDe(APELIDOS, f1?.v) });
           if (!conf) return false;
           const { data: pgs, error } = await db.from('pagamentos').insert(abertos.map(r => ({ titulo_id: r.id, data_pagamento: data, valor: Number(r.saldo), conta_bancaria_id: contaId,
             forma_pagamento_id: formaId, observacoes: conf.justificativa ? 'Comprovante com divergência: ' + conf.justificativa : 'Pago em lote com ' + abertos.length + ' título(s)' }))).select('id, titulo_id');
@@ -684,7 +692,7 @@ const cfg = {
         });
       } }
   ],
-  tituloRegistro: r => [FORN.find(f => f.v === r.fornecedor_id)?.n, r.documento].filter(Boolean).join(' · ') || r.descricao || 'Título',
+  tituloRegistro: r => [FORN.find(f => f.v === r.fornecedor_id)?.n || colaborador(r), r.documento].filter(Boolean).join(' · ') || r.descricao || 'Título',
   chaveHistorico: r => r.documento || r.id,
   msgDuplicado: 'Título duplicado'
 };
