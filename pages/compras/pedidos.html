@@ -66,9 +66,12 @@
 const SIT = [
   { v: 'rascunho', n: 'Rascunho', cor: 'neutro' }, { v: 'em_aprovacao', n: 'Em aprovação', cor: 'alerta' },
   { v: 'recusado', n: 'Recusado (ajustar)', cor: 'erro' }, { v: 'aprovado', n: 'Aprovado · enviar', cor: 'ok' },
-  { v: 'enviado', n: 'Enviado · aguardando entrega', cor: 'pc' }, { v: 'recebido_parcial', n: 'Recebido parcial', cor: 'alerta' },
+  { v: 'enviado', n: 'Enviado · aguardando entrega', cor: 'pc' }, { v: 'recebido_parcial', n: 'Entregue parcial · falta saldo', cor: 'alerta' },
   { v: 'recebido', n: 'Recebido', cor: 'ok' }, { v: 'cancelado', n: 'Cancelado', cor: 'neutro' }];
 const EDITAVEL = ['rascunho', 'recusado'], FINAL = ['recebido', 'cancelado'];
+// Entrega parcial: quanto falta (ou foi cancelado ao encerrar o saldo) de cada item
+const falta = x => Math.max(0, Number(x.quantidade) - Number(x.quantidade_recebida || 0) - Number(x.quantidade_cancelada || 0));
+const celRec = x => `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}${falta(x) ? `<br><span class="tg alerta">falta ${num(falta(x))}</span>` : ''}${Number(x.quantidade_cancelada) ? `<br><span class="tg neutro">${num(x.quantidade_cancelada)} cancelado</span>` : ''}</td>`;
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 const hojeISO = () => new Date().toLocaleDateString('sv-SE');
@@ -187,7 +190,7 @@ const linhaServ = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-tip
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id)}</select></td>
   <td class="num" data-k="total"></td>
-  ${rec ? `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}</td>` : ''}
+  ${rec ? celRec(x) : ''}
   <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 const linhaServico = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-tipo="servico_usinagem">
   <td style="min-width:220px">${selTipo('servico')}${caixaServ(x.servico_id || SERVS.find(s => s.usinagem && s.situacao === 'ativo')?.id)}
@@ -202,7 +205,7 @@ const linhaServico = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id || CATS.find(c => c.codigo === CAT_USINAGEM)?.id)}</select></td>
   <td class="num" data-k="total"></td>
-  ${rec ? `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}</td>` : ''}
+  ${rec ? celRec(x) : ''}
   <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 // ao escolher a peça: preço e fornecedor da ficha; sempre: recalcula o material a enviar
 function aoEscolherServico(tr, escolheu) {
@@ -287,7 +290,7 @@ const linhaProduto = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id"${x.produto_id && !x.uso_consumo && prod(x.produto_id)?.categoria_financeira_id ? ' disabled title="Categoria do cadastro do produto"' : ''}>${optCats(x.categoria_financeira_id)}</select></td>
   <td class="num" data-k="total"></td>
-  ${rec ? `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}</td>` : ''}
+  ${rec ? celRec(x) : ''}
   <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 // categoria: item com produto usa a do cadastro (travada); uso e consumo interno libera a escolha
 function travarCategoria(tr) {
@@ -522,7 +525,7 @@ function secaoPedido(r) {
   if (!(r.niveis_exigidos || []).length && s !== 'recusado') etapas.push('<span>Aprovação</span>');
   const pos = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'];
   etapas.push(`<span class="${pos.includes(s) ? (s === 'aprovado' ? 'agora' : 'ok') : ''}">Enviar ao fornecedor${r.enviado_em ? ' ✓' : ''}</span>`);
-  etapas.push(`<span class="${s === 'recebido' ? 'ok' : ['enviado', 'recebido_parcial'].includes(s) ? 'agora' : ''}">Recebimento NF${s === 'recebido_parcial' ? ' (parcial)' : s === 'recebido' ? ' ✓' : ''}</span>`);
+  etapas.push(`<span class="${s === 'recebido' ? 'ok' : ['enviado', 'recebido_parcial'].includes(s) ? 'agora' : ''}">Recebimento NF${s === 'recebido_parcial' ? ' (entregue parcial)' : s === 'recebido' ? (r.saldo_encerrado_em ? ' ✓ · saldo encerrado' : ' ✓') : ''}</span>`);
   if (s === 'cancelado') etapas.push('<span class="erro">Cancelado</span>');
   const tits = ex.titulos[r.id] || [], recs = ex.recebimentos[r.id] || [], evs = (ex.eventos[r.id] || []).slice().reverse();
   const podeAlt = CTX.pode('compras', 'alterar'), podeCriar = CTX.pode('compras', 'criar');
@@ -545,6 +548,9 @@ function secaoPedido(r) {
   acoes.push(btn('comentario', '+ Comentário', 'discreto'));
   const avisos = [];
   if (s === 'recusado' && r.motivo_recusa) avisos.push(`<div class="aviso-box erro"><b>Recusado:</b> ${esc(r.motivo_recusa)} — ajuste o pedido, salve e envie de novo para aprovação.</div>`);
+  const faltam = (ex.itens[r.id] || []).filter(falta);
+  if (s === 'recebido_parcial' && faltam.length) avisos.push(`<div class="aviso-box"><b>Entregue parcial · falta entregar:</b> ${esc(faltam.map(i => `${num(falta(i))} ${i.unidade || 'un'} ${i.descricao}`).join('; '))}. O saldo segue em aberto (e no contas a pagar como projeção) até a próxima NF; se o fornecedor não for entregar, use <b>Encerrar saldo</b>.</div>`);
+  if (r.saldo_encerrado_em) avisos.push(`<div class="aviso-box">Saldo encerrado por ${esc(usu(r.saldo_encerrado_por) || '')} em ${dataHoraBR(r.saldo_encerrado_em)} · ${esc(r.motivo_encerramento || '')}</div>`);
   if (s === 'em_aprovacao') avisos.push(`<div class="aviso-box">Aguardando <b>${esc(nomeNivel(r, n))}</b> · aprova: ${esc(quemAprova(r, n))}</div>`);
   const pend = avulsosPendentes(r);
   if (pend.length && EDITAVEL.includes(s)) avisos.push(`<div class="aviso-box erro"><b>Item sem cadastro:</b> ${esc(pend.map(i => i.descricao).join(', '))}. Cadastre o produto e escolha-o no item, ou peça liberação ao administrador (compra ocasional, ex.: manutenção). Sem isso o pedido não vai para aprovação.</div>`);
@@ -588,7 +594,8 @@ async function executarAcao(r, a, m) {
   else if (a === 'cancelar') { const c = await pedirTexto('Cancelar ' + r.numero, 'Motivo do cancelamento', true, 'Cancelar pedido'); if (c && await acao(r, a, c)) fim('Pedido cancelado'); }
   else if (a === 'liberar_avulso') { const c = await pedirTexto('Liberar item sem cadastro · ' + r.numero, 'Motivo (ex.: compra ocasional para manutenção, não precisa de SKU)', true, 'Liberar'); if (c && await acao(r, a, c)) fim('Item(ns) sem cadastro liberado(s)'); }
   else if (a === 'comentario') { const c = await pedirTexto('Comentário em ' + r.numero, 'Comentário', true, 'Salvar'); if (c && await acao(r, a, c)) fim('Comentário registrado'); }
-  else if (a === 'encerrar') { const c = await pedirTexto('Encerrar saldo de ' + r.numero, 'Motivo (o restante não será entregue)', true, 'Encerrar'); if (!c) return;
+  else if (a === 'encerrar') { const fl = (ex.itens[r.id] || []).filter(falta).map(i => `${num(falta(i))} ${i.unidade || 'un'} ${i.descricao}`).join('; ');
+    const c = await pedirTexto('Encerrar saldo de ' + r.numero, `Motivo (fica cancelado, não será entregue: ${fl})`, true, 'Encerrar'); if (!c) return;
     const { error } = await db.rpc('pedido_compra_encerrar', { p_id: r.id, p_motivo: c }); if (error) return aviso('Não deu: ' + error.message, true); fim('Saldo encerrado · projeção removida'); }
   else if (a === 'pdf') { const d = await gerarPdf(r, true); if (d) aviso('PDF gerado'); }
   else if (a === 'desenhos') await baixarDesenhos(r);
@@ -977,7 +984,8 @@ const cfg = {
   ],
   textoBuscaExtra: (r, e) => [nomeComFantasia(forn(r.fornecedor_id)), ...(e.itens[r.id] || []).flatMap(i => [i.descricao, i.codigo_fornecedor, prod(i.produto_id)?.codigo]),
     ...(e.recebimentos[r.id] || []).map(x => 'NF ' + x.nf_numero)].filter(Boolean).join(' '),
-  subtituloLinha: r => [r.enviado_em ? `enviado ${dataCurta(r.enviado_em)} por ${r.enviado_via || ''}` : '', Number(r.valor_recebido) ? 'recebido ' + reais(r.valor_recebido) : ''].filter(Boolean).join(' · '),
+  subtituloLinha: (r, e) => [r.enviado_em ? `enviado ${dataCurta(r.enviado_em)} por ${r.enviado_via || ''}` : '', Number(r.valor_recebido) ? 'recebido ' + reais(r.valor_recebido) : '',
+    r.situacao === 'recebido_parcial' ? `falta entregar ${(e.itens[r.id] || []).filter(falta).length} de ${(e.itens[r.id] || []).length} item(ns)` : '', r.saldo_encerrado_em ? 'saldo encerrado' : ''].filter(Boolean).join(' · '),
   pendencias: [
     { id: 'sem_cad', nome: 'Item sem cadastro aguardando liberação', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length > 0 },
     { id: 'sem_cat', nome: 'Item sem categoria financeira', cor: 'erro', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => !i.categoria_financeira_id) },
