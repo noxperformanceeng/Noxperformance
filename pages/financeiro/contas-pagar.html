@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611032320">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131651">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611032320"></script>
-<script src="../../assets/js/ui.js?v=202611032320"></script>
-<script src="../../assets/js/auth.js?v=202611032320"></script>
-<script src="../../assets/js/layout.js?v=202611032320"></script>
-<script src="../../assets/js/cadastro.js?v=202611032320"></script>
-<script src="../../assets/js/comprovante.js?v=202611032320"></script>
+<script src="../../assets/js/supabase.js?v=202611131651"></script>
+<script src="../../assets/js/ui.js?v=202611131651"></script>
+<script src="../../assets/js/auth.js?v=202611131651"></script>
+<script src="../../assets/js/layout.js?v=202611131651"></script>
+<script src="../../assets/js/cadastro.js?v=202611131651"></script>
+<script src="../../assets/js/comprovante.js?v=202611131651"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -529,9 +529,17 @@ const cfg = {
     const ft = r.origem_ref?.fornecedor_tiny, fForn = m.querySelector('#f_fornecedor_id');
     if (r.id && !r.fornecedor_id && ft && fForn) {
       const outros = mesmoNomeTiny(r).length;
-      fForn.closest('.campo').insertAdjacentHTML('beforeend', `<p class="ajuda" style="color:var(--alerta)">Sem cadastro: veio do Tiny como "${esc(ft)}". Escolha o fornecedor na lista (ou use "+ cadastrar"). A baixa pode ser feita mesmo sem o cadastro.</p>
+      fForn.closest('.campo').insertAdjacentHTML('beforeend', `<p class="ajuda" style="color:var(--alerta)">Sem cadastro: veio do Tiny como "${esc(ft)}". Escolha o fornecedor na lista ou cadastre pelo botão abaixo. A baixa pode ser feita mesmo sem o cadastro.</p>
+        ${m.querySelector('[data-rapido-cad="fornecedor_id"]') ? `<button class="btn" type="button" id="fornCadTiny" style="margin-top:4px">Cadastrar "${esc(ft)}" como fornecedor</button>` : ''}
         ${pode && outros ? `<label class="chk" style="margin-top:4px"><input type="checkbox" id="fornTodos" checked> Usar também nos outros ${outros} título(s) em aberto com esse nome</label>` : ''}`);
     }
+    // Um clique: cadastra o fornecedor com o nome que veio do Tiny (se já existir com esse nome, só escolhe) e já seleciona
+    const bTiny = m.querySelector('#fornCadTiny');
+    if (bTiny) bTiny.onclick = () => {
+      m.querySelector('[data-rapido-cad="fornecedor_id"]').click();
+      const box = m.querySelector('.rapido-cad'); box.querySelector('input').value = ft.trim(); box.querySelector('button').click();
+      bTiny.remove();
+    };
     // Importado do Tiny: a parcela que está no histórico já vem preenchida (grava ao salvar)
     if (r.id && !r.parcela) { const [pc, pcs] = parcelaDe(r); if (pc) { m.querySelector('#f_parcela').value = pc; m.querySelector('#f_parcelas').value = pcs; } }
     // Emissão x vencimento: título avulso pode ter a emissão igual ao vencimento; lançamento novo pode ser parcelado
