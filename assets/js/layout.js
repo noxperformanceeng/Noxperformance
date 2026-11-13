@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611131915';
+const VERSAO_TELAS = '202611131948';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -151,6 +151,7 @@ async function iniciarTela() {
 
   const ctx = await carregarSessao();
   if (!ctx) return null;
+  tempoReal.iniciar(ctx);   // daqui em diante a tela se atualiza sozinha quando os dados mudam (supabase.js)
 
   const modulo = document.body.dataset.modulo;
   if (modulo && !ctx.pode(modulo)) {
@@ -225,7 +226,7 @@ async function iniciarTela() {
     faixa.addEventListener('click', e => { const b = e.target.closest('[data-emp]'); if (b) trocarEmpresa(b.dataset.emp ? Number(b.dataset.emp) : null); });
   }
   desenharFaixa(ctx); marcarEmpresa(ctx);
-  // Aprovações pendentes: contador no menu (atualiza a cada 2 min)
+  // Aprovações pendentes: contador no menu (na hora, pelo tempo real; a cada 2 min por garantia)
   const contarAprov = async () => {
     const { data } = await db.rpc('minhas_aprovacoes');
     const n = (data || []).filter(g => !g.aviso).reduce((t, g) => t + (g.itens || []).length, 0);   // decidir + devolvidos
@@ -235,6 +236,7 @@ async function iniciarTela() {
     if (d) { d.hidden = !av; d.title = av + ' aviso(s) de pendência'; }
   };
   contarAprov(); setInterval(contarAprov, 120000); window.addEventListener('nox:aprovacoes', contarAprov);
+  ouvirMudancas(tempoReal.fontes('minhas_aprovacoes'), contarAprov, { auxiliar: true, mesmoOculto: true });
   // Menu lateral recolhível (lembra a escolha)
   const recolher = v => { document.body.classList.toggle('menu-recolhido', v); try { localStorage.setItem('nox_menu_recolhido', v ? '1' : ''); } catch {} };
   try { if (localStorage.getItem('nox_menu_recolhido')) document.body.classList.add('menu-recolhido'); } catch {}

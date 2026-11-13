@@ -16,10 +16,15 @@ const diasNoMes = m => new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate();
 const horasBR = fmtHoras, lerHoras = lerHorasTexto;   // de cadastro.js
 const minutos = hhmm => { if (!hhmm) return null; const [h, m] = String(hhmm).split(':'); return +h * 60 + +m; };
 
+// Tempo real: cadastro de funcionário ou evento mudou em outra tela → a lista de apoio se atualiza antes da tela redesenhar
+const _apoio = new Set();
+const ouvirApoio = (tabela, fn) => { if (_apoio.has(tabela)) return; _apoio.add(tabela); ouvirMudancas([tabela], fn, { auxiliar: true }); };
+
 /* ---------- Funcionários ---------- */
 let FUNCS = [];
 async function carregarFuncionarios() {
   FUNCS = await buscarTodos(() => db.from('funcionarios').select('*').order('nome'));
+  ouvirApoio('funcionarios', carregarFuncionarios);
   return FUNCS;
 }
 const funcionario = id => FUNCS.find(f => f.id === +id);
@@ -42,6 +47,7 @@ let EVENTOS = [];
 async function carregarEventos() {
   const { data, error } = await db.from('rh_eventos').select('*').order('ordem').order('codigo');
   if (error) throw error;
+  ouvirApoio('rh_eventos', carregarEventos);
   return EVENTOS = data || [];
 }
 const evento = id => EVENTOS.find(e => e.id === +id);

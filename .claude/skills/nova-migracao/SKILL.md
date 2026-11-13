@@ -23,7 +23,7 @@ description: Criar ou alterar estrutura do banco do ERP NOX (tabela, coluna, fun
      gravar — sempre com o `select` em volta;
    - se for tela nova: `insert into public.modulos (id, grupo, nome, ordem) ... on conflict do nothing`
      e as `permissoes` por perfil;
-   - última linha: `select public.ligar_auditoria('tabela');`
+   - últimas linhas: `select public.ligar_auditoria('tabela');` e `select public.ligar_tempo_real('tabela');` (a tela se atualiza sozinha para todos)
 5. **Função `security definer`**: `set search_path = public`; checar `public.pode(...)` logo no início;
    `revoke execute on function ... from public, anon;` e `grant execute ... to authenticated` só se a tela chama.
 6. **Nada de dados pessoais** no arquivo (CPF, salário, conta bancária de pessoas). Carga de pessoas →
