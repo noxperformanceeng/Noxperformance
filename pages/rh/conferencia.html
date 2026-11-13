@@ -6,7 +6,7 @@
 <title>Conferência da folha · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131717">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131718">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -25,12 +25,12 @@
 <body data-modulo="lancamentos" data-titulo="Conferência da folha" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131717"></script>
-<script src="../../assets/js/ui.js?v=202611131717"></script>
-<script src="../../assets/js/auth.js?v=202611131717"></script>
-<script src="../../assets/js/layout.js?v=202611131717"></script>
-<script src="../../assets/js/cadastro.js?v=202611131717"></script>
-<script src="../../assets/js/rh.js?v=202611131717"></script>
+<script src="../../assets/js/supabase.js?v=202611131718"></script>
+<script src="../../assets/js/ui.js?v=202611131718"></script>
+<script src="../../assets/js/auth.js?v=202611131718"></script>
+<script src="../../assets/js/layout.js?v=202611131718"></script>
+<script src="../../assets/js/cadastro.js?v=202611131718"></script>
+<script src="../../assets/js/rh.js?v=202611131718"></script>
 <script>
 /* =====================================================================
    Conferência da folha — segunda conferência antes de fechar o mês.
@@ -60,7 +60,7 @@ const TIPO = { faltou: 'Não veio neste mês', novo: 'Novo neste mês', variou: 
       <tbody id="lista"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody></table></div>`;
   const c = document.getElementById('comp'); c.value = COMP;
   c.onchange = () => { if (!c.value) return; COMP = c.value; gravarCompetencia(COMP); carregar(); };
-  document.getElementById('busca').oninput = desenhar;
+  ligarBusca('busca', desenhar);
   document.getElementById('todos').onchange = e => { visiveis().filter(d => !d.confirmada).forEach(d => e.target.checked ? marcados.add(chave(d)) : marcados.delete(chave(d))); desenhar(); };
   window.addEventListener('empresa', () => { CTX.empresa = lerEmpresa(); carregar(); });
   botoesRelatorio('rel', () => ({ arquivo: 'conferencia_folha_' + COMP, colunas: ['Colaborador', 'Evento', 'Divergência', mesBR(somaMes(COMP, -1)), mesBR(COMP), 'Diferença', 'Situação', 'Observação'],

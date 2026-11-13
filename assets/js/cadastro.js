@@ -145,7 +145,7 @@ async function montarCadastro(cfg) {
     <p class="sub" id="cRodape" style="margin-top:8px"></p>`;
   const $ = s => cont.querySelector(s);
   if (podeCriar) $('#cNovo').onclick = () => abrir(null);
-  $('#fBusca').addEventListener('input', desenhar);
+  ligarBusca($('#fBusca'), desenhar);
   cont.querySelectorAll('.filtros select, .filtros input[type=date]').forEach(e => e.addEventListener('change', desenhar));
   ligarPainelFiltros(cont, cfg.tabela, desenhar);
   if (cfg.porEmpresa) window.addEventListener('empresa', desenhar);
@@ -180,7 +180,7 @@ async function montarCadastro(cfg) {
         buscarTodos(() => db.from(cfg.tabela).select('*').order('id')),
         db.rpc('usuarios_nomes')
       ]);
-      linhas = lista;
+      linhas = lista; txtBusca = new WeakMap();
       nomes = Object.fromEntries((nm.data || []).map(u => [u.id, u.nome]));
       extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas, ctx) : {};
       linhas.forEach(r => r._pend = pendDe(r));
@@ -200,6 +200,7 @@ async function montarCadastro(cfg) {
   async function recarregarListasDoFormulario(silencioso) {
     try {
       extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas, ctx) : extra;
+      txtBusca = new WeakMap();
       const m = document.querySelector('.modal-fundo'); if (!m) return;
       campos.filter(c => ['select', 'empresa'].includes(c.tipo)).forEach(c => {
         const el = m.querySelector('#f_' + c.id); if (!el || el.disabled) return;
@@ -226,26 +227,37 @@ async function montarCadastro(cfg) {
 
   /* ---------- Lista ---------- */
   // ignorarExtra: id de um filtro extra que não entra na conta (ex.: botões de situação contam sem o próprio filtro)
+  // Texto de busca de cada linha (já sem acento), montado uma vez e guardado até os dados mudarem:
+  // refazer isso a cada tecla, para milhares de linhas, era o que travava a digitação.
+  let txtBusca = new WeakMap();
+  const textoBusca = r => {
+    let t = txtBusca.get(r);
+    if (t === undefined) {
+      t = semAcento(campos.map(c => `${r[c.id] ?? ''} ${mostrar(c, r[c.id])}`).join(' ') + ' ' + (cfg.textoBuscaExtra?.(r, extra) || ''));
+      txtBusca.set(r, t);
+    }
+    return t;
+  };
   function filtrar(ignorarPend, ignorarExtra) {
-    const busca = $('#fBusca').value, de = $('#fDe').value, ate = $('#fAte').value, pc = $('#fPerCampo').value;
+    const de = $('#fDe').value, ate = $('#fAte').value, pc = $('#fPerCampo').value, rev = cfg.revisao ? $('#fRev').value : '';
+    const termos = semAcento($('#fBusca').value).split(/\s+/).filter(Boolean);
+    // valores dos filtros lidos uma vez (antes era uma consulta à tela por linha)
+    const extras = (cfg.filtrosExtras || []).filter(f => f.id !== ignorarExtra)
+      .map(f => [f, cont.querySelector(`[data-filtro-extra="${f.id}"]`).value]).filter(([, v]) => v);
+    const porCampo = filtrosCampo.map(c => [c, cont.querySelector(`[data-filtro="${c.id}"]`).value]).filter(([, v]) => v);
     return linhas.filter(r => {
       if (cfg.abas && aba !== '' && !naAba(r, aba)) return false;
       if (cfg.porEmpresa && ctx.empresa && r.empresa_id !== ctx.empresa) return false;
-      for (const f of cfg.filtrosExtras || []) {
-        if (f.id === ignorarExtra) continue;
-        const v = cont.querySelector(`[data-filtro-extra="${f.id}"]`).value;
-        if (v && !f.teste(r, v, extra)) return false;
+      for (const [f, v] of extras) if (!f.teste(r, v, extra)) return false;
+      for (const [c, v] of porCampo) {
+        if (v === '__vazio' ? (r[c.id] !== null && r[c.id] !== '') : String(r[c.id]) !== v) return false;
       }
-      for (const c of filtrosCampo) {
-        const v = cont.querySelector(`[data-filtro="${c.id}"]`).value;
-        if (v === '__vazio' ? (r[c.id] !== null && r[c.id] !== '') : (v && String(r[c.id]) !== v)) return false;
-      }
-      if (cfg.revisao && $('#fRev').value && statusRev(r).cls !== $('#fRev').value) return false;
+      if (rev && statusRev(r).cls !== rev) return false;
       const dv = r[pc];
       if ((de || ate) && !dv) return false;
       if (de && String(dv).slice(0, 10) < de) return false;
       if (ate && String(dv).slice(0, 10) > ate) return false;
-      if (busca && !combinaBusca(campos.map(c => `${r[c.id] ?? ''} ${mostrar(c, r[c.id])}`).join(' ') + ' ' + (cfg.textoBuscaExtra?.(r, extra) || ''), busca)) return false;
+      if (termos.length) { const t = textoBusca(r); if (!termos.every(p => t.includes(p))) return false; }
       if (!ignorarPend && pendAtual && !r._pend.includes(pendAtual)) return false;
       return true;
     });
@@ -265,7 +277,8 @@ async function montarCadastro(cfg) {
     contarFiltros(cont);
     const k = ordem.campo, dir = ordem.asc ? 1 : -1;
     const chave = r => k === '_rev' ? ({ alerta: 0, neutro: 1, ok: 2 }[statusRev(r).cls]) : cfg.ordenarPor?.[k] ? cfg.ordenarPor[k](r) : semAcento(r[k] ?? '￿');
-    visiveis.sort((a, b) => (chave(a) > chave(b) ? 1 : chave(a) < chave(b) ? -1 : 0) * dir);
+    const ch = new Map(visiveis.map(r => [r, chave(r)]));   // chave calculada uma vez por linha, não a cada comparação
+    visiveis.sort((a, b) => { const x = ch.get(a), y = ch.get(b); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
     let mostrados = visiveis, temFilhos = new Set();
     if (cfg.arvore) {
       linhas.forEach(r => { const p = cfg.arvore.pai(cfg.arvore.chave(r)); if (p) temFilhos.add(p); });

@@ -6,7 +6,7 @@
 <title>Quarentena das importações · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131717">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131718">
 <style>
   .filtros-q { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; padding: 10px 12px; margin-bottom: 8px; }
   .filtros-q label { font-size: 11px; margin-bottom: 2px; }
@@ -25,10 +25,10 @@
 <body data-modulo="quarentena" data-titulo="Quarentena das importações" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131717"></script>
-<script src="../../assets/js/ui.js?v=202611131717"></script>
-<script src="../../assets/js/auth.js?v=202611131717"></script>
-<script src="../../assets/js/layout.js?v=202611131717"></script>
+<script src="../../assets/js/supabase.js?v=202611131718"></script>
+<script src="../../assets/js/ui.js?v=202611131718"></script>
+<script src="../../assets/js/auth.js?v=202611131718"></script>
+<script src="../../assets/js/layout.js?v=202611131718"></script>
 <script>
 /* =====================================================================
    Quarentena: títulos importados do Tiny com algo a revisar — numa lista só.
@@ -68,7 +68,8 @@ const v = id => document.getElementById(id).value;
       <th class="ord" data-o="id">Título</th><th class="ord" data-o="data_vencimento">Vencimento</th><th class="ord" data-o="fornecedor_tiny">Fornecedor (Tiny)</th>
       <th>Categoria</th><th>Histórico</th><th class="ord num" data-o="valor">Valor</th><th class="ord" data-o="situacao">Situação / pagamento</th><th>Pendências</th></tr></thead>
       <tbody id="lista"><tr><td colspan="9" class="vazio">Carregando…</td></tr></tbody></table></div>`;
-  ['fMot', 'fRev', 'fSit', 'fPer', 'fDe', 'fAte', 'fBusca'].forEach(id => document.getElementById(id).addEventListener(id === 'fBusca' ? 'input' : 'change', () => { marcados.clear(); desenhar(); }));
+  ['fMot', 'fRev', 'fSit', 'fPer', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', () => { marcados.clear(); desenhar(); }));
+  ligarBusca('fBusca', () => { marcados.clear(); desenhar(); });
   document.getElementById('todos').onchange = e => { visiveis().forEach(r => e.target.checked ? marcados.add(r.id) : marcados.delete(r.id)); desenhar(); };
   document.querySelectorAll('th.ord').forEach(th => th.onclick = () => { ordem = { c: th.dataset.o, asc: ordem.c === th.dataset.o ? !ordem.asc : true }; desenhar(); });
   window.addEventListener('empresa', () => { marcados.clear(); desenhar(); });
