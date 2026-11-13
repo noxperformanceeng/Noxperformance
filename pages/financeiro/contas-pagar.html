@@ -283,7 +283,7 @@ function htmlPagamentos(r) {
       <div><label>Valor abatido (R$)</label><input id="pgValor" inputmode="decimal" value="${String(r.saldo).replace('.', ',')}"></div>
       <div><label>Juros + multa (R$)</label><input id="pgJuros" inputmode="decimal" placeholder="0,00"></div>
       <div><label>Desconto (R$)</label><input id="pgDesc" inputmode="decimal" placeholder="0,00"></div>
-      <div class="l2"><label>Conta</label><select id="pgConta">${contasEmp.map(c => `<option value="${c.id}"${c.id === r.conta_bancaria_id ? ' selected' : ''}>${esc(c.descricao)}</option>`).join('')}</select></div>
+      <div class="l2"><label>Conta *</label><select id="pgConta"><option value="">— escolha a conta —</option>${contasEmp.map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
       <div><label>Forma</label><select id="pgForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}"${f.id === r.forma_pagamento_id ? ' selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
       <div><label>Identificador / autenticação</label><input id="pgIdent"></div>
       <div class="l2"><label>Comprovante * (PDF ou foto — o sistema confere fornecedor, valor e data)</label><input type="file" id="pgComp" accept="application/pdf,image/*"></div>
@@ -426,7 +426,7 @@ const cfg = {
   // Lista: vencimento (com o prazo), empresa, fornecedor (com a descrição), documento (com a parcela), valor, saldo, situação
   colunasLista: ['data_vencimento', 'empresa_id', 'fornecedor_id', 'documento', 'parcela', 'valor', 'saldo', 'situacao', 'observacoes'],
   campos: [
-    // Formulário: quem/o quê › valor e datas (+ parcelamento) › como vai ser pago › origem e pagamento
+    // Formulário: quem/o quê › valor e datas (+ parcelamento) › como vai ser pago › origem
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true,
       opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN,
@@ -461,9 +461,7 @@ const cfg = {
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', filtro: true, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
     { id: 'projecao', label: 'Projeção', tipo: 'bool', textoBool: 'Valor estimado', ajuda: 'Valor ainda estimado (ex.: conta de luz antes de chegar). Desmarque quando chegar a conta/boleto real.' },
     { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 4 },
-    { id: 'data_pagamento', label: 'Pagamento', tipo: 'data', somenteLeitura: true, secao: 'Origem e pagamento', oculto: r => !r.id, ajuda: 'Preenchida ao registrar o pagamento (data do último pagamento).' },
-    { id: 'valor_pago', label: 'Pago (R$)', tipo: 'moeda', somenteLeitura: true, oculto: r => !r.id },
-    { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, oculto: r => !r.id },
+    { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, secao: 'Origem', oculto: r => !r.id },
     { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
   ],
   async carregarExtra(linhas, ctx) {
@@ -631,7 +629,7 @@ const cfg = {
         const total = abertos.reduce((s, r) => s + Number(r.saldo), 0);
         janela(`Pagar ${abertos.length} título(s) · ${reais(total)}`, `<div class="grade">
             <div><label>Data do pagamento</label><input type="date" id="jData" value="${hoje()}"></div>
-            <div><label>Conta</label><select id="jConta">${CONTAS.filter(c => c.empresa_id === emp[0] && c.situacao === 'ativo' && c.tipo !== 'historico').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
+            <div><label>Conta *</label><select id="jConta"><option value="">— escolha a conta —</option>${CONTAS.filter(c => c.empresa_id === emp[0] && c.situacao === 'ativo' && c.tipo !== 'historico').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
             <div><label>Forma</label><select id="jForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join('')}</select></div></div>
             <div style="margin-top:8px"><label>Comprovante * (um arquivo para o lote: o valor conferido é o total)</label><input type="file" id="jComp" accept="application/pdf,image/*"></div>
             <p class="sub" style="margin:0">Cada título é baixado pelo saldo, sem juros/desconto. Para juros ou pagamento parcial, abra o título.</p>`, 'Registrar pagamentos', async m => {
