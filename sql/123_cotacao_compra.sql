@@ -1,6 +1,6 @@
 -- =====================================================================
 -- 123 · Cotação de fornecedores (entre a solicitação aprovada e o pedido de compra)
---  · Rodar DEPOIS do 122 (tempo real): usa public.ligar_tempo_real.
+--  · Pode rodar antes ou depois do 122 (tempo real); o tempo real das tabelas novas fica ligado nos dois casos.
 --  · O comprador junta itens de solicitações aprovadas numa cotação. Os fornecedores ligados ao produto
 --    no cadastro (e o fornecedor padrão do serviço) já entram sugeridos; dá para trocar ou incluir outros.
 --  · Por fornecedor: preço de cada item, condição e forma de pagamento, prazo de entrega, frete e validade.
@@ -428,7 +428,13 @@ select public.ligar_auditoria('cotacoes_compra');
 select public.ligar_auditoria('cotacoes_compra_itens');
 select public.ligar_auditoria('cotacoes_compra_fornecedores');
 select public.ligar_auditoria('cotacoes_compra_precos');
-select public.ligar_tempo_real('cotacoes_compra');
-select public.ligar_tempo_real('cotacoes_compra_itens');
-select public.ligar_tempo_real('cotacoes_compra_fornecedores');
-select public.ligar_tempo_real('cotacoes_compra_precos');
+-- Tempo real: se o 122 ainda não rodou, ele mesmo liga estas tabelas quando rodar (percorre todas).
+do $$
+begin
+  if to_regprocedure('public.ligar_tempo_real(text)') is not null then
+    perform public.ligar_tempo_real('cotacoes_compra');
+    perform public.ligar_tempo_real('cotacoes_compra_itens');
+    perform public.ligar_tempo_real('cotacoes_compra_fornecedores');
+    perform public.ligar_tempo_real('cotacoes_compra_precos');
+  end if;
+end $$;
