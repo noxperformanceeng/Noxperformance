@@ -41,11 +41,12 @@ const dataCurta = v => v ? String(v).slice(0, 10).split('-').reverse().join('/')
    Pelo id do campo (cliente_id, fornecedor_id, produto_id…) o formulário mostra "+ cadastrar" ao lado do
    rótulo: abre o cadastro em outra aba (já no formulário novo). Ao voltar, a lista do campo é recarregada
    sem perder o que foi digitado. Um campo pode trocar o destino com { cadastro: { tela, modulo, nome } } ou
-   desligar com { cadastro: false }. */
+   desligar com { cadastro: false }. Com { rapido: { tabela, campo } } aparece também "+ só o nome": cadastra ali
+   mesmo, sem sair do formulário, gravando só o nome (o resto do cadastro é completado depois). */
 const CADASTROS_LIGADOS = {
   cliente_id: { tela: 'pages/cadastros/clientes.html', modulo: 'clientes', nome: 'cliente' },
   representante_id: { tela: 'pages/cadastros/clientes.html', modulo: 'clientes', nome: 'representante' },
-  fornecedor_id: { tela: 'pages/cadastros/fornecedores.html', modulo: 'fornecedores', nome: 'fornecedor' },
+  fornecedor_id: { tela: 'pages/cadastros/fornecedores.html', modulo: 'fornecedores', nome: 'fornecedor', rapido: { tabela: 'fornecedores', campo: 'nome' } },
   produto_id: { tela: 'pages/cadastros/produtos.html', modulo: 'produtos', nome: 'produto' },
   categoria_financeira_id: { tela: 'pages/cadastros/categorias-financeiras.html', modulo: 'categorias_fin', nome: 'categoria' },
   canal_id: { tela: 'pages/cadastros/canais-venda.html', modulo: 'canais_venda', nome: 'canal' },
@@ -56,10 +57,11 @@ const CADASTROS_LIGADOS = {
   local_id: { tela: 'pages/cadastros/locais.html', modulo: 'locais', nome: 'local' }
 };
 const cadastroDoCampo = c => c.cadastro === false ? null : c.cadastro || (['select'].includes(c.tipo) || !c.tipo ? CADASTROS_LIGADOS[c.id] : null);
-function linkCadastro(cad, ctx) {
+function linkCadastro(cad, ctx, campoId) {
   if (!cad || !ctx.pode(cad.modulo, 'criar')) return '';
   const raiz = typeof RAIZ !== 'undefined' ? RAIZ : '../../';
-  return ` <a class="link-cad" data-link-cad href="${raiz}${cad.tela}?novo=1" title="Abre o cadastro em outra aba; ao voltar, a lista é atualizada">+ cadastrar</a>`;
+  return ` <a class="link-cad" data-link-cad href="${raiz}${cad.tela}?novo=1" title="Abre o cadastro em outra aba; ao voltar, a lista é atualizada">+ cadastrar</a>`
+    + (cad.rapido && campoId ? ` <a class="link-cad" href="#" data-rapido-cad="${campoId}" title="Cadastra aqui mesmo só com o nome; o resto é completado depois">+ só o nome</a>` : '');
 }
 
 /* ---------- Motor ---------- */
@@ -195,7 +197,7 @@ async function montarCadastro(cfg) {
   }
 
   // Depois de cadastrar em outra aba: busca de novo as listas auxiliares e refaz os <select> do formulário aberto
-  async function recarregarListasDoFormulario() {
+  async function recarregarListasDoFormulario(silencioso) {
     try {
       extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas, ctx) : extra;
       const m = document.querySelector('.modal-fundo'); if (!m) return;
@@ -206,7 +208,7 @@ async function montarCadastro(cfg) {
         el.value = v;
       });
       cfg.aoRecarregarListas?.(m);
-      aviso('Listas atualizadas com o cadastro novo');
+      if (!silencioso) aviso('Listas atualizadas com o cadastro novo');
     } catch (e) { aviso('Não atualizou as listas: ' + (e.message || e), true); }
   }
 
@@ -391,7 +393,7 @@ async function montarCadastro(cfg) {
         html += `${aberto ? '</div>' : ''}<div class="secao${aberto ? '' : ' primeira'}">${esc(c.secao)}</div><div class="grade-campos">`;
         secao = c.secao; aberto = true;
       } else if (!aberto) { html += '<div class="grade-campos">'; aberto = true; }
-      html += `<div class="campo l${c.col || 1}" data-campo="${c.id}"><label for="f_${c.id}">${esc(c.label)}${c.obrig ? ' <span class="obrig">*</span>' : ''}${c.ajuda ? ` <span class="dica" title="${esc(c.ajuda)}" tabindex="0">?</span>` : ''}${ro ? '' : linkCadastro(cadastroDoCampo(c), ctx)}</label>${entrada(c, r[c.id], ro || (c.id === 'situacao' && !podeTotal && !novo))}</div>`;
+      html += `<div class="campo l${c.col || 1}" data-campo="${c.id}"><label for="f_${c.id}">${esc(c.label)}${c.obrig ? ' <span class="obrig">*</span>' : ''}${c.ajuda ? ` <span class="dica" title="${esc(c.ajuda)}" tabindex="0">?</span>` : ''}${ro ? '' : linkCadastro(cadastroDoCampo(c), ctx, c.id)}</label>${entrada(c, r[c.id], ro || (c.id === 'situacao' && !podeTotal && !novo))}</div>`;
     }
     html += '</div>';
     const dls = campos.filter(c => c.lista_sugestoes).map(c => `<datalist id="dl_${c.id}">${[...new Set([...(c.lista_sugestoes || []), ...linhas.map(x => x[c.id]).filter(Boolean)])].sort().map(v => `<option value="${esc(v)}">`).join('')}</datalist>`).join('');
@@ -410,6 +412,43 @@ async function montarCadastro(cfg) {
     const q = s => m.querySelector(s);
     q('#mFechar').onclick = () => m.remove();
     if (!podeGravar) return;
+
+    // Cadastro rápido (cfg.rapido = ids dos campos): o formulário novo abre só com o essencial
+    if (novo && cfg.rapido) {
+      const md = q('.modal'), vis = new Set([...cfg.rapido, ...campos.filter(c => c.obrig && c.padrao === undefined).map(c => c.id)]);
+      md.querySelectorAll('.campo[data-campo]').forEach(el => { if (!vis.has(el.dataset.campo)) el.classList.add('so-completo'); });
+      md.classList.add('rapido');
+      q('#cAviso').insertAdjacentHTML('afterend', `<p class="sub" style="margin:0 0 8px">Cadastro rápido: só o nome é obrigatório. Os outros dados podem ser completados depois. <a href="#" id="mCompleto" class="link-cad">Mostrar todos os campos</a></p>`);
+      q('#mCompleto').onclick = e => { e.preventDefault(); md.classList.remove('rapido'); e.target.parentElement.remove(); };
+    }
+
+    // "+ só o nome": grava o registro ligado com o nome e já o escolhe no campo
+    m.querySelectorAll('[data-rapido-cad]').forEach(a => a.onclick = e => {
+      e.preventDefault();
+      const c = C[a.dataset.rapidoCad], cad = cadastroDoCampo(c), campo = a.closest('.campo');
+      if (campo.querySelector('.rapido-cad')) return campo.querySelector('.rapido-cad input').focus();
+      campo.insertAdjacentHTML('beforeend', `<div class="rapido-cad" style="display:flex;gap:6px;margin-top:6px"><input placeholder="Nome do ${esc(cad.nome)}" style="flex:1"><button class="btn" type="button">Cadastrar</button></div>`);
+      const box = campo.querySelector('.rapido-cad'), inp = box.querySelector('input'), bt = box.querySelector('button');
+      inp.focus();
+      const gravar = async () => {
+        const nome = inp.value.trim().replace(/\s+/g, ' ');
+        if (!nome) return aviso(`Informe o nome do ${cad.nome}`, true);
+        bt.disabled = true;
+        try {
+          const { data: ja } = await db.from(cad.rapido.tabela).select('id').ilike(cad.rapido.campo, nome.replace(/[%_\\]/g, '\\$&')).limit(1);
+          let id = ja?.[0]?.id;
+          if (!id) {
+            const { data, error } = await db.from(cad.rapido.tabela).insert({ [cad.rapido.campo]: nome }).select('id').single();
+            if (error) throw error; id = data.id;
+          }
+          await recarregarListasDoFormulario(true);
+          const sel = q('#f_' + c.id); sel.value = String(id); sel.dispatchEvent(new Event('change', { bubbles: true }));
+          box.remove(); aviso(ja?.[0] ? `Já existia ${cad.nome} com esse nome: escolhido` : `${cad.nome[0].toUpperCase() + cad.nome.slice(1)} cadastrado`);
+        } catch (er) { bt.disabled = false; aviso('Não cadastrou: ' + (er.message || er), true); }
+      };
+      bt.onclick = gravar;
+      inp.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); gravar(); } if (ev.key === 'Escape') box.remove(); };
+    });
 
     // CEP → endereço (ViaCEP)
     campos.filter(c => c.tipo === 'cep').forEach(c => q(`#f_${c.id}`).addEventListener('blur', async e => {
