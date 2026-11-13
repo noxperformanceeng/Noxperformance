@@ -425,6 +425,8 @@ a.ext, .link-cad, .rastro-item small a, .campo .obrig { color: var(--destaque-te
 .menu .item.ativo .ico { color: #fff; }
 .menu .item-aprov .n-aprov, .menu .item-aprov .av-aprov { margin-left: auto; }
 .menu .item-aprov .av-aprov { margin-left: 4px; }
+.menu a.item[data-mod] { display: flex; align-items: center; gap: 4px; } .menu a.item .cont-menu:first-of-type { margin-left: auto; }
+.menu .grupo-titulo .cont-menu { margin-left: auto; margin-right: 4px; }
 .menu .grupo { margin: 1px 0; }
 .menu .grupo-titulo { gap: 10px; justify-content: flex-start; padding: 8px 10px; font: 500 13.5px var(--fonte); color: #e3e6ea; text-transform: none; letter-spacing: 0; border-radius: 8px; }
 .menu .grupo-titulo:hover { background: var(--grafite-2); color: #fff; }
