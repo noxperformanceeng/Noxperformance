@@ -6,7 +6,7 @@
 <title>Solicitações de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131915">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131952">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .sub-ed th { text-align: left; font-size: 11px; color: var(--texto-suave); font-weight: 500; padding: 0 3px 3px; white-space: nowrap; }
@@ -27,11 +27,11 @@
 <body data-modulo="solicitacoes_compra" data-titulo="Solicitações de compra">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131915"></script>
-<script src="../../assets/js/ui.js?v=202611131915"></script>
-<script src="../../assets/js/auth.js?v=202611131915"></script>
-<script src="../../assets/js/layout.js?v=202611131915"></script>
-<script src="../../assets/js/cadastro.js?v=202611131915"></script>
+<script src="../../assets/js/supabase.js?v=202611131952"></script>
+<script src="../../assets/js/ui.js?v=202611131952"></script>
+<script src="../../assets/js/auth.js?v=202611131952"></script>
+<script src="../../assets/js/layout.js?v=202611131952"></script>
+<script src="../../assets/js/cadastro.js?v=202611131952"></script>
 <script>
 /* =====================================================================
    Solicitações de compra (antes do pedido)
@@ -51,23 +51,26 @@ const tgUrg = v => { const u = URG[pesoUrg(v)] || URG[1]; return u.v === 'normal
 const urgDe = r => (ex.itens?.[r.id] || []).reduce((m, i) => pesoUrg(i.urgencia) > pesoUrg(m) ? i.urgencia : m, 'baixa');
 const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 const hojeISO = () => new Date().toLocaleDateString('sv-SE');
-let CTX = null, CAT = [], PEDS = {}, USU = [], FORN = [], ACOES = new Set(), ex = {};
+let CTX = null, CAT = [], PEDS = {}, COTS = {}, USU = [], ACOES = new Set(), ex = {};
 const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
 const usu = id => USU.find(u => u.id === id)?.nome || '';
 const itemCat = (t, id) => CAT.find(c => c.tipo === t && c.id === id);
 const possoAprovar = () => CTX.admin || ACOES.has('compras.aprovar_solicitacao');
-const souComprador = () => CTX.pode('compras', 'criar');
+const souComprador = () => CTX.pode('cotacoes_compra', 'criar');
 const minha = r => r.solicitante_id === CTX.usuario.id;
-// item na fila do comprador: solicitação aprovada e sem pedido ativo (pedido cancelado devolve o item)
-const pendente = i => !i.pedido_id || PEDS[i.pedido_id]?.situacao === 'cancelado';
+// item na fila do comprador: solicitação aprovada, sem cotação aberta e sem pedido ativo (cancelados devolvem o item)
+const semPedido = i => !i.pedido_id || PEDS[i.pedido_id]?.situacao === 'cancelado';
+const emCotacao = i => semPedido(i) && i.cotacao_id && COTS[i.cotacao_id]?.situacao === 'aberta';
+const pendente = i => semPedido(i) && !emCotacao(i);
 const itensDe = r => ex.itens?.[r.id] || [];
 // etapa da solicitação para a lista: mostra o andamento da compra depois de aprovada
 function etapa(r) {
   if (r.situacao !== 'aprovado') return sit(r.situacao);
   const its = itensDe(r), pend = its.filter(pendente).length;
   if (pend === its.length) return { n: 'Aprovada · aguardando comprador', cor: 'ok' };
-  const peds = [...new Set(its.filter(i => !pendente(i)).map(i => PEDS[i.pedido_id]))].filter(Boolean);
-  if (pend) return { n: `Em compra parcial (${its.length - pend}/${its.length})`, cor: 'pc' };
+  if (its.every(i => pendente(i) || emCotacao(i))) return { n: 'Em cotação', cor: 'alerta' };
+  const peds = [...new Set(its.filter(i => !semPedido(i)).map(i => PEDS[i.pedido_id]))].filter(Boolean);
+  if (pend || its.some(emCotacao)) return { n: `Em compra parcial (${its.length - pend}/${its.length})`, cor: 'pc' };
   return peds.every(p => p.situacao === 'recebido') ? { n: 'Recebida', cor: 'ok' } : { n: 'Em pedido de compra', cor: 'pc' };
 }
 
@@ -85,7 +88,7 @@ function linhaItem(x = {}, ped = false) {
     <td style="width:62px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
     <td style="width:84px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
     <td style="width:100px"><select data-k="urgencia" data-simples>${URG.map(u => `<option value="${u.v}"${u.v === (x.urgencia || 'normal') ? ' selected' : ''}>${u.n}</option>`).join('')}</select></td>
-    ${ped ? `<td>${p ? `<span class="tg ${p.situacao === 'cancelado' ? 'neutro' : 'pc'}">${esc(p.numero)} · ${esc(p.situacao)}</span>` : '<span class="sub">aguardando comprador</span>'}</td>` : ''}
+    ${ped ? `<td>${p && p.situacao !== 'cancelado' ? `<span class="tg pc">${esc(p.numero)} · ${esc(p.situacao)}</span>` : emCotacao(x) ? `<span class="tg alerta">${esc(COTS[x.cotacao_id].numero)} · em cotação</span>` : '<span class="sub">aguardando comprador</span>'}</td>` : ''}
     <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 }
 function lerItens(m) {
@@ -116,30 +119,27 @@ function abrirFila(soDe) {
   const sols = (cfg._linhas || []).filter(r => r.situacao === 'aprovado' && (!soDe || soDe.includes(r.id)))
     .sort((a, b) => pesoUrg(urgDe(b)) - pesoUrg(urgDe(a)) || String(a.data_necessidade || '9').localeCompare(String(b.data_necessidade || '9')) || a.id - b.id);
   const ls = sols.flatMap(r => itensDe(r).filter(pendente).map(i => ({ i, r })));
-  const fornAtivos = FORN.filter(f => f.situacao === 'ativo');
-  const m = abrirModal(`<h2>Fila do comprador · gerar pedido de compra</h2>
-    <p class="sub" style="margin:0 0 6px">Itens de solicitações aprovadas que ainda não viraram pedido. Marque os que vão para o mesmo fornecedor (pode juntar várias solicitações) e gere o pedido em rascunho; depois é só conferir preço, condição e enviar para aprovação.</p>
+  const m = abrirModal(`<h2>Fila do comprador · gerar cotação</h2>
+    <p class="sub" style="margin:0 0 6px">Itens de solicitações aprovadas que ainda não foram cotados. Marque os itens (pode juntar várias solicitações) e gere a cotação: os fornecedores do cadastro de cada produto já entram sugeridos, com o último preço. Na cotação você compara, escolhe o vencedor de cada item e gera um pedido por fornecedor.</p>
     ${!ls.length ? '<p class="sub">Nada na fila. ✓</p>' : `
-    <div class="grade-campos"><div class="campo l2"><label>Fornecedor *</label><select id="fqForn"><option value="">— escolha —</option>${fornAtivos.map(f => `<option value="${f.id}">${esc(nomeComFantasia(f))}</option>`).join('')}</select></div>
-      <div class="campo"><label>Empresa do pedido *</label><select id="fqEmp" data-simples>${CTX.empresas.map(e => `<option value="${e.id}"${e.id === (sols.find(r => r.empresa_id)?.empresa_id || CTX.empresa || CTX.empresas[0]?.id) ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div></div>
+    <div class="grade-campos"><div class="campo"><label>Empresa (CNPJ dos pedidos)</label><select id="fqEmp" data-simples>${CTX.empresas.map(e => `<option value="${e.id}"${e.id === (sols.find(r => r.empresa_id)?.empresa_id || CTX.empresa || CTX.empresas[0]?.id) ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div></div>
     <div class="sub-ed" style="max-height:52vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="fqTodos" title="Marcar todos"></th><th>Item</th><th class="num">Qtd</th><th>Un</th><th>Urgência</th><th>Precisa até</th><th>Solicitante</th></tr></thead><tbody>
     ${sols.filter(r => itensDe(r).some(pendente)).map(r => `<tr class="fila-grupo"><td colspan="7"><b>${esc(r.numero)}</b> <span class="sub">· ${esc(r.justificativa || '')}</span></td></tr>
       ${itensDe(r).filter(pendente).map(i => `<tr><td><input type="checkbox" data-i="${i.id}"${soDe ? ' checked' : ''}></td><td>${esc((itemCat(i.servico_id ? 'servico' : 'produto', i.produto_id || i.servico_id)?.codigo || '') + ' ' + (i.descricao || ''))}${i.servico_id ? ' <span class="tg neutro">serviço</span>' : ''}${i.observacao ? `<div class="ro">${esc(i.observacao)}</div>` : ''}</td>
         <td class="num">${num(i.quantidade)}</td><td>${esc(i.unidade || '')}</td><td>${tgUrg(i.urgencia) || 'Normal'}</td><td>${r.data_necessidade ? dataCurta(r.data_necessidade) : ''}</td><td>${esc(usu(r.solicitante_id))}</td></tr>`).join('')}`).join('')}
     </tbody></table></div>`}
-    <div class="acoes"><button class="btn" id="fqN">Fechar</button>${ls.length ? '<button class="btn primario" id="fqS">Gerar pedido em rascunho</button>' : ''}</div>`);
+    <div class="acoes"><button class="btn" id="fqN">Fechar</button>${ls.length ? '<button class="btn primario" id="fqS">Gerar cotação</button>' : ''}</div>`);
   m.querySelector('.modal').style.maxWidth = '960px';
   m.querySelector('#fqN').onclick = () => m.remove();
   m.querySelector('#fqTodos')?.addEventListener('change', e => m.querySelectorAll('[data-i]').forEach(c => c.checked = e.target.checked));
   m.querySelector('#fqS')?.addEventListener('click', async () => {
-    const ids = [...m.querySelectorAll('[data-i]:checked')].map(c => Number(c.dataset.i)), forn = Number(m.querySelector('#fqForn').value) || null, emp = Number(m.querySelector('#fqEmp').value) || null;
+    const ids = [...m.querySelectorAll('[data-i]:checked')].map(c => Number(c.dataset.i)), emp = Number(m.querySelector('#fqEmp').value) || null;
     if (!ids.length) return aviso('Marque pelo menos um item', true);
-    if (!forn) return aviso('Escolha o fornecedor', true);
     m.querySelector('#fqS').disabled = true;
-    const { data, error } = await db.rpc('solicitacao_compra_gerar_pedido', { p_itens: ids, p_fornecedor: forn, p_empresa: emp });
+    const { data, error } = await db.rpc('cotacao_criar', { p_itens: ids, p_empresa: emp });
     if (error) { m.querySelector('#fqS').disabled = false; return aviso('Não gerou: ' + error.message, true); }
-    m.remove(); aviso('Pedido de compra gerado em rascunho · abrindo para conferir preços e enviar para aprovação');
-    window.top.postMessage({ nox: 'abrir', url: RAIZ + 'pages/compras/pedidos.html?abrir=' + data }, location.origin);
+    m.remove(); aviso('Cotação criada · abrindo para lançar os preços dos fornecedores');
+    window.top.postMessage({ nox: 'abrir', url: RAIZ + 'pages/compras/cotacoes.html?abrir=' + data }, location.origin);
     cfg.recarregar();
   });
 }
@@ -147,14 +147,15 @@ function abrirFila(soDe) {
 const cfg = {
   textoNovo: '+ Nova solicitação',
   tabela: 'solicitacoes_compra', modulo: 'solicitacoes_compra', titulo: 'Solicitações de compra', singular: 'solicitação', plural: 'solicitações',
-  subtitulo: 'Peça aqui o que precisa comprar: produto ou serviço do cadastro (digite para buscar), quantidade, urgência e para quê. A diretoria aprova e o comprador gera o pedido de compra.',
+  subtitulo: 'Peça aqui o que precisa comprar: produto ou serviço do cadastro (digite para buscar), quantidade, urgência e para quê. A diretoria aprova, o comprador cota com os fornecedores e gera os pedidos de compra.',
   dicaBusca: 'nº, item, justificativa, solicitante…', ordem: 'data_solicitacao', revisao: false, porEmpresa: false,
   abas: { campo: 'situacao', padrao: 'andamento', opcoes: [
     { v: 'andamento', n: 'Em andamento', teste: r => r.situacao === 'em_aprovacao' || r.situacao === 'recusado' || (r.situacao === 'aprovado' && itensDe(r).some(pendente)) },
     { v: 'minhas', n: 'Minhas', teste: r => minha(r) },
     { v: 'aprovacao', n: 'Aguardando aprovação', teste: r => r.situacao === 'em_aprovacao' },
     { v: 'fila', n: 'Fila do comprador', teste: r => r.situacao === 'aprovado' && itensDe(r).some(pendente) },
-    { v: 'pedido', n: 'Em pedido', teste: r => r.situacao === 'aprovado' && !itensDe(r).some(pendente) },
+    { v: 'cotacao', n: 'Em cotação', teste: r => r.situacao === 'aprovado' && itensDe(r).some(emCotacao) },
+    { v: 'pedido', n: 'Em pedido', teste: r => r.situacao === 'aprovado' && itensDe(r).some(i => !semPedido(i)) },
     { v: 'recusadas', n: 'Recusadas', teste: r => r.situacao === 'recusado' },
     { v: 'canceladas', n: 'Canceladas', teste: r => r.situacao === 'cancelado' },
     { v: '', n: 'Todas' }] },
@@ -175,13 +176,12 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     CTX = ctx; cfg._linhas = linhas;
-    const [it, cat, pe, us, ac, fo] = await Promise.all([
+    const [it, cat, pe, us, ac, co] = await Promise.all([
       buscarTodos(() => db.from('solicitacoes_compra_itens').select('*').order('id')),
-      db.rpc('sc_catalogo'), db.rpc('sc_pedidos'), db.rpc('usuarios_nomes'), db.rpc('minhas_acoes'),
-      ctx.pode('compras', 'criar') ? buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao').order('nome')) : []
+      db.rpc('sc_catalogo'), db.rpc('sc_pedidos'), db.rpc('usuarios_nomes'), db.rpc('minhas_acoes'), db.rpc('sc_cotacoes')
     ]);
     CAT = (cat.data || []).sort((a, b) => String(a.descricao).localeCompare(String(b.descricao), 'pt-BR'));
-    PEDS = Object.fromEntries((pe.data || []).map(p => [p.id, p])); USU = us.data || []; ACOES = new Set(ac.data || []); FORN = fo;
+    PEDS = Object.fromEntries((pe.data || []).map(p => [p.id, p])); USU = us.data || []; ACOES = new Set(ac.data || []); COTS = Object.fromEntries((co.data || []).map(c => [c.id, c]));
     const itens = {}; it.forEach(x => (itens[x.solicitacao_id] ||= []).push(x));
     ex = { itens };
     return ex;
@@ -208,14 +208,18 @@ const cfg = {
   secaoExtra: r => {
     const e = etapa(r), passo = (t, cls) => `<span class="${cls}">${t}</span>`;
     const fluxo = [passo('Solicitada', 'ok'), passo(r.situacao === 'recusado' ? 'Recusada' : 'Aprovação', r.situacao === 'em_aprovacao' ? 'agora' : r.situacao === 'recusado' ? 'erro' : r.situacao === 'aprovado' ? 'ok' : ''),
-      passo('Comprador', r.situacao === 'aprovado' ? (itensDe(r).some(pendente) ? 'agora' : 'ok') : ''), passo('Pedido de compra', r.situacao === 'aprovado' && itensDe(r).some(i => !pendente(i)) ? 'ok' : '')].join('<i>›</i>');
+      passo('Comprador', r.situacao === 'aprovado' ? (itensDe(r).some(pendente) ? 'agora' : 'ok') : ''),
+      passo('Cotação', r.situacao === 'aprovado' && itensDe(r).some(emCotacao) ? 'agora' : r.situacao === 'aprovado' && itensDe(r).some(i => !semPedido(i)) ? 'ok' : ''),
+      passo('Pedido de compra', r.situacao === 'aprovado' && itensDe(r).some(i => !semPedido(i)) ? 'ok' : '')].join('<i>›</i>');
     const peds = [...new Set(itensDe(r).filter(i => i.pedido_id).map(i => i.pedido_id))].map(id => PEDS[id]).filter(Boolean);
+    const cots = [...new Set(itensDe(r).filter(i => i.cotacao_id).map(i => i.cotacao_id))].map(id => COTS[id]).filter(Boolean);
     const bts = [
       r.situacao === 'em_aprovacao' && possoAprovar() && (!minha(r) || CTX.admin) ? '<button type="button" class="btn primario" data-sc="aprovar">Aprovar</button><button type="button" class="btn" data-sc="recusar">Recusar…</button>' : '',
-      r.situacao === 'aprovado' && souComprador() && itensDe(r).some(pendente) ? '<button type="button" class="btn primario" data-sc="pedido">Gerar pedido de compra</button>' : '',
-      r.situacao !== 'cancelado' && (minha(r) || CTX.pode('solicitacoes_compra', 'total')) && !itensDe(r).some(i => !pendente(i)) ? '<button type="button" class="btn discreto" data-sc="cancelar">Cancelar solicitação</button>' : ''].join('');
+      r.situacao === 'aprovado' && souComprador() && itensDe(r).some(pendente) ? '<button type="button" class="btn primario" data-sc="pedido">Gerar cotação</button>' : '',
+      r.situacao !== 'cancelado' && (minha(r) || CTX.pode('solicitacoes_compra', 'total')) && !itensDe(r).some(i => !semPedido(i) || emCotacao(i)) ? '<button type="button" class="btn discreto" data-sc="cancelar">Cancelar solicitação</button>' : ''].join('');
     return `<div class="secao">Andamento</div><div class="sc-fluxo">${fluxo}</div>
       <div class="sub">Pedida por <b>${esc(usu(r.solicitante_id))}</b>${r.decidido_em ? ` · ${r.situacao === 'recusado' ? 'recusada' : 'aprovada'} por <b>${esc(usu(r.decidido_por))}</b> em ${dataHoraBR(r.decidido_em)}` : ''} · <span class="tg ${e.cor}">${esc(e.n)}</span></div>
+      ${cots.length ? `<div style="margin-top:6px">Cotação(ões): ${cots.map(c => CTX.pode('cotacoes_compra') ? `<a href="${RAIZ}pages/compras/cotacoes.html?abrir=${c.id}" class="tg ${c.situacao === 'cancelada' ? 'neutro' : 'alerta'}">${esc(c.numero)} · ${esc(c.situacao)}</a>` : `<span class="tg neutro">${esc(c.numero)} · ${esc(c.situacao)}</span>`).join(' ')}</div>` : ''}
       ${peds.length ? `<div style="margin-top:6px">Pedido(s) gerado(s): ${peds.map(p => `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${p.id}" class="tg ${p.situacao === 'cancelado' ? 'neutro' : 'pc'}">${esc(p.numero)} · ${esc(p.fornecedor || '')} · ${esc(p.situacao)}</a>`).join(' ')}</div>` : ''}
       ${r.situacao === 'recusado' && minha(r) ? '<div class="aviso-box">Recusada: ajuste o que for preciso e salve para mandar de novo para aprovação.</div>' : ''}
       ${bts ? `<div class="acoes-pc" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${bts}</div>` : ''}`;
