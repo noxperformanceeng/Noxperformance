@@ -60,6 +60,9 @@ const tempoReal = (() => {
     rh_titulos: ['pagamentos', 'titulos_pagar'],
     sc_catalogo: ['produtos', 'servicos'],
     sc_pedidos: ['pedidos_compra', 'solicitacoes_compra', 'solicitacoes_compra_itens'],
+    sc_cotacoes: ['solicitacoes_compra_itens', 'cotacoes_compra'],
+    cotacao_analise: ['cotacoes_compra_precos', 'cotacoes_compra_fornecedores', 'cotacoes_compra_itens', 'pedidos_compra_recebimentos'],
+    menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra'],
     sugestao_compra: ['estoque_movimentos', 'fornecedores', 'pedidos_compra', 'pedidos_compra_itens', 'produto_fornecedores', 'produtos'],
     usuarios_nomes: []           // só nomes para exibir: não vale recarregar a tela por isso
   };
