@@ -6,7 +6,7 @@
 <title>Aprovações pendentes · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131646">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611131718">
 <style>
   .apv-topo { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 0 0 12px; }
   .apv-topo .campo { margin: 0; } .apv-topo label { font-size: 11px; color: var(--texto-suave); display: block; }
@@ -59,10 +59,11 @@
   <div id="lista"><div class="apv-vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131646"></script>
-<script src="../../assets/js/ui.js?v=202611131646"></script>
-<script src="../../assets/js/auth.js?v=202611131646"></script>
-<script src="../../assets/js/layout.js?v=202611131646"></script>
+<script src="../../assets/js/supabase.js?v=202611131718"></script>
+<script src="../../assets/js/ui.js?v=202611131718"></script>
+<script src="../../assets/js/auth.js?v=202611131718"></script>
+<script src="../../assets/js/layout.js?v=202611131718"></script>
+<script src="../../assets/js/comprovante.js?v=202611131718"></script>
 <script>
 /* Central de aprovações do master (e de quem tem algo a decidir):
    - Para decidir: agrupado por área (Compras, Financeiro, Cadastros, RH), com aprovação em lote ou individual.
@@ -123,7 +124,7 @@ function htmlGrupo(g) {
   return `<div class="apv-grupo ${g.aviso ? 'avs' : g.devolvido ? 'devolvido' : ''}" data-g="${g.tipo}"><header>
       ${decide ? `<input type="checkbox" data-todos="${g.tipo}" ${todos ? 'checked' : ''} title="Marcar todos">` : ''}
       <h3>${esc(g.titulo)} <span class="tg ${g.aviso ? 'alerta' : 'erro'}">${ls.length}</span></h3>${soma ? `<span class="soma">${reais(soma)}</span>` : ''}
-      ${g.ciente ? `<span class="bts"><button class="btn fino primario" data-lote="ciente" data-tipo="${g.tipo}">Ciente dos marcados</button></span>`
+      ${g.ciente ? `<span class="bts">${g.tipo === 'comprovante_divergente' && CTX?.admin ? '<button class="btn fino" id="btnReconf" title="Lê de novo os comprovantes com a leitura atual (datas com mês por extenso, nomes já confirmados). O que bater sai da lista.">Reconferir comprovantes</button>' : ''}<button class="btn fino primario" data-lote="ciente" data-tipo="${g.tipo}">Ciente dos marcados</button></span>`
         : decide ? `<span class="bts"><button class="btn fino primario" data-lote="aprovar" data-tipo="${g.tipo}">Aprovar marcados</button><button class="btn fino" data-lote="recusar" data-tipo="${g.tipo}">Recusar marcados…</button></span>` : ''}</header>
     <table class="apv-tab"><tbody>${ls.map(i => { const k = g.tipo + ':' + i.id; return `<tr class="${marcados.has(k) ? 'marcado' : ''}">
       ${decide ? `<td style="width:28px"><input type="checkbox" data-k="${k}" ${marcados.has(k) ? 'checked' : ''}></td>` : ''}
@@ -165,6 +166,7 @@ function ligar() {
     if (!ids.length) return aviso('Marque pelo menos um item deste grupo', true);
     b.dataset.lote === 'ciente' ? ciente(ids) : decidir(b.dataset.tipo, ids, b.dataset.lote === 'aprovar');
   });
+  document.getElementById('btnReconf')?.addEventListener('click', reconferir);
   L.querySelectorAll('[data-abrir]').forEach(b => b.onclick = () => window.top.postMessage({ nox: 'abrir', url: RAIZ + b.dataset.abrir }, location.origin));
   document.getElementById('btnExp')?.addEventListener('click', () => exportarExcel('pendencias', ['Situação', 'Área', 'Tipo', 'Descrição', 'Quem', 'Data', 'Valor'],
     linhasGerais().map(i => [i.sit, i.g.area || '', NOME_TIPO[i.g.tipo] || i.g.titulo, i.texto, i.quem || '', dia(i.data), i.valor ?? ''])));
@@ -176,6 +178,18 @@ async function ciente(ids) {
   const { data, error } = await db.rpc('comprovante_ciente', { p_ids: ids });
   if (error) return aviso('Não salvou: ' + error.message, true);
   aviso(`Ciente de ${data} comprovante(s) · registrado no histórico`); ids.forEach(id => marcados.delete('comprovante_divergente:' + id)); carregar();
+}
+// Reconferir: lê de novo cada comprovante pendente (no navegador, pode levar alguns minutos) e tira da lista o que bater
+async function reconferir() {
+  const g = GRUPOS.find(x => x.tipo === 'comprovante_divergente');
+  if (!confirm(`Ler de novo os ${g?.itens.length || 0} comprovante(s) divergente(s)? Pode levar alguns minutos; deixe esta aba aberta.`)) return;
+  const m = abrirModal(`<h2>Reconferindo comprovantes…</h2><p class="sub" id="rcSt">Preparando</p>`);
+  try {
+    const r = await reconferirPendentes((n, t) => { m.querySelector('#rcSt').textContent = `${n} de ${t} lido(s)`; });
+    m.remove();
+    aviso(`${r.total} reconferido(s): ${r.liberados} conferem agora e saíram da lista` + (r.falhas ? ` · ${r.falhas} não foi possível ler` : ''), !!r.falhas);
+  } catch (e) { m.remove(); aviso('Não reconferiu: ' + (e.message || e), true); }
+  carregar();
 }
 function decidir(tipo, ids, aprovar) {
   const g = GRUPOS.find(x => x.tipo === tipo), itens = g.itens.filter(i => ids.includes(i.id)), soma = itens.reduce((s, i) => s + Number(i.valor || 0), 0);
