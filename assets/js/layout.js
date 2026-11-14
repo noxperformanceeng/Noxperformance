@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611141134';
+const VERSAO_TELAS = '202611141142';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -229,9 +229,9 @@ async function iniciarTela() {
   desenharFaixa(ctx); marcarEmpresa(ctx);
   // Aprovações pendentes: contador no menu (na hora, pelo tempo real; a cada 2 min por garantia)
   const contarAprov = async () => {
-    const { data } = await db.rpc('minhas_aprovacoes');
+    const [{ data }, fora] = await Promise.all([db.rpc('minhas_aprovacoes'), db.rpc('estoque_fora_avisos')]);   // + produto em terceiro / quarentena
     const n = (data || []).filter(g => !g.aviso).reduce((t, g) => t + (g.itens || []).length, 0);   // decidir + devolvidos
-    const av = (data || []).filter(g => g.aviso).reduce((t, g) => t + (g.itens || []).length, 0);    // só aviso
+    const av = (data || []).filter(g => g.aviso).reduce((t, g) => t + (g.itens || []).length, 0) + (fora.data || []).length;    // só aviso
     const it = document.getElementById('itemAprov'), b = document.getElementById('nAprov'), d = document.getElementById('avAprov'); if (!it) return;
     it.hidden = !n && !av && !ctx.admin; b.textContent = n || ''; b.hidden = !n; b.classList.toggle('pisca', !!n);
     if (d) { d.hidden = !av; d.title = av + ' aviso(s) de pendência'; }

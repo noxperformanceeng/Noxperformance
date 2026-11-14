@@ -6,8 +6,8 @@
 <title>Posição de estoque · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611141134">
-<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611141134">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141142">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611141142">
 <style>
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .neg { color: #b42318; font-weight: 600; }
@@ -17,12 +17,16 @@
   .es-acoes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
   .es-form { background: var(--fundo, #f6f7f9); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
   tr.clic { cursor: pointer; }
+  .fora-est { margin-bottom: 10px; padding: 10px 12px; border-left: 4px solid #d97706; }
+  .fora-est h3 { font-size: 14px; margin: 0 0 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .fora-est table { width: 100%; font-size: 12.5px; }
+  .fora-est td.bts { white-space: nowrap; text-align: right; }
 </style>
 </head>
 <body data-modulo="estoque" data-titulo="Posição de estoque">
 <main id="conteudo">
   <div class="cab-tela"><div><h1>Posição de estoque</h1>
-    <p class="sub">Saldo de cada produto, onde fica guardado e tudo o que entrou e saiu. Clique no produto para ver o extrato e movimentar.</p></div></div>
+    <p class="sub">Saldo de cada produto, onde fica guardado e tudo o que entrou e saiu. <b>Físico</b> é o que está na prateleira; <b>reservado</b> é o que já foi vendido em pedidos ainda não expedidos; <b>disponível</b> = físico − reservado. Clique no produto para ver o extrato, os pedidos e movimentar.</p></div></div>
   <div class="barra-ferr">
     <div class="abas" id="abas"></div>
     <div class="ferr">
@@ -32,29 +36,30 @@
     </div>
   </div>
   <div class="cartao filtros painel-filtros" hidden>
-    <div><label>Saldo</label><select id="fSaldo"><option value="">Todos</option><option value="com">Com saldo</option><option value="zero">Zerado</option><option value="neg">Negativo</option><option value="min">Abaixo do mínimo</option></select></div>
+    <div><label>Saldo</label><select id="fSaldo"><option value="">Todos</option><option value="com">Com saldo</option><option value="zero">Zerado</option><option value="neg">Negativo</option><option value="min">Disponível abaixo do mínimo</option><option value="res">Reservado em pedidos</option><option value="falta">Vendido sem estoque</option></select></div>
     <div><label>Local</label><select id="fLocal"><option value="">Todos</option><option value="-">Sem local</option></select></div>
     <div><label>Grupo</label><select id="fGrupo"><option value="">Todos</option></select></div>
     <div><label>Contagem</label><select id="fCont"><option value="">Todos</option><option value="nunca">Nunca contado</option><option value="30">Contado há mais de 30 dias</option></select></div>
     <div class="limpar"><button class="btn discreto fino" type="button" id="btnLimpar">Limpar filtros</button></div>
   </div>
+  <div class="cartao fora-est" id="foraEst" hidden></div>
   <div class="barra-lista"><span id="contagem"></span><div class="lote" id="lote" hidden></div></div>
   <div class="cartao tabela-rolagem">
     <table>
       <thead><tr>
         <th style="width:28px" class="nao-imprimir"><input type="checkbox" id="selTodos" title="Selecionar todos os listados"></th>
-        <th>Código</th><th>Descrição</th><th>Local</th><th>Un</th><th class="num">Saldo</th><th class="num">Mínimo</th><th>Última contagem</th><th>Último movimento</th>
+        <th>Código</th><th>Descrição</th><th>Local</th><th>Un</th><th class="num">Físico</th><th class="num" title="Pedidos de venda confirmados ainda não expedidos">Reservado</th><th class="num" title="Físico menos reservado">Disponível</th><th class="num">Mínimo</th><th>Última contagem</th><th>Último movimento</th>
       </tr></thead>
-      <tbody id="lista"><tr><td colspan="9" class="vazio">Carregando…</td></tr></tbody>
+      <tbody id="lista"><tr><td colspan="11" class="vazio">Carregando…</td></tr></tbody>
     </table>
   </div>
   <p class="sub" id="rodape" style="margin-top:10px"></p>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611141134"></script>
-<script src="../../assets/js/ui.js?v=202611141134"></script>
-<script src="../../assets/js/auth.js?v=202611141134"></script>
-<script src="../../assets/js/layout.js?v=202611141134"></script>
+<script src="../../assets/js/supabase.js?v=202611141142"></script>
+<script src="../../assets/js/ui.js?v=202611141142"></script>
+<script src="../../assets/js/auth.js?v=202611141142"></script>
+<script src="../../assets/js/layout.js?v=202611141142"></script>
 <script>
 /* Saldo = soma dos movimentos (compras, produção, consumo, vendas, contagens, avulsos). Só produtos ativos que
    controlam estoque. Contagem e local também em lote na tela Inventário. */
@@ -65,7 +70,7 @@ const ORIG = [{ id: '', nome: 'Todos' }, { id: 'materia_prima', nome: 'Matéria-
   { id: 'insumo', nome: 'Insumo' }, { id: 'semiacabado', nome: 'Semiacabado' }, { id: 'acabado', nome: 'Produto pronto' }, { id: 'kit', nome: 'Kit' }, { id: 'ferramenta', nome: 'Ferramenta' }];
 const TIPOS_MOV = { entrada_compra: 'Compra', saida: 'Venda / expedição', ajuste: 'Avulso', inventario: 'Contagem', envio_terceiro: 'Envio a terceiro',
   retorno_terceiro: 'Retorno de terceiro', producao: 'Produção', consumo: 'Consumo na produção', perda: 'Perda' };
-let CTX = null, PRODUTOS = [], SALDOS = new Map(), LOCAIS = [], aba = '', selecionados = new Set();
+let CTX = null, PRODUTOS = [], SALDOS = new Map(), RESERVAS = new Map(), LOCAIS = [], aba = '', selecionados = new Set();
 
 async function carregar() {
   const [p, s, l] = await Promise.all([
@@ -74,17 +79,23 @@ async function carregar() {
   if (s.error) return aviso('Erro: ' + s.error.message, true);
   PRODUTOS = p || []; LOCAIS = l.data || [];
   SALDOS = new Map((s.data || []).map(x => [x.produto_id, x]));
+  const r = await db.rpc('estoque_disponivel');   // reservado pelos pedidos de venda
+  RESERVAS = new Map((r.data || []).filter(x => x.reservado > 0).map(x => [x.produto_id, x]));
   const lv = $('#fLocal').value, gv = $('#fGrupo').value;
   $('#fLocal').innerHTML = '<option value="">Todos</option><option value="-">Sem local</option>' + LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}">${esc(nomeLocal(x))}</option>`).join('');
   const grupos = [...new Set(PRODUTOS.map(x => x.grupo).filter(Boolean))].sort();
   $('#fGrupo').innerHTML = '<option value="">Todos</option>' + grupos.map(g => `<option>${esc(g)}</option>`).join('');
   $('#fLocal').value = lv; $('#fGrupo').value = gv;
+  await carregarFora();   // em terceiro / quarentena: não conta no disponível
   desenhar();
 }
 const local = id => LOCAIS.find(x => x.id === id);
 // Produto sem local mas com um local de mesmo código (costume da equipe): já vem escolhido no formulário
 const mesmoCodigo = p => p.codigo && LOCAIS.find(x => x.situacao === 'ativo' && (x.codigo || '').toUpperCase() === p.codigo.toUpperCase())?.id;
 const saldo = p => Number(SALDOS.get(p.id)?.saldo || 0);
+const reservado = p => Number(RESERVAS.get(p.id)?.reservado || 0);
+const fora = p => FORA.filter(f => f.produto_id === p.id).reduce((t, f) => t + Number(f.quantidade) - Number(f.quantidade_resolvida), 0);
+const disponivel = p => saldo(p) - reservado(p) - fora(p);
 
 function filtrados() {
   const b = $('#fBusca').value, fs = $('#fSaldo').value, fl = $('#fLocal').value, fg = $('#fGrupo').value, fc = $('#fCont').value;
@@ -95,7 +106,9 @@ function filtrados() {
     if (fs === 'com' && !(s > 0)) return false;
     if (fs === 'zero' && s !== 0) return false;
     if (fs === 'neg' && !(s < 0)) return false;
-    if (fs === 'min' && !(p.estoque_minimo > 0 && s < p.estoque_minimo)) return false;
+    if (fs === 'min' && !(p.estoque_minimo > 0 && disponivel(p) < p.estoque_minimo)) return false;
+    if (fs === 'res' && !(reservado(p) > 0)) return false;
+    if (fs === 'falta' && !(reservado(p) > 0 && disponivel(p) < 0)) return false;
     if (fl === '-' ? p.local_id : fl && String(p.local_id) !== fl) return false;
     if (fg && p.grupo !== fg) return false;
     if (fc === 'nunca' && info?.ultima_contagem) return false;
@@ -109,13 +122,14 @@ function desenhar() {
   $('#abas').querySelectorAll('[data-v]').forEach(b => b.onclick = () => { aba = b.dataset.v; selecionados.clear(); desenhar(); });
   contarFiltros(document);
   const ls = filtrados(), MAX = 600;
-  $('#contagem').textContent = `${ls.length} produto(s)` + (ls.length ? ` · ${ls.filter(p => saldo(p) > 0).length} com saldo` : '');
+  $('#contagem').textContent = `${ls.length} produto(s)` + (ls.length ? ` · ${ls.filter(p => saldo(p) > 0).length} com saldo` : '') + (ls.some(p => reservado(p) > 0) ? ` · ${ls.filter(p => reservado(p) > 0).length} com reserva` : '');
   $('#lista').innerHTML = ls.length ? ls.slice(0, MAX).map(p => { const s = saldo(p), i = SALDOS.get(p.id), l = local(p.local_id);
     return `<tr class="clic" data-id="${p.id}"><td class="nao-imprimir"><input type="checkbox" data-sel="${p.id}"${selecionados.has(p.id) ? ' checked' : ''}></td>
       <td><b>${esc(p.codigo || '—')}</b></td><td>${esc(p.descricao)}</td><td>${l ? esc(nomeLocal(l)) : '<span class="sub">—</span>'}</td><td>${esc(p.unidade || '')}</td>
-      <td class="num${s < 0 ? ' neg' : p.estoque_minimo > 0 && s < p.estoque_minimo ? ' baixo' : ''}">${qt(s)}</td>
+      <td class="num${s < 0 ? ' neg' : ''}">${qt(s)}</td><td class="num">${reservado(p) ? qt(reservado(p)) : ''}</td>
+      <td class="num${disponivel(p) < 0 ? ' neg' : p.estoque_minimo > 0 && disponivel(p) < p.estoque_minimo ? ' baixo' : ''}">${qt(disponivel(p))}</td>
       <td class="num">${p.estoque_minimo ? qt(p.estoque_minimo) : ''}</td><td>${dia(i?.ultima_contagem)}</td><td>${dia(i?.ultimo_mov)}</td></tr>`; }).join('')
-    : '<tr><td colspan="9" class="vazio">Nenhum produto com esses filtros.</td></tr>';
+    : '<tr><td colspan="11" class="vazio">Nenhum produto com esses filtros.</td></tr>';
   $('#rodape').textContent = ls.length > MAX ? `Mostrando os primeiros ${MAX}. Use a busca ou os filtros para achar os demais.` : '';
   $('#lista').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = e => { if (e.target.closest('input')) return; abrir(Number(tr.dataset.id)); });
   $('#lista').querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? selecionados.add(+c.dataset.sel) : selecionados.delete(+c.dataset.sel); lote(); });
@@ -137,7 +151,9 @@ async function abrir(id) {
   const podeMov = CTX.pode('estoque', 'criar') || CTX.pode('almoxarifado', 'criar'), podeCont = CTX.pode('inventario', 'criar') || CTX.pode('estoque', 'editar');
   const podeLocal = CTX.pode('estoque', 'alterar') || CTX.pode('almoxarifado', 'alterar') || CTX.pode('locais', 'alterar');
   const m = abrirModal(`<h2>${esc(p.codigo || '')} · ${esc(p.descricao)}</h2>
-    <div class="es-topo"><div><div class="sub">Saldo</div><div class="grande${saldo(p) < 0 ? ' neg' : ''}">${qt(saldo(p))} ${esc(p.unidade || '')}</div></div>
+    <div class="es-topo"><div><div class="sub">Físico</div><div class="grande${saldo(p) < 0 ? ' neg' : ''}">${qt(saldo(p))} ${esc(p.unidade || '')}</div></div>
+      <div><div class="sub">Reservado</div><div class="grande">${qt(reservado(p))}</div></div>
+      <div><div class="sub">Disponível</div><div class="grande${disponivel(p) < 0 ? ' neg' : ''}">${qt(disponivel(p))}</div></div>
       <div><div class="sub">Local</div><div>${local(p.local_id) ? esc(nomeLocal(local(p.local_id))) : '—'}</div></div>
       ${p.estoque_minimo ? `<div><div class="sub">Mínimo</div><div>${qt(p.estoque_minimo)}</div></div>` : ''}</div>
     <div class="es-acoes">
@@ -146,6 +162,7 @@ async function abrir(id) {
       ${podeLocal ? '<button class="btn fino" data-f="loc">Local</button>' : ''}
     </div>
     <div id="esForm"></div>
+    <div id="esRes"></div>
     <h3 style="font-size:14px;margin:6px 0 0">Extrato</h3>
     <div id="esExt" class="sub">Carregando…</div>
     <div class="fb-bts"><button class="btn" id="esFechar">Fechar</button></div>`);
@@ -195,6 +212,60 @@ async function abrir(id) {
     };
   });
   extrato();
+  if (reservado(p) > 0) db.rpc('estoque_reservas_produto', { p_produto: id }).then(({ data, error }) => {
+    if (error || !data?.length) return;
+    q('#esRes').innerHTML = `<h3 style="font-size:14px;margin:6px 0 0">Reservado para ${data.length} pedido(s) de venda</h3><table class="fb-tab"><thead><tr><th>Pedido</th><th>Data</th><th>Cliente</th><th>Canal</th><th class="num">Quantidade</th></tr></thead><tbody>
+      ${data.map(x => `<tr><td>${esc(x.pedido)}</td><td>${dia(x.data + 'T12:00')}</td><td>${esc(x.cliente || '')}</td><td>${esc(x.canal || '')}</td><td class="num">${qt(x.quantidade)} ${un}</td></tr>`).join('')}</tbody></table>`;
+  });
+}
+
+/* ---------- Fora do estoque: em poder de terceiro ou em quarentena (entrada da NF, SQL 119) ----------
+   Fica em aberto até o almoxarifado dar "Chegou" (guarda num local real) ou "Baixar" (devolvido, não veio, perda). */
+let FORA = [], foraAberto = new URLSearchParams(location.search).has('fora');
+async function carregarFora() {
+  const { data, error } = await db.from('estoque_fora_local').select('*, produtos(codigo, descricao, unidade), fornecedores(nome, nome_fantasia)')
+    .eq('situacao', 'aberto').order('criado_em');
+  FORA = error ? [] : data || []; desenharFora();
+}
+function desenharFora() {
+  const el = $('#foraEst'); el.hidden = !FORA.length; if (!FORA.length) return;
+  const pode = CTX.pode('estoque', 'criar') || CTX.pode('almoxarifado', 'criar'), nT = FORA.filter(f => f.tipo === 'terceiro').length;
+  el.innerHTML = `<h3>Fora do estoque <span class="tg alerta">${FORA.length}</span><span class="sub" style="font-weight:400">${nT} em poder de terceiro · ${FORA.length - nT} em quarentena / devolução · conta no saldo, não no disponível</span>
+      <button class="btn fino discreto" id="foraVer" style="margin-left:auto">${foraAberto ? 'Esconder' : 'Ver itens'}</button></h3>
+    ${foraAberto ? `<table class="fb-tab"><thead><tr><th>Situação</th><th>Produto</th><th class="num">Pendente</th><th>Com quem / motivo</th><th>Documento</th><th>Desde</th><th>Previsão</th><th></th></tr></thead><tbody>
+      ${FORA.map(f => `<tr><td><span class="tg ${f.tipo === 'terceiro' ? 'alerta' : 'erro'}">${f.tipo === 'terceiro' ? 'Em terceiro' : 'Quarentena'}</span></td>
+        <td><b>${esc(f.produtos?.codigo || '')}</b> ${esc(f.produtos?.descricao || '')}</td><td class="num">${qt(f.quantidade - f.quantidade_resolvida)} ${esc(f.unidade || '')}</td>
+        <td>${esc(f.tipo === 'terceiro' ? f.fornecedores?.nome_fantasia || f.fornecedores?.nome || '' : f.motivo || '')}</td><td>${esc(f.documento || '')}</td>
+        <td>${dia(f.criado_em)}</td><td>${f.previsao_retorno ? new Date(f.previsao_retorno + 'T12:00').toLocaleDateString('pt-BR') : ''}</td>
+        <td class="bts">${pode ? `<button class="btn fino primario" data-fg="${f.id}">Chegou / guardar</button> <button class="btn fino" data-fb="${f.id}">Baixar…</button>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}`;
+  $('#foraVer').onclick = () => { foraAberto = !foraAberto; desenharFora(); };
+  el.querySelectorAll('[data-fg],[data-fb]').forEach(b => b.onclick = () => resolverFora(FORA.find(f => f.id === Number(b.dataset.fg || b.dataset.fb)), b.dataset.fg ? 'guardar' : 'baixar'));
+}
+function resolverFora(f, acao) {
+  const pend = f.quantidade - f.quantidade_resolvida, un = esc(f.unidade || ''), prod = f.produtos || {};
+  const padrao = PRODUTOS.find(p => p.id === f.produto_id)?.local_id;
+  const m = abrirModal(`<h2>${acao === 'guardar' ? 'Chegou na NOX' : 'Baixar'} · ${esc(prod.codigo || '')} ${esc(prod.descricao || '')}</h2>
+    <p class="sub" style="margin:0 0 8px">${f.tipo === 'terceiro' ? 'Em poder de ' + esc(f.fornecedores?.nome_fantasia || f.fornecedores?.nome || '') : 'Quarentena: ' + esc(f.motivo || '')} · ${esc(f.documento || '')} · pendente ${qt(pend)} ${un}</p>
+    <div class="fb-campos c4"><div><label>Quantidade (${un})</label><input id="rfQ" inputmode="decimal" value="${qt(pend)}"></div>
+      ${acao === 'guardar' ? `<div class="l3"><label>Guardar em</label><select id="rfL"><option value="">— local —</option>${LOCAIS.filter(x => x.situacao === 'ativo' && !FORA.some(o => o.local_id === x.id))
+        .map(x => `<option value="${x.id}"${x.id === padrao ? ' selected' : ''}>${esc(nomeLocal(x) || x.codigo)}</option>`).join('')}</select></div>
+        <div class="l4"><label>Observação (opcional)</label><input id="rfO" placeholder="ex.: NF de retorno 456, conferido"></div>`
+      : `<div class="l3"><label>Motivo *</label><input id="rfO" placeholder="ex.: devolvido ao fornecedor com NF 789 · não veio · perda no terceiro"></div>`}</div>
+    <p class="sub" style="margin:6px 0 0">${acao === 'guardar' ? 'O saldo total não muda: o produto só troca de lugar e volta a ficar disponível.' : 'Sai do estoque (saldo diminui). A nota de devolução / crédito com o fornecedor é tratada no financeiro.'}</p>
+    <div class="fb-bts"><button class="btn" id="rfN">Voltar</button><button class="btn primario" id="rfS">${acao === 'guardar' ? 'Guardar' : 'Baixar'}</button></div>`);
+  const q = s => m.querySelector(s);
+  q('#rfN').onclick = () => m.remove();
+  q('#rfS').onclick = async () => {
+    const n = lerNumero(q('#rfQ').value), loc = q('#rfL') ? Number(q('#rfL').value) || null : null, o = q('#rfO').value.trim();
+    if (!(n > 0)) return aviso('Informe a quantidade', true);
+    if (acao === 'guardar' && !loc) return aviso('Escolha onde foi guardado', true);
+    if (acao === 'baixar' && !o) return aviso('Informe o motivo', true);
+    q('#rfS').disabled = true;
+    const { error } = await db.rpc('estoque_fora_resolver', { p_id: f.id, p_acao: acao, p_quantidade: n, p_local: loc, p_obs: o || null });
+    if (error) { q('#rfS').disabled = false; return aviso('Não salvou: ' + error.message, true); }
+    aviso(acao === 'guardar' ? 'Guardado · voltou ao estoque disponível' : 'Baixado'); m.remove(); carregar();
+    window.top.dispatchEvent(new Event('nox:aprovacoes'));
+  };
 }
 
 // Endereço novo digitado na Posição: grava em locais_estoque (o mesmo cadastro da tela Locais). Se o endereço já existe, reaproveita
@@ -216,9 +287,9 @@ async function novoLocal(q) {
   ligarBusca($('#fBusca'), desenhar);
   $('#selTodos').onchange = e => { filtrados().slice(0, 600).forEach(p => e.target.checked ? selecionados.add(p.id) : selecionados.delete(p.id)); desenhar(); };
   botoesRelatorio('rel', () => ({ arquivo: 'posicao_estoque', titulo: 'Posição de estoque',
-    colunas: ['Código', 'Descrição', 'Origem', 'Grupo', 'Local', 'Un', 'Saldo', 'Mínimo', 'Última contagem', 'Último movimento'],
+    colunas: ['Código', 'Descrição', 'Origem', 'Grupo', 'Local', 'Un', 'Físico', 'Reservado', 'Disponível', 'Mínimo', 'Última contagem', 'Último movimento'],
     linhas: filtrados().map(p => [p.codigo, p.descricao, ORIG.find(o => o.id === p.tipo)?.nome || p.tipo, p.grupo, nomeLocal(local(p.local_id)), p.unidade,
-      qt(saldo(p)), p.estoque_minimo ? qt(p.estoque_minimo) : '', dia(SALDOS.get(p.id)?.ultima_contagem), dia(SALDOS.get(p.id)?.ultimo_mov)]) }));
+      qt(saldo(p)), reservado(p) ? qt(reservado(p)) : '', qt(disponivel(p)), p.estoque_minimo ? qt(p.estoque_minimo) : '', dia(SALDOS.get(p.id)?.ultima_contagem), dia(SALDOS.get(p.id)?.ultimo_mov)]) }));
   window.addEventListener('aba-ativa', carregar);
   carregar();
 })();
