@@ -42,6 +42,8 @@ const tempoReal = (() => {
     desenhos_vigentes: ['produto_arquivos', 'produtos'],
     entregas_a_faturar: ['clientes', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens'],
     estoque_contagem: ['estoque_movimentos', 'produtos'],
+    estoque_disponivel: ['estoque_movimentos', 'pedidos_venda', 'pedidos_venda_itens', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'produtos'],
+    estoque_reservas_produto: ['clientes', 'canais_venda', 'pedidos_venda', 'pedidos_venda_itens', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'produtos'],
     estoque_extrato: ['estoque_movimentos'],
     estoque_saldo_item: ['estoque_movimentos'],
     estoque_saldos: ['estoque_movimentos'],
@@ -63,7 +65,7 @@ const tempoReal = (() => {
     sc_cotacoes: ['solicitacoes_compra_itens', 'cotacoes_compra'],
     cotacao_analise: ['cotacoes_compra_precos', 'cotacoes_compra_fornecedores', 'cotacoes_compra_itens', 'pedidos_compra_recebimentos'],
     menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra'],
-    sugestao_compra: ['estoque_movimentos', 'fornecedores', 'pedidos_compra', 'pedidos_compra_itens', 'produto_fornecedores', 'produtos'],
+    sugestao_compra: ['estoque_movimentos', 'fornecedores', 'pedidos_compra', 'pedidos_compra_itens', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens', 'produto_fornecedores', 'produtos'],
     usuarios_nomes: []           // só nomes para exibir: não vale recarregar a tela por isso
   };
   const lidas = new Set(), ouvintes = [];
