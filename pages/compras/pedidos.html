@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611132003">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141134">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,11 +49,11 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611132003"></script>
-<script src="../../assets/js/ui.js?v=202611132003"></script>
-<script src="../../assets/js/auth.js?v=202611132003"></script>
-<script src="../../assets/js/layout.js?v=202611132003"></script>
-<script src="../../assets/js/cadastro.js?v=202611132003"></script>
+<script src="../../assets/js/supabase.js?v=202611141134"></script>
+<script src="../../assets/js/ui.js?v=202611141134"></script>
+<script src="../../assets/js/auth.js?v=202611141134"></script>
+<script src="../../assets/js/layout.js?v=202611141134"></script>
+<script src="../../assets/js/cadastro.js?v=202611141134"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -829,14 +829,14 @@ function abrirSugestao() {
   const semInv = SUG.some(x => !x.inventariado);
   const grupos = {}; SUG.forEach(x => (grupos[x.fornecedor_id || 0] ||= []).push(x));
   const m = abrirModal(`<h2>Sugestão de compra</h2>
-    <p class="sub" style="margin:0 0 6px">Produtos com estoque abaixo do mínimo (cadastro do produto), já descontando o que está em pedido. Marque, ajuste a quantidade e gere os pedidos em rascunho — um por fornecedor.</p>
+    <p class="sub" style="margin:0 0 6px">Produtos com o <b>disponível</b> (físico menos o reservado em pedidos de venda) abaixo do mínimo do cadastro, já descontando o que está em pedido; produtos de revenda vendidos além do que tem também entram. Marque, ajuste a quantidade e gere os pedidos em rascunho — um por fornecedor.</p>
     ${semInv ? '<div class="aviso-box">Estoque ainda <b>não apurado</b> (sem inventário) em parte dos itens: a sugestão considera saldo zero. A compra continua livre para qualquer produto.</div>' : ''}
-    ${!SUG.length ? '<p class="sub">Nenhum produto abaixo do mínimo. Para entrar aqui, o produto precisa ter <b>estoque mínimo</b> no cadastro.</p>' : `
+    ${!SUG.length ? '<p class="sub">Nenhum produto abaixo do mínimo nem faltando para pedidos de venda. Para entrar aqui, o produto precisa ter <b>estoque mínimo</b> no cadastro.</p>' : `
     <div class="campo" style="max-width:280px"><label>Empresa dos pedidos</label><select id="sgEmp" data-simples>${EMPRESAS.map(e => `<option value="${e.id}"${e.id === (CTX.empresa || EMPRESAS[0]?.id) ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div>
-    <div class="sub-ed" style="max-height:52vh;overflow:auto"><table><thead><tr><th></th><th>Produto</th><th class="num">Saldo</th><th class="num">Mínimo</th><th class="num">Em pedido</th><th>Comprar</th><th>Último preço</th></tr></thead><tbody>
+    <div class="sub-ed" style="max-height:52vh;overflow:auto"><table><thead><tr><th></th><th>Produto</th><th class="num" title="Físico menos o reservado em pedidos de venda">Disponível</th><th class="num">Mínimo</th><th class="num">Em pedido</th><th>Comprar</th><th>Último preço</th></tr></thead><tbody>
     ${Object.entries(grupos).map(([fid, ls]) => `<tr><td colspan="7" style="padding-top:8px"><b>${esc(nomeComFantasia(forn(Number(fid))) || 'Sem fornecedor definido')}</b></td></tr>
       ${ls.map(x => `<tr data-p="${x.produto_id}" data-f="${fid}"><td><input type="checkbox" data-ok checked></td><td>${esc((x.codigo || '') + ' · ' + x.descricao)}${x.inventariado ? '' : ' <span class="tg alerta">não apurado</span>'}</td>
-        <td class="num">${num(x.saldo)} ${esc(x.unidade || '')}</td><td class="num">${num(x.minimo)}</td><td class="num">${num(x.em_pedido)}</td>
+        <td class="num"${Number(x.reservado) > 0 ? ` title="Físico ${num(x.fisico)} − reservado ${num(x.reservado)}"` : ''}>${num(x.saldo)} ${esc(x.unidade || '')}${Number(x.reservado) > 0 ? `<br><small class="sub">${num(x.reservado)} reservado</small>` : ''}</td><td class="num">${Number(x.minimo) ? num(x.minimo) : '—'}</td><td class="num">${num(x.em_pedido)}</td>
         <td style="width:120px"><input data-q inputmode="decimal" value="${num(x.sugerido_compra)}"> <small>${esc(x.unidade_compra || '')}</small></td>
         <td>${x.ultimo_preco ? `${reais(x.ultimo_preco)} <small class="sub">${esc(x.ultimo_pedido || '')} · ${dataCurta(x.ultima_compra)}</small>` : '<span class="sub">—</span>'}</td></tr>`).join('')}`).join('')}
     </tbody></table></div>`}
@@ -868,7 +868,7 @@ function desenharAlertas(linhas) {
   const ls = linhas.filter(r => (!emp || r.empresa_id === emp) && r.origem !== 'tiny');   // ordens do Tiny ficam fora dos alertas
   const a = [
     { aba: 'minha', n: ls.filter(possoAprovar).length, t: 'aguardando a sua aprovação', cls: 'erro' },
-    { acao: 'sugestao', n: SUG.length, t: 'produto(s) abaixo do estoque mínimo · sugestão de compra', cls: 'alerta' },
+    { acao: 'sugestao', n: SUG.length, t: 'produto(s) abaixo do mínimo ou faltando para vendas · sugestão de compra', cls: 'alerta' },
     ...(possoLiberar() ? [{ aba: 'liberar', n: ls.filter(r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length).length, t: 'com item sem cadastro para liberar', cls: 'erro' }] : []),
     { aba: 'recusados', n: ls.filter(r => r.situacao === 'recusado').length, t: 'recusado(s) para ajustar', cls: 'erro' },
     { aba: 'aprovacao', n: ls.filter(r => r.situacao === 'em_aprovacao').length, t: 'em aprovação', cls: 'alerta' },
@@ -962,6 +962,10 @@ const cfg = {
     CONJ = new Set(es.map(x => x.produto_id));
     FICHAS = Object.fromEntries(fi.map(x => [x.produto_id, x])); SERVS = sv;
     SUG = ctx.pode('compras', 'criar') ? ((await db.rpc('sugestao_compra')).data || []) : [];
+    if (SUG.length) {   // físico e reservado em pedidos de venda (a sugestão já usa o disponível)
+      const d = new Map(((await db.rpc('estoque_disponivel', { p_produtos: SUG.map(x => x.produto_id) })).data || []).map(x => [x.produto_id, x]));
+      SUG.forEach(x => { x.fisico = d.get(x.produto_id)?.fisico ?? x.saldo; x.reservado = d.get(x.produto_id)?.reservado || 0; });
+    }
     FORN = f; PRODS = p.filter(x => !['acabado', 'kit'].includes(x.tipo) || true); PAIS = c.filter(x => !x.aceita_lancamento); CATS = c.filter(x => x.aceita_lancamento).map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONDS = co; FORMAS = fo;
     CONTAS = cb.filter(x => x.tipo !== 'historico'); ALC = al; PF = pf; EMPRESAS = em.data || []; USU = (us.data || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); ACOES = new Set(ac.data || []);
     const itens = {}, eventos = {}, recebimentos = {}, titulos = {};

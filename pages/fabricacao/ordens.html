@@ -6,8 +6,8 @@
 <title>Ordens de produção · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611132003">
-<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611132003">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141134">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611141134">
 </head>
 <body data-modulo="ordens" data-titulo="Ordens de produção">
 <main id="conteudo">
@@ -15,14 +15,15 @@
     <p class="sub">Toda produção da NOX começa aqui. A OP diz o que fazer, quanto e para quê, e mostra o material necessário.</p></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="busca" class="busca" type="search" placeholder="Buscar: OP, código, descrição…" data-livre>
       <button class="btn" id="btnAtualizar">Atualizar</button><button class="btn primario" id="btnNova" hidden>+ Nova OP</button></div></div>
+  <div id="faltaVenda"></div>
   <div class="fb-abas" id="abas"></div>
   <div id="lista"><div class="fb-vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611132003"></script>
-<script src="../../assets/js/ui.js?v=202611132003"></script>
-<script src="../../assets/js/auth.js?v=202611132003"></script>
-<script src="../../assets/js/layout.js?v=202611132003"></script>
+<script src="../../assets/js/supabase.js?v=202611141134"></script>
+<script src="../../assets/js/ui.js?v=202611141134"></script>
+<script src="../../assets/js/auth.js?v=202611141134"></script>
+<script src="../../assets/js/layout.js?v=202611141134"></script>
 <script>
 /* OP: aberta → em produção (1º apontamento) → concluída (quantidade atingida ou encerrada com menos) | cancelada
    (só sem apontamento). Material = cópia da ficha técnica no momento da abertura. */
@@ -34,14 +35,35 @@ const nomeP = p => `${p.codigo || 'SEM CÓDIGO'} · ${p.descricao}`;
 const MOTIVOS = { reposicao: 'Repor estoque', pedido: 'Pedido de venda', kit: 'Montagem de kit', outro: 'Outro' };
 const SIT = { aberta: ['Aberta', 'info'], em_producao: ['Em produção', 'alerta'], concluida: ['Concluída', 'ok'], cancelada: ['Cancelada', 'neutro'] };
 const ABAS = [{ v: 'abertas', n: 'Em aberto' }, { v: 'concluida', n: 'Concluídas (90 dias)' }, { v: 'cancelada', n: 'Canceladas (90 dias)' }];
-let CTX = null, ABERTAS = [], ANTIGAS = null, aba = 'abertas', PRODUTOS = null;
+let CTX = null, ABERTAS = [], ANTIGAS = null, aba = 'abertas', PRODUTOS = null, DISP = new Map();
 
 async function carregar() {
   const { data, error } = await db.rpc('producao_ordens_lista', { p_abertas: true });
   if (error) { $('#lista').innerHTML = `<div class="fb-vazio">Erro: ${esc(error.message)}</div>`; return; }
   ABERTAS = data || [];
   if (aba !== 'abertas' || ANTIGAS) await carregarAntigas();
-  desenhar();
+  desenhar(); faltaVenda();
+}
+
+/* Vendido além do disponível (físico − reservado em pedidos de venda), descontando o que já está em OP aberta */
+async function faltaVenda() {
+  const { data, error } = await db.rpc('estoque_disponivel');
+  if (error) { $('#faltaVenda').innerHTML = ''; return; }
+  DISP = new Map((data || []).map(x => [x.produto_id, x]));
+  const emOP = {}; ABERTAS.forEach(o => emOP[o.produto_id] = (emOP[o.produto_id] || 0) + Math.max(o.quantidade - o.produzido, 0));
+  const ls = (data || []).filter(x => x.reservado > 0 && x.disponivel + (emOP[x.produto_id] || 0) < 0);
+  if (!ls.length) { $('#faltaVenda').innerHTML = ''; return; }
+  const { data: ps } = await db.from('produtos').select('id, codigo, descricao, unidade, tipo').in('id', ls.map(x => x.produto_id));
+  const pr = new Map((ps || []).map(x => [x.id, x])), fab = ls.filter(x => ['acabado', 'semiacabado', 'kit'].includes(pr.get(x.produto_id)?.tipo));
+  $('#faltaVenda').innerHTML = !fab.length ? '' : `<details class="op-card"><summary><b>Vendido sem estoque: ${fab.length} produto(s)</b>
+    <span class="sub">· reservado em pedidos de venda além do disponível, já descontando as OPs abertas</span></summary>
+    <table class="fb-tab"><thead><tr><th>Produto</th><th class="num">Físico</th><th class="num">Reservado</th><th class="num">Em OP</th><th class="num">Falta produzir</th><th></th></tr></thead><tbody>
+    ${fab.sort((a, b) => a.disponivel - b.disponivel).map(x => { const p = pr.get(x.produto_id), f = -(x.disponivel + (emOP[x.produto_id] || 0));
+      return `<tr><td>${esc(nomeP(p))}</td><td class="num">${qt(x.fisico)}</td><td class="num">${qt(x.reservado)} <small class="sub">(${x.pedidos} ped.)</small></td>
+        <td class="num">${qt(emOP[x.produto_id] || 0)}</td><td class="num op-falta">${qt(f)} ${esc(p.unidade || '')}</td>
+        <td>${CTX.pode('ordens', 'criar') ? `<button class="btn fino" data-nova="${p.id}" data-q="${f}">Abrir OP</button>` : ''}</td></tr>`; }).join('')}
+    </tbody></table></details>`;
+  $('#faltaVenda').querySelectorAll('[data-nova]').forEach(b => b.onclick = () => novaOP(Number(b.dataset.nova), Number(b.dataset.q)));
 }
 async function carregarAntigas() {
   const { data, error } = await db.rpc('producao_ordens_lista', { p_abertas: false, p_dias: 90 });
@@ -106,7 +128,7 @@ async function acao(id, ac) {
   aviso({ encerrar: 'OP encerrada', cancelar: 'OP cancelada', reabrir: 'OP reaberta' }[ac]); ANTIGAS = null; carregar();
 }
 
-async function novaOP() {
+async function novaOP(pre, preQtd) {
   if (!PRODUTOS) {
     const [p, e] = await Promise.all([
       buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade').eq('situacao', 'ativo').order('codigo')),
@@ -117,6 +139,7 @@ async function novaOP() {
     <p class="sub">Só aparecem produtos com ficha técnica (componentes do conjunto). Falta algum? Cadastre os componentes no produto.</p>
     <div class="fb-campos c4">
       <div class="l3"><label for="nProd">Produto a produzir</label><select id="nProd"><option value="">— escolher —</option>${PRODUTOS.map(x => `<option value="${x.id}">${esc(nomeP(x))}</option>`).join('')}</select></div>
+      <div class="l3" id="nEst" style="grid-column:1/-1"></div>
       <div><label for="nQtd">Quantidade</label><input id="nQtd" inputmode="decimal" placeholder="0"></div>
       <div><label for="nMot">Motivo</label><select id="nMot" data-simples>${Object.entries(MOTIVOS).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></div>
       <div class="l2"><label for="nDet">Detalhe do motivo <span id="nDetObr" class="sub"></span></label><input id="nDet" placeholder="ex.: pedido 1234, kit intake Golf"></div>
@@ -137,7 +160,9 @@ async function novaOP() {
   const motivo = () => { q('#nDetObr').textContent = q('#nMot').value === 'reposicao' ? '(opcional)' : '(obrigatório)'; };
   motivo(); q('#nMot').onchange = motivo;
   q('#nProd').onchange = async () => {
-    prep = null; mat(); const id = Number(q('#nProd').value); if (!id) return;
+    prep = null; mat(); const id = Number(q('#nProd').value); q('#nEst').innerHTML = ''; if (!id) return;
+    const d = DISP.get(id);
+    if (d) q('#nEst').innerHTML = `<span class="sub">Estoque deste produto: físico <b>${qt(d.fisico)}</b> · reservado em pedidos de venda <b>${qt(d.reservado)}</b> · disponível <b class="${d.disponivel < 0 ? 'op-falta' : ''}">${qt(d.disponivel)}</b></span>`;
     const { data, error } = await db.rpc('producao_preparar', { p_produto: id });
     if (error) return aviso('Não carregou a ficha: ' + error.message, true); prep = data; mat();
   };
@@ -155,12 +180,16 @@ async function novaOP() {
     m.remove(); aviso('OP aberta'); aba = 'abertas'; await carregar();
     const o = ABERTAS.find(x => x.id === data); if (o && confirm(`${o.numero} aberta. Imprimir a OP com a lista de material?`)) imprimir(o.id);
   };
+  if (pre && PRODUTOS.some(x => x.id === pre)) {
+    q('#nProd').value = pre; if (preQtd > 0) q('#nQtd').value = qt(preQtd);
+    q('#nMot').value = 'pedido'; motivo(); q('#nDet').value = 'PEDIDOS DE VENDA SEM ESTOQUE'; q('#nProd').onchange();
+  } else if (pre) aviso('Este produto não tem ficha técnica: cadastre os componentes para abrir OP', true);
   q('#nProd').focus();
 }
 
 (async () => {
   CTX = await iniciarTela(); if (!CTX) return;
-  if (CTX.pode('ordens', 'criar')) { $('#btnNova').hidden = false; $('#btnNova').onclick = novaOP; }
+  if (CTX.pode('ordens', 'criar')) { $('#btnNova').hidden = false; $('#btnNova').onclick = () => novaOP(); }
   $('#btnAtualizar').onclick = () => { ANTIGAS = null; carregar(); };
   ligarBusca($('#busca'), desenhar);
   window.addEventListener('aba-ativa', carregar);
