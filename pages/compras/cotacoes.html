@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cotações de fornecedores · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141134">
+<style>
+  .mapa { overflow: auto; max-height: 64vh; border: 1px solid var(--linha); border-radius: 10px; }
+  .mapa table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 100%; }
+  .mapa th, .mapa td { padding: 5px 6px; border-bottom: 1px solid var(--linha); border-right: 1px solid var(--linha); vertical-align: top; background: var(--superficie); }
+  .mapa thead th { position: sticky; top: 0; z-index: 2; background: var(--fundo); font-weight: 500; text-align: left; }
+  .mapa .fixa { position: sticky; left: 0; z-index: 1; min-width: 230px; max-width: 300px; }
+  .mapa thead .fixa { z-index: 3; }
+  .mapa input, .mapa select { padding: 4px 6px; font-size: 12.5px; width: 100%; min-width: 0; }
+  .mapa .forn { min-width: 190px; }
+  .mapa .forn .cfg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-top: 4px; }
+  .mapa .forn .cfg label { font-size: 10.5px; color: var(--texto-suave); display: block; }
+  .mapa .forn .cfg .l2 { grid-column: span 2; }
+  .mapa td.cel { text-align: right; }
+  .mapa td.cel .lin { display: flex; gap: 4px; align-items: center; }
+  .mapa td.cel.indicado { background: #f0faf3; }
+  .mapa td.cel.vencedor { box-shadow: inset 0 0 0 2px var(--ok); }
+  .mapa .nota { font-size: 11px; color: var(--texto-suave); text-align: left; margin-top: 2px; }
+  .mapa .nota b { color: var(--texto); }
+  .mapa .rm { background: none; border: 0; color: var(--erro); cursor: pointer; font-size: 15px; padding: 0 2px; }
+  .mapa tfoot td { background: var(--fundo); font-weight: 600; }
+  .mapa .venc { min-width: 200px; }
+  .cot-acoes { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; align-items: center; }
+  .cot-leg { font-size: 12px; color: var(--texto-suave); margin: 4px 0 8px; }
+  .tg.pc { background: #f3effe; color: #6d28d9; }
+  .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
+</style>
+</head>
+<body data-modulo="cotacoes_compra" data-titulo="Cotações de fornecedores">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611141134"></script>
+<script src="../../assets/js/ui.js?v=202611141134"></script>
+<script src="../../assets/js/auth.js?v=202611141134"></script>
+<script src="../../assets/js/layout.js?v=202611141134"></script>
+<script src="../../assets/js/cadastro.js?v=202611141134"></script>
+<script>
+/* =====================================================================
+   Cotações de fornecedores (entre a solicitação aprovada e o pedido de compra)
+   Fila do comprador (Solicitações) → Cotação: itens × fornecedores (os do cadastro do produto já sugeridos)
+   → preços, condição, forma, prazo, frete → análise automática indica o mais vantajoso de cada item
+   → comprador escolhe (justifica se não for o indicado) → um pedido de compra em rascunho por fornecedor vencedor.
+   ===================================================================== */
+const SIT = [{ v: 'aberta', n: 'Aberta', cor: 'alerta' }, { v: 'concluida', n: 'Concluída · pedidos gerados', cor: 'ok' }, { v: 'cancelada', n: 'Cancelada', cor: 'neutro' }];
+const reais = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 4 });
+const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
+let CTX = null, FORN = [], CONDS = [], FORMAS = [], PRODS = {}, USU = [], ex = {}, ANALISE = [];
+const forn = id => FORN.find(f => f.id === id);
+const usu = id => USU.find(u => u.id === id)?.nome || '';
+const nomeF = id => nomeComFantasia(forn(id)) || '#' + id;
+const opts = (l, sel, vazio = '—') => `<option value="">${vazio}</option>` + l.map(x => `<option value="${x.id}"${x.id === sel ? ' selected' : ''}>${esc(x.nome)}</option>`).join('');
+const itensDe = r => ex.itens?.[r.id] || [];
+const fornsDe = r => ex.forns?.[r.id] || [];
+const preco = (cfId, itId) => ex.precos?.[cfId + ':' + itId];
+const editavel = r => r.situacao === 'aberta' && CTX.pode('cotacoes_compra', 'alterar');
+
+/* ---------- Mapa de cotação: linhas = itens, colunas = fornecedores ---------- */
+function colForn(f, ed) {
+  const dis = ed ? '' : ' disabled';
+  return `<th class="forn" data-cf="${f.id || ''}">
+    <div style="display:flex;gap:4px;align-items:center"><select data-k="fornecedor_id"${dis}>${opts(FORN.filter(x => x.situacao === 'ativo' || x.id === f.fornecedor_id).map(x => ({ id: x.id, nome: nomeComFantasia(x) })), f.fornecedor_id, '— fornecedor —')}</select>
+      ${ed ? '<button type="button" class="rm" data-rmf title="Tirar este fornecedor da cotação">×</button>' : ''}</div>
+    <div class="cfg">
+      <div class="l2"><label>Condição de pagamento</label><select data-k="condicao_pagamento_id" data-simples${dis}>${opts(CONDS, f.condicao_pagamento_id)}</select></div>
+      <div class="l2"><label>Forma</label><select data-k="forma_pagamento_id" data-simples${dis}>${opts(FORMAS, f.forma_pagamento_id)}</select></div>
+      <div><label>Entrega (dias)</label><input data-k="prazo_entrega_dias" inputmode="numeric" value="${f.prazo_entrega_dias ?? ''}"${dis}></div>
+      <div><label>Frete (R$)</label><input data-k="frete" inputmode="decimal" value="${f.frete ? num(f.frete) : ''}"${dis}></div>
+      <div><label>Validade</label><input data-k="validade" type="date" value="${f.validade || ''}"${dis}></div>
+      <div><label>Contato</label><input data-k="contato" value="${esc(f.contato || '')}"${dis}></div>
+    </div>
+    ${f.pedido_id ? `<div style="margin-top:4px"><a class="tg pc" href="${RAIZ}pages/compras/pedidos.html?abrir=${f.pedido_id}">pedido gerado ›</a></div>` : ''}
+    ${f.fornecedor_id ? `<button type="button" class="btn fino discreto" data-copiar style="margin-top:4px" title="Copia a lista de itens para mandar ao fornecedor por WhatsApp ou e-mail">Copiar pedido de cotação</button>` : ''}</th>`;
+}
+function celula(f, it, ed) {
+  const p = f.id ? preco(f.id, it.id) : null, a = ANALISE.find(x => x.cotacao_forn_id === f.id && x.item_id === it.id);
+  return `<td class="cel${a?.recomendado ? ' indicado' : ''}${it.vencedor_id && it.vencedor_id === f.id ? ' vencedor' : ''}" data-it="${it.id}">
+    <div class="lin"><input data-k="valor_unitario" inputmode="decimal" placeholder="unitário" value="${p ? num(p.valor_unitario) : ''}"${p?.sugerido ? ' data-sug="1" title="Último preço do cadastro: confirme com o fornecedor (ao digitar, passa a valer como cotado)" style="font-style:italic;color:var(--texto-suave)"' : ''}${ed ? '' : ' disabled'}>
+      <input data-k="ipi_pct" inputmode="decimal" placeholder="IPI%" title="IPI (%)" value="${p?.ipi_pct ? num(p.ipi_pct) : ''}" style="width:52px"${ed ? '' : ' disabled'}></div>
+    ${p?.sugerido ? '<div class="nota" style="color:#b45309">último preço do cadastro · confirme</div>' : ''}
+    ${a ? `<div class="nota" title="Preço ${num(a.n_preco)} · pagamento ${num(a.n_pagamento)} (${num(a.dias_pagamento)} dias) · entrega ${num(a.n_entrega)} · histórico ${num(a.n_historico)} (${a.no_prazo}/${a.compras_recebidas} no prazo)">nota <b>${num(a.nota)}</b>${a.recomendado ? ' · <b style="color:var(--ok)">indicado</b>' : ''} · ef. ${reais(a.preco_efetivo)}</div>` : ''}</td>`;
+}
+function linhaItem(r, it, ed) {
+  const fs = fornsDe(r), ind = ANALISE.find(x => x.item_id === it.id && x.recomendado);
+  const comPreco = fs.filter(f => preco(f.id, it.id));
+  return `<tr data-item="${it.id}"><td class="fixa"><b>${esc((PRODS[it.produto_id]?.codigo ? PRODS[it.produto_id].codigo + ' · ' : '') + (it.descricao || ''))}</b>
+      <div class="sub">${num(it.quantidade)} ${esc(it.unidade || '')}${it._sc ? ' · ' + esc(it._sc) : ''}${it._urg && it._urg !== 'normal' ? ` · <span class="tg ${it._urg === 'urgente' ? 'erro' : 'alerta'}">${esc(it._urg)}</span>` : ''}</div>
+      ${ed ? '<button type="button" class="rm" data-rmi title="Tirar o item desta cotação (volta para a fila do comprador)">× tirar</button>' : ''}</td>
+    ${fs.map(f => celula(f, it, ed)).join('')}${ed ? '<td></td>' : ''}
+    <td class="venc"><select data-k="vencedor" data-simples${ed ? '' : ' disabled'}><option value="">— vencedor —</option>${comPreco.map(f => `<option value="${f.fornecedor_id}"${it.vencedor_id === f.id ? ' selected' : ''}>${esc(nomeF(f.fornecedor_id))}${ind?.cotacao_forn_id === f.id ? ' (indicado)' : ''}</option>`).join('')}</select>
+      <input data-k="motivo_escolha" placeholder="Justificativa (escolha diferente da indicada)" value="${esc(it.motivo_escolha || '')}" style="margin-top:3px${it.vencedor_id && ind && it.vencedor_id !== ind.cotacao_forn_id ? '' : ';display:none'}"${ed ? '' : ' disabled'}></td></tr>`;
+}
+function htmlMapa(r) {
+  const ed = editavel(r), fs = fornsDe(r), its = itensDe(r);
+  const tot = f => its.reduce((s, it) => { const p = preco(f.id, it.id); return s + (p ? Number(p.valor_unitario) * (1 + Number(p.ipi_pct || 0) / 100) * Number(it.quantidade) : 0); }, 0) + Number(f.frete || 0);
+  return `<div class="secao">Mapa da cotação</div>
+    <div class="cot-leg">Lance o preço de cada fornecedor (unitário e IPI). A <b>nota</b> pesa preço com IPI e frete rateado (50%), prazo de pagamento (20%), prazo de entrega (15%) e histórico de entregas no prazo com o fornecedor (15%). Fundo verde = indicado; contorno = vencedor escolhido. Preço em itálico = último preço do cadastro, ainda não confirmado (digite para confirmar). No pedido, o frete vai proporcional aos itens que o fornecedor venceu.</div>
+    <div class="mapa"><table><thead><tr><th class="fixa">Item</th>${fs.map(f => colForn(f, ed)).join('')}${ed ? '<th style="min-width:120px"><button type="button" class="btn fino" id="addForn">+ Fornecedor</button></th>' : ''}<th class="venc">Vencedor</th></tr></thead>
+      <tbody>${its.map(it => linhaItem(r, it, ed)).join('')}</tbody>
+      <tfoot><tr><td class="fixa">Total com IPI e frete</td>${fs.map(f => `<td class="cel">${reais(tot(f))}</td>`).join('')}${ed ? '<td></td>' : ''}<td></td></tr></tfoot></table></div>
+    ${ed ? `<div class="cot-acoes"><button type="button" class="btn" id="cotSalvarAn">Salvar e recalcular análise</button><button type="button" class="btn" id="cotIndicados">Escolher os indicados</button>
+      <button type="button" class="btn primario" id="cotGerar">Gerar pedidos de compra</button><span style="flex:1"></span><button type="button" class="btn discreto" id="cotCancelar">Cancelar cotação</button></div>` : ''}
+    ${r.situacao === 'concluida' ? `<div class="aviso-box" style="background:#e8f5ec;color:var(--ok)">Pedidos gerados: ${fornsDe(r).filter(f => f.pedido_id).map(f => `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${f.pedido_id}">${esc(nomeF(f.fornecedor_id))}</a>`).join(' · ')}</div>` : ''}`;
+}
+
+/* ---------- Ler o mapa da tela ---------- */
+function lerMapa(m) {
+  const cols = [...m.querySelectorAll('.mapa thead th.forn')];
+  const forns = cols.map((th, ci) => {
+    const g = k => th.querySelector(`[data-k=${k}]`)?.value || null;
+    const precos = [...m.querySelectorAll('.mapa tbody tr[data-item]')].map(tr => { const td = tr.querySelectorAll('td.cel')[ci];
+      const vu = td.querySelector('[data-k=valor_unitario]');
+      return { item_id: Number(tr.dataset.item), valor_unitario: lerNumero(vu.value), ipi_pct: lerNumero(td.querySelector('[data-k=ipi_pct]').value), sugerido: !!vu.dataset.sug }; })
+      .filter(p => p.valor_unitario > 0);
+    return { fornecedor_id: Number(g('fornecedor_id')) || null, condicao_pagamento_id: Number(g('condicao_pagamento_id')) || null, forma_pagamento_id: Number(g('forma_pagamento_id')) || null,
+      prazo_entrega_dias: g('prazo_entrega_dias') ? parseInt(g('prazo_entrega_dias')) : null, frete: lerNumero(g('frete')) || 0, validade: g('validade'), contato: g('contato'), precos };
+  }).filter(f => f.fornecedor_id);
+  const itens = [...m.querySelectorAll('.mapa tbody tr[data-item]')].map(tr => ({ id: Number(tr.dataset.item),
+    vencedor_fornecedor_id: Number(tr.querySelector('[data-k=vencedor]').value) || null, motivo_escolha: tr.querySelector('[data-k=motivo_escolha]').value.trim() || null }));
+  return { forns, itens };
+}
+const lerCab = m => ({ empresa_id: Number(m.querySelector('#f_empresa_id')?.value) || null, data_limite: m.querySelector('#f_data_limite')?.value || null, observacoes: m.querySelector('#f_observacoes')?.value || null });
+async function gravar(r, m) {
+  const { forns, itens } = lerMapa(m);
+  if (new Set(forns.map(f => f.fornecedor_id)).size !== forns.length) throw new Error('O mesmo fornecedor está em duas colunas');
+  const { error } = await db.rpc('cotacao_salvar', { p_id: r.id, p_cab: lerCab(m), p_forn: forns, p_itens: itens });
+  if (error) throw error;
+}
+// depois de salvar: recarrega e abre de novo a mesma cotação (para refazer o mapa e a análise)
+async function reabrir(r) { document.querySelector('.modal-fundo')?.remove(); await cfg.recarregar(); document.querySelector(`#cLista tr[data-id="${r.id}"]`)?.click(); }
+
+// texto para mandar ao fornecedor (WhatsApp/e-mail)
+function textoCotacao(r, fornId) {
+  return `Olá! Pedido de cotação ${r.numero} da NOX. Por favor, informe preço unitário, IPI, condição de pagamento, prazo de entrega e frete:\n\n`
+    + itensDe(r).map((it, i) => `${i + 1}. ${PRODS[it.produto_id]?.codigo ? PRODS[it.produto_id].codigo + ' · ' : ''}${it.descricao} — ${num(it.quantidade)} ${it.unidade || ''}`).join('\n')
+    + (r.data_limite ? `\n\nResposta até ${dataCurta(r.data_limite)}.` : '') + '\n\nObrigado!';
+}
+
+const cfg = {
+  textoNovo: '+ Nova cotação',
+  tabela: 'cotacoes_compra', modulo: 'cotacoes_compra', titulo: 'Cotações de fornecedores', singular: 'cotação', plural: 'cotações',
+  subtitulo: 'Compare os fornecedores de cada item das solicitações aprovadas. A análise indica o mais vantajoso; você escolhe e gera um pedido de compra por fornecedor.',
+  dicaBusca: 'nº, item, fornecedor, solicitação…', ordem: 'data_cotacao', revisao: false,
+  abas: { campo: 'situacao', padrao: 'aberta', opcoes: [{ v: 'aberta', n: 'Abertas', teste: r => r.situacao === 'aberta' },
+    { v: 'concluida', n: 'Concluídas', teste: r => r.situacao === 'concluida' }, { v: 'cancelada', n: 'Canceladas', teste: r => r.situacao === 'cancelada' }, { v: '', n: 'Todas' }] },
+  ordenarPor: { data_cotacao: r => String(9e15 - Date.parse(r.data_cotacao)) + String(1e12 - r.id).padStart(13, '0') },
+  periodos: [{ campo: 'data_cotacao', label: 'Data da cotação' }],
+  campos: [
+    { id: 'numero', label: 'Nº', somenteLeitura: true, lista: true },
+    { id: 'data_cotacao', label: 'Data', tipo: 'data', somenteLeitura: true, lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, listaHtml: r => `<span class="tg ${sit(r.situacao).cor}">${esc(sit(r.situacao).n)}</span>` },
+    { id: 'empresa_id', label: 'Empresa (CNPJ dos pedidos)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })) },
+    { id: 'data_limite', label: 'Respostas até', tipo: 'data', lista: true },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 2 },
+    { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelada' }
+  ],
+  async carregarExtra(linhas, ctx) {
+    CTX = ctx; cfg._linhas = linhas;
+    const [it, fs, pr, fo, co, fm, us, sci] = await Promise.all([
+      buscarTodos(() => db.from('cotacoes_compra_itens').select('*').order('id')),
+      buscarTodos(() => db.from('cotacoes_compra_fornecedores').select('*').order('id')),
+      buscarTodos(() => db.from('cotacoes_compra_precos').select('*')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao').order('nome')),
+      buscarTodos(() => db.from('condicoes_pagamento').select('id, nome').eq('situacao', 'ativo').order('nome')),
+      buscarTodos(() => db.from('formas_pagamento').select('id, nome').eq('situacao', 'ativo').order('nome')),
+      db.rpc('usuarios_nomes'),
+      buscarTodos(() => db.from('solicitacoes_compra_itens').select('id, urgencia, solicitacao_id, solicitacoes_compra(numero)').not('cotacao_id', 'is', null))
+    ]);
+    const cat = await db.rpc('sc_catalogo');
+    FORN = fo; CONDS = co; FORMAS = fm; USU = us.data || [];
+    PRODS = Object.fromEntries((cat.data || []).filter(c => c.tipo === 'produto').map(c => [c.id, c]));
+    const scPorItem = Object.fromEntries(sci.map(x => [x.id, x]));
+    const itens = {}, forns = {}, precos = {};
+    it.forEach(x => { const s = scPorItem[x.solicitacao_item_id]; (itens[x.cotacao_id] ||= []).push({ ...x, _sc: s?.solicitacoes_compra?.numero, _urg: s?.urgencia }); });
+    fs.forEach(x => (forns[x.cotacao_id] ||= []).push(x));
+    pr.forEach(x => precos[x.cotacao_forn_id + ':' + x.cotacao_item_id] = x);
+    ex = { itens, forns, precos };
+    return ex;
+  },
+  depoisCarregar: linhas => {
+    cfg._linhas = linhas;
+    document.getElementById('cNovo')?.remove();   // cotação nasce da fila do comprador (solicitações aprovadas)
+    if (CTX.pode('solicitacoes_compra') && !document.getElementById('btnFila')) {
+      const b = document.createElement('a'); b.className = 'btn primario'; b.id = 'btnFila'; b.textContent = 'Itens para cotar (fila do comprador)';
+      b.href = RAIZ + 'pages/compras/solicitacoes.html?aba=fila';
+      document.querySelector('.cab-tela')?.appendChild(b);
+    }
+  },
+  colunasExtras: [
+    { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${PRODS[i.produto_id]?.codigo || i.descricao}`).join(', '),
+      html: (r, e) => { const t = (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${PRODS[i.produto_id]?.codigo || i.descricao}`).join(', ');
+        return `<span class="texto-curto" style="max-width:240px" title="${esc(t)}">${esc(t)}</span>`; } },
+    { label: 'Fornecedores', texto: (r, e) => (e.forns[r.id] || []).map(f => nomeF(f.fornecedor_id)).join(', ') },
+    { label: 'Solicitações', texto: (r, e) => [...new Set((e.itens[r.id] || []).map(i => i._sc).filter(Boolean))].join(', ') },
+    { label: 'Comprador', texto: r => usu(r.comprador_id) }
+  ],
+  textoBuscaExtra: (r, e) => [...(e.itens[r.id] || []).flatMap(i => [i.descricao, i._sc, PRODS[i.produto_id]?.codigo]), ...(e.forns[r.id] || []).map(f => nomeF(f.fornecedor_id))].filter(Boolean).join(' '),
+  apagado: r => r.situacao === 'cancelada',
+  secaoExtra: r => '<div id="cotMapa"><div class="sub">Carregando o mapa…</div></div>',
+  async aoAbrir(m, r) {
+    if (!r.id) { m.remove(); return aviso('A cotação nasce da fila do comprador: em Solicitações de compra, clique em "Fila do comprador".', true); }
+    m.querySelector('.modal').style.maxWidth = '1200px';
+    const { data } = await db.rpc('cotacao_analise', { p_id: r.id }); ANALISE = data || [];
+    const box = m.querySelector('#cotMapa'); box.innerHTML = htmlMapa(r);
+    const ed = editavel(r);
+    if (!ed) { m.querySelectorAll('.campo input, .campo select, .campo textarea').forEach(i => i.disabled = true); m.querySelector('#mSalvar')?.remove(); }
+    box.addEventListener('click', async e => {
+      const t = e.target;
+      if (t.closest('[data-copiar]')) { const th = t.closest('th'); const fid = Number(th.querySelector('[data-k=fornecedor_id]').value);
+        try { await navigator.clipboard.writeText(textoCotacao({ ...r, ...lerCab(m) }, fid)); aviso('Texto copiado: cole no WhatsApp ou e-mail do fornecedor'); } catch { aviso('Não foi possível copiar', true); } return; }
+      if (!ed) return;
+      if (t.id === 'addForn') { // nova coluna (salva e recarrega para montar as células)
+        const sel = prompt('Fornecedor a incluir (digite parte do nome):'); if (!sel) return;
+        const ach = FORN.filter(f => f.situacao === 'ativo' && combinaBusca(nomeComFantasia(f), sel));
+        if (!ach.length) return aviso('Nenhum fornecedor ativo com esse nome. Cadastre em Cadastros › Fornecedores.', true);
+        const f = ach[0]; if (fornsDe(r).some(x => x.fornecedor_id === f.id)) return aviso('Esse fornecedor já está na cotação', true);
+        try { const { forns, itens } = lerMapa(m); forns.push({ fornecedor_id: f.id, precos: [] });
+          const { error } = await db.rpc('cotacao_salvar', { p_id: r.id, p_cab: lerCab(m), p_forn: forns, p_itens: itens }); if (error) throw error;
+          aviso(`${nomeComFantasia(f)} incluído${ach.length > 1 ? ` (havia ${ach.length} parecidos: escolhido o primeiro; troque na coluna se precisar)` : ''}`); reabrir(r);
+        } catch (er) { aviso('Não incluiu: ' + (er.message || er), true); }
+        return; }
+      if (t.closest('[data-rmf]')) { if (!confirm('Tirar este fornecedor e os preços dele da cotação?')) return;
+        const ci = [...m.querySelectorAll('.mapa thead th.forn')].indexOf(t.closest('th'));
+        m.querySelectorAll('.mapa tr').forEach(tr => { const c = tr.querySelectorAll(tr.closest('thead') ? 'th.forn' : 'td.cel')[ci]; c?.remove(); });
+        return; }
+      if (t.closest('[data-rmi]')) { if (!confirm('Tirar este item da cotação? Ele volta para a fila do comprador.')) return; t.closest('tr').remove(); return; }
+      if (t.id === 'cotIndicados') { m.querySelectorAll('.mapa tbody tr[data-item]').forEach(tr => { const a = ANALISE.find(x => x.item_id === Number(tr.dataset.item) && x.recomendado);
+          if (a) { tr.querySelector('[data-k=vencedor]').value = String(a.fornecedor_id); tr.querySelector('[data-k=motivo_escolha]').style.display = 'none'; } });
+        aviso('Vencedores = indicados pela análise (salve ou gere os pedidos)'); return; }
+      if (t.id === 'cotSalvarAn') { try { await gravar(r, m); aviso('Salvo · análise recalculada'); reabrir(r); } catch (er) { aviso('Não salvou: ' + (er.message || er), true); } return; }
+      if (t.id === 'cotGerar') {
+        const { itens } = lerMapa(m);
+        if (itens.some(i => !i.vencedor_fornecedor_id)) return aviso('Escolha o vencedor de cada item (ou use "Escolher os indicados")', true);
+        const semMot = itens.find(i => { const a = ANALISE.find(x => x.item_id === i.id && x.recomendado); return a && a.fornecedor_id !== i.vencedor_fornecedor_id && !i.motivo_escolha; });
+        if (semMot) return aviso('Justifique a escolha dos itens em que o vencedor não é o indicado', true);
+        const n = new Set(itens.map(i => i.vencedor_fornecedor_id)).size;
+        if (!confirm(`Gerar ${n} pedido(s) de compra em rascunho (um por fornecedor vencedor)? A cotação fica concluída.`)) return;
+        t.disabled = true;
+        try { await gravar(r, m);
+          const { data: peds, error } = await db.rpc('cotacao_gerar_pedidos', { p_id: r.id }); if (error) throw error;
+          m.remove(); aviso(`${peds.length} pedido(s) de compra gerado(s) em rascunho · confira e envie para aprovação`);
+          window.top.postMessage({ nox: 'abrir', url: RAIZ + 'pages/compras/pedidos.html?busca=' + encodeURIComponent(r.numero) }, location.origin);
+          cfg.recarregar(); window.top.dispatchEvent(new Event('nox:aprovacoes'));
+        } catch (er) { t.disabled = false; aviso('Não gerou: ' + (er.message || er), true); }
+        return; }
+      if (t.id === 'cotCancelar') { const mot = prompt('Motivo do cancelamento (os itens voltam para a fila do comprador):'); if (!mot?.trim()) return;
+        const { error } = await db.rpc('cotacao_cancelar', { p_id: r.id, p_motivo: mot }); if (error) return aviso('Não cancelou: ' + error.message, true);
+        m.remove(); aviso(`${r.numero} cancelada`); cfg.recarregar(); }
+    });
+    // digitou no preço que veio do cadastro: passa a valer como preço cotado
+    box.addEventListener('input', e => { if (e.target.dataset.sug) { delete e.target.dataset.sug; e.target.style.fontStyle = ''; e.target.style.color = ''; } });
+    // escolheu vencedor diferente do indicado: pede justificativa
+    box.addEventListener('change', e => { if (e.target.dataset.k !== 'vencedor') return;
+      const tr = e.target.closest('tr'), a = ANALISE.find(x => x.item_id === Number(tr.dataset.item) && x.recomendado), mot = tr.querySelector('[data-k=motivo_escolha]');
+      const outro = a && e.target.value && Number(e.target.value) !== a.fornecedor_id; mot.style.display = outro ? '' : 'none'; if (outro) mot.focus(); });
+  },
+  async salvar(dados, r, m) { await gravar(r, m); return r.id; },
+  tituloRegistro: r => `${r.numero} · ${sit(r.situacao).n}`,
+  chaveHistorico: r => r.numero
+};
+montarCadastro(cfg);
+</script>
+</body>
+</html>

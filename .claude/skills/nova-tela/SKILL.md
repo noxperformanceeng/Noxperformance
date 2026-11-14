@@ -16,6 +16,9 @@ description: Criar uma tela nova no ERP NOX (página em pages/, item de menu, m�
    veja as opções aceitas no topo de `assets/js/cadastro.js` e em telas existentes antes de escrever código novo.
 4. **Menu**: em `assets/js/layout.js`, no `MENU`, preencha `arquivo` do item (ou crie o item) com o mesmo `id`.
    Use `exige: 'outro_modulo'` se a tela depender de outra.
-5. **Versão**: rode `python3 tools/versao.py` (o hook faz no commit se `assets/` mudou).
-6. **Conferir**: `python3 -m http.server 8000` na raiz e abra `http://localhost:8000/inicio.html`
+5. **Tempo real**: a tela tem que se atualizar sozinha quando outro usuário mexe nos dados. `montarCadastro` já faz;
+   tela própria: tenha uma `async function carregar()` global que relê e redesenha sem apagar filtros/seleção, ou
+   registre `ouvirMudancas(null, fn)`. Se ler por `db.rpc` nova, ponha a função e as tabelas em `FONTES` (`supabase.js`).
+6. **Versão**: rode `python3 tools/versao.py` (o hook faz no commit se `assets/` mudou).
+7. **Conferir**: `python3 -m http.server 8000` na raiz e abra `http://localhost:8000/inicio.html`
    (precisa de login real no Supabase). Sem dados pessoais em textos de exemplo.
