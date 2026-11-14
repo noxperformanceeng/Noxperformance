@@ -63,10 +63,13 @@ create index if not exists estoque_fora_aberto on public.estoque_fora_local (pro
 alter table public.estoque_movimentos add column if not exists fora_local_id bigint references public.estoque_fora_local(id);
 
 alter table public.estoque_fora_local enable row level security;
-drop policy if exists "ver estoque fora do local" on public.estoque_fora_local;
-create policy "ver estoque fora do local" on public.estoque_fora_local for select to authenticated
-  using ((select public.pode('estoque')) or (select public.pode('almoxarifado')) or (select public.pode('inventario'))
-      or (select public.pode('compras')) or (select public.pode('notas')));
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'estoque_fora_local' and policyname = 'ver estoque fora do local') then
+    create policy "ver estoque fora do local" on public.estoque_fora_local for select to authenticated
+      using ((select public.pode('estoque')) or (select public.pode('almoxarifado')) or (select public.pode('inventario'))
+          or (select public.pode('compras')) or (select public.pode('notas')));
+  end if;
+end $$;
 -- gravação só pelas funções abaixo (sem política de insert/update/delete)
 
 -- ---------- Aplica o destino escolhido para cada item na entrada (uso interno) ----------
