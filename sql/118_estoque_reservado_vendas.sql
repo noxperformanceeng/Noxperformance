@@ -71,12 +71,11 @@ revoke execute on function public.estoque_reservas_produto(bigint) from public, 
 grant execute on function public.estoque_reservas_produto(bigint) to authenticated;
 
 -- Sugestão de compra: mínimo − DISPONÍVEL (físico − reservado) − o que já está comprado
-drop function if exists public.sugestao_compra();
-create function public.sugestao_compra()
+--   (mesmas colunas de antes: "saldo" passa a ser o disponível; a tela busca físico e reservado em estoque_disponivel)
+create or replace function public.sugestao_compra()
 returns table (produto_id bigint, codigo text, descricao text, tipo text, unidade text, unidade_compra text, fator numeric, saldo numeric,
                inventariado boolean, minimo numeric, em_pedido numeric, sugerido numeric, sugerido_compra numeric, fornecedor_id bigint,
-               fornecedor text, ultimo_preco numeric, ultima_compra date, ultimo_pedido text, categoria_financeira_id bigint,
-               reservado numeric, fisico numeric)
+               fornecedor text, ultimo_preco numeric, ultima_compra date, ultimo_pedido text, categoria_financeira_id bigint)
 language sql stable security definer set search_path = public as $$
   with mov as (
     select m.produto_id, sum(m.quantidade) saldo, bool_or(m.tipo = 'inventario') inv from public.estoque_movimentos m group by 1),
@@ -95,7 +94,7 @@ language sql stable security definer set search_path = public as $$
     select distinct on (pf.produto_id) pf.produto_id, pf.fornecedor_id from public.produto_fornecedores pf order by pf.produto_id, pf.preferencial desc, pf.id),
   b as (
     select pr.id, pr.codigo, pr.descricao, pr.tipo, pr.unidade, pr.unidade_compra, pr.fator_compra, coalesce(pr.estoque_minimo, 0) estoque_minimo, pr.categoria_financeira_id,
-           coalesce(mov.saldo, 0) fis, coalesce(res.q, 0) resv, coalesce(mov.saldo, 0) - coalesce(res.q, 0) disp,
+           coalesce(res.q, 0) resv, coalesce(mov.saldo, 0) - coalesce(res.q, 0) disp,
            coalesce(mov.inv, false) inv, coalesce(ped.q, 0) emp
       from public.produtos pr left join mov on mov.produto_id = pr.id left join res on res.produto_id = pr.id left join ped on ped.produto_id = pr.id
      where pr.situacao = 'ativo' and pr.controla_estoque
@@ -105,8 +104,7 @@ language sql stable security definer set search_path = public as $$
          b.disp, b.inv, b.estoque_minimo, b.emp,
          greatest(b.estoque_minimo - b.disp - b.emp, 0),
          ceil(greatest(b.estoque_minimo - b.disp - b.emp, 0) / coalesce(b.fator_compra, 1) * 100) / 100,
-         coalesce(ult.fornecedor_id, pref.fornecedor_id), f.nome, ult.valor_unitario, ult.data_pedido, ult.numero, b.categoria_financeira_id,
-         b.resv, b.fis
+         coalesce(ult.fornecedor_id, pref.fornecedor_id), f.nome, ult.valor_unitario, ult.data_pedido, ult.numero, b.categoria_financeira_id
     from b
     left join ult on ult.produto_id = b.id
     left join pref on pref.produto_id = b.id

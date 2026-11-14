@@ -955,6 +955,10 @@ const cfg = {
     CONJ = new Set(es.map(x => x.produto_id));
     FICHAS = Object.fromEntries(fi.map(x => [x.produto_id, x])); SERVS = sv;
     SUG = ctx.pode('compras', 'criar') ? ((await db.rpc('sugestao_compra')).data || []) : [];
+    if (SUG.length) {   // físico e reservado em pedidos de venda (a sugestão já usa o disponível)
+      const d = new Map(((await db.rpc('estoque_disponivel', { p_produtos: SUG.map(x => x.produto_id) })).data || []).map(x => [x.produto_id, x]));
+      SUG.forEach(x => { x.fisico = d.get(x.produto_id)?.fisico ?? x.saldo; x.reservado = d.get(x.produto_id)?.reservado || 0; });
+    }
     FORN = f; PRODS = p.filter(x => !['acabado', 'kit'].includes(x.tipo) || true); PAIS = c.filter(x => !x.aceita_lancamento); CATS = c.filter(x => x.aceita_lancamento).map(x => ({ ...x, ativo: x.situacao === 'ativo' })); CONDS = co; FORMAS = fo;
     CONTAS = cb.filter(x => x.tipo !== 'historico'); ALC = al; PF = pf; EMPRESAS = em.data || []; USU = (us.data || []).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); ACOES = new Set(ac.data || []);
     const itens = {}, eventos = {}, recebimentos = {}, titulos = {};
