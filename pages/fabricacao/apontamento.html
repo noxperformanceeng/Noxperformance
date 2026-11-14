@@ -6,8 +6,8 @@
 <title>Apontamento de produção · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131825">
-<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611131825">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141134">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611141134">
 </head>
 <body data-modulo="apontamento" data-titulo="Apontamento de produção">
 <main id="conteudo">
@@ -52,10 +52,10 @@
   </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131825"></script>
-<script src="../../assets/js/ui.js?v=202611131825"></script>
-<script src="../../assets/js/auth.js?v=202611131825"></script>
-<script src="../../assets/js/layout.js?v=202611131825"></script>
+<script src="../../assets/js/supabase.js?v=202611141134"></script>
+<script src="../../assets/js/ui.js?v=202611141134"></script>
+<script src="../../assets/js/auth.js?v=202611141134"></script>
+<script src="../../assets/js/layout.js?v=202611141134"></script>
 <script>
 /* Apontamento: escolhe a OP em aberto, informa peças boas e refugo. Entra o que é bom; sai o material da OP
    (por unidade × (boas + refugo)), que pode ser corrigido antes de registrar. Errou? Estorna (a OP reabre). */
@@ -194,6 +194,12 @@ async function estornar(id) {
   $('#aSalvar').onclick = registrar; $('#pProd').onchange = aoEscolherPerda; $('#pSalvar').onclick = lancarPerda;
   $('#btnAtualizar').onclick = () => { carregarOrdens(); carregarHist(); };
   window.addEventListener('aba-ativa', () => { carregarOrdens(); carregarHist(); });
+  // Tempo real: OPs, saldos e histórico se atualizam sozinhos; a OP escolhida e as correções digitadas ficam
+  ouvirMudancas(null, async () => {
+    const ant = OP?.id, manual = new Map(MATS.map(m => [m.id, m.manual]));
+    await Promise.all([carregarOrdens(), carregarHist()]);
+    if (OP && OP.id === ant) { MATS.forEach(m => { if (manual.has(m.id)) m.manual = manual.get(m.id); }); desenhar(); }
+  });
   carregarOrdens(); carregarHist(); carregarMateriais();
 })();
 </script>

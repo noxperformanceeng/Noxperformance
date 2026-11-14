@@ -75,6 +75,7 @@ async function montarCadastro(cfg) {
   const C = Object.fromEntries(campos.map(c => [c.id, c]));
   const cont = document.getElementById('conteudo');
   let linhas = [], extra = {}, nomes = {};
+  let formAberto = null;   // { id, m, assinatura, salvando }: formulário aberto, para avisar se outra pessoa mexer no mesmo registro
   let aba = cfg.abas ? cfg.abas.padrao ?? '' : '', pendAtual = '', visiveis = [], selecionados = new Set();
   let ordem = { campo: cfg.ordem || campos.find(c => c.lista)?.id, asc: true };
   // Árvore (opcional): cfg.arvore = { chave: r => '3.01.002', pai: chave => '3.01' | null }
@@ -156,7 +157,8 @@ async function montarCadastro(cfg) {
     foiCadastrar = true; a.href = a.href.replace(/[?&]t=\d+/, '') + '&t=' + Date.now(); }, true);
   window.addEventListener('aba-ativa', async () => {
     if (foiCadastrar && document.querySelector('.modal-fundo')) { foiCadastrar = false; await recarregarListasDoFormulario(); return; }
-    if (document.querySelector('.modal-fundo') || Date.now() - ultimaCarga < 15000) return;
+    // com o tempo real ligado a lista já está em dia; a recarga ao voltar fica só de reserva
+    if (tempoReal.aoVivo() || document.querySelector('.modal-fundo') || Date.now() - ultimaCarga < 15000) return;
     ultimaCarga = Date.now(); carregar();
   });
 
@@ -180,20 +182,25 @@ async function montarCadastro(cfg) {
         buscarTodos(() => db.from(cfg.tabela).select('*').order('id')),
         db.rpc('usuarios_nomes')
       ]);
-      linhas = lista; txtBusca = new WeakMap();
+      linhas = lista; ultimaCarga = Date.now();
       nomes = Object.fromEntries((nm.data || []).map(u => [u.id, u.nome]));
-      extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas, ctx) : {};
-      linhas.forEach(r => r._pend = pendDe(r));
-      filtrosCampo.forEach(c => {
-        const el = cont.querySelector(`[data-filtro="${c.id}"]`), atual = el.value;
-        const vals = opcoes(c).length ? opcoes(c) : [...new Set(linhas.map(r => r[c.id]).filter(v => v !== null && v !== ''))].sort().map(v => ({ v, n: v }));
-        el.innerHTML = '<option value="">Todos</option>' + (c.filtroVazio ? '<option value="__vazio">(em branco)</option>' : '') +
-          vals.map(o => `<option value="${esc(o.v)}">${esc(o.n)}</option>`).join('');
-        el.value = atual;
-      });
-      cfg.depoisCarregar?.(linhas, extra);
-      desenhar();
+      await processar();
     } catch (e) { aviso('Erro ao carregar: ' + (e.message || e), true); }
+  }
+  // Depois de trocar as linhas: dados auxiliares, pendências, opções dos filtros e a lista (filtros e seleção ficam)
+  async function processar() {
+    txtBusca = new WeakMap();
+    extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas, ctx) : {};
+    linhas.forEach(r => r._pend = pendDe(r));
+    filtrosCampo.forEach(c => {
+      const el = cont.querySelector(`[data-filtro="${c.id}"]`), atual = el.value;
+      const vals = opcoes(c).length ? opcoes(c) : [...new Set(linhas.map(r => r[c.id]).filter(v => v !== null && v !== ''))].sort().map(v => ({ v, n: v }));
+      el.innerHTML = '<option value="">Todos</option>' + (c.filtroVazio ? '<option value="__vazio">(em branco)</option>' : '') +
+        vals.map(o => `<option value="${esc(o.v)}">${esc(o.n)}</option>`).join('');
+      el.value = atual;
+    });
+    cfg.depoisCarregar?.(linhas, extra);
+    desenhar();
   }
 
   // Depois de cadastrar em outra aba: busca de novo as listas auxiliares e refaz os <select> do formulário aberto
@@ -201,16 +208,21 @@ async function montarCadastro(cfg) {
     try {
       extra = cfg.carregarExtra ? await cfg.carregarExtra(linhas, ctx) : extra;
       txtBusca = new WeakMap();
-      const m = document.querySelector('.modal-fundo'); if (!m) return;
-      campos.filter(c => ['select', 'empresa'].includes(c.tipo)).forEach(c => {
-        const el = m.querySelector('#f_' + c.id); if (!el || el.disabled) return;
-        const v = el.value, ops = opcoes(c);
-        el.innerHTML = (c.obrig && ops.length && v !== '' ? '' : `<option value="">${c.obrig ? '— escolha —' : '—'}</option>`) + ops.map(o => `<option value="${esc(o.v)}">${esc(o.n)}</option>`).join('');
-        el.value = v;
-      });
-      cfg.aoRecarregarListas?.(m);
+      if (!refazerSelects()) return;
       if (!silencioso) aviso('Listas atualizadas com o cadastro novo');
     } catch (e) { aviso('Não atualizou as listas: ' + (e.message || e), true); }
+  }
+  // Refaz as opções dos <select> do formulário aberto mantendo o que está escolhido
+  function refazerSelects() {
+    const m = document.querySelector('.modal-fundo'); if (!m) return false;
+    campos.filter(c => ['select', 'empresa'].includes(c.tipo)).forEach(c => {
+      const el = m.querySelector('#f_' + c.id); if (!el || el.disabled) return;
+      const v = el.value, ops = opcoes(c);
+      el.innerHTML = (c.obrig && ops.length && v !== '' ? '' : `<option value="">${c.obrig ? '— escolha —' : '—'}</option>`) + ops.map(o => `<option value="${esc(o.v)}">${esc(o.n)}</option>`).join('');
+      el.value = v;
+    });
+    cfg.aoRecarregarListas?.(m);
+    return true;
   }
 
   // Atualiza só o registro salvo na lista (resposta imediata)
@@ -422,6 +434,7 @@ async function montarCadastro(cfg) {
       <div class="acoes" style="margin-top:18px"><button class="btn" id="mFechar">${podeGravar ? 'Cancelar' : 'Fechar'}</button>
       ${podeGravar ? `<button class="btn" id="mSalvar">Salvar</button>${cfg.revisao ? '<button class="btn primario" id="mRevisar">Salvar e marcar revisado</button>' : ''}` : ''}</div>`);
     m.querySelector('.modal').classList.add('form');
+    formAberto = { id: novo ? null : r.id, m, assinatura: novo ? null : assinatura(r) };
     const q = s => m.querySelector(s);
     q('#mFechar').onclick = () => m.remove();
     if (!podeGravar) return;
@@ -516,6 +529,7 @@ async function montarCadastro(cfg) {
         if (bloq.length) return aviso('Para marcar como revisado, resolva: ' + bloq.map(p => p.nome).join(', '), true);
       }
       m.querySelectorAll('.acoes .btn').forEach(b => b.disabled = true);
+      if (formAberto?.m === m) formAberto.salvando = true;   // o aviso da própria gravação não é "outra pessoa mexeu"
       try {
         let id = r.id;
         if (cfg.salvar) {          // gravação própria da tela (ex.: título + rateio numa transação)
@@ -532,12 +546,53 @@ async function montarCadastro(cfg) {
         m.remove(); aviso(revisar ? 'Salvo e revisado' : 'Salvo');
         await atualizarUm(id); carregar();   // mostra a linha na hora; o resto (pagamentos, rateio...) atualiza em segundo plano
       } catch (e) {
+        if (formAberto?.m === m) formAberto.salvando = false;
         m.querySelectorAll('.acoes .btn').forEach(b => b.disabled = false);
         aviso(e.code === '23505' ? (cfg.msgDuplicado || 'Já existe um registro com esse documento/código') : 'Não salvou: ' + (e.message || e), true);
       }
     };
     q('#mSalvar').onclick = () => salvar(false);
     if (cfg.revisao) q('#mRevisar').onclick = () => salvar(true);
+  }
+
+  /* ---------- Tempo real ----------
+     Alguém criou, alterou ou excluiu (nesta ou em outra tela, por qualquer usuário ou integração):
+     poucos registros da própria tabela → busca só esses; muitos, ou outra tabela ligada → recarrega.
+     Filtros, aba, ordenação, busca, seleção e rolagem continuam como estão. */
+  const assinatura = r => r.atualizado_em ?? JSON.stringify(campos.map(c => r[c.id] ?? null));
+  ouvirMudancas(null, async ev => {
+    const p = ev.porTabela[cfg.tabela];
+    if (ev.tudo || p?.todos || (p && p.ids.size > 50)) await carregar();
+    else {
+      try {
+        if (p) {
+          const { data, error } = await db.from(cfg.tabela).select('*').in('id', [...p.ids]);
+          if (error) throw error;
+          const novos = new Map(data.map(x => [String(x.id), x]));
+          linhas = linhas.filter(x => !p.ids.has(String(x.id)) || novos.has(String(x.id))).map(x => novos.get(String(x.id)) || x);
+          const tem = new Set(linhas.map(x => String(x.id)));
+          novos.forEach((x, k) => { if (!tem.has(k)) linhas.push(x); });
+          p.ids.forEach(k => { if (!novos.has(k)) selecionados.delete(+k); });   // excluído: sai da seleção
+        }
+        await processar(); ultimaCarga = Date.now();
+      } catch { await carregar(); }
+    }
+    if (Object.keys(ev.porTabela).some(t => t !== cfg.tabela) || ev.tudo) refazerSelects();   // ex.: fornecedor novo aparece no formulário aberto
+    conferirFormulario();
+  });
+  // Formulário aberto e outra pessoa mexeu no mesmo registro: avisa (não apaga o que está sendo digitado)
+  function conferirFormulario() {
+    const f = formAberto;
+    if (!f || !document.body.contains(f.m)) { formAberto = null; return; }
+    if (f.id == null || f.salvando) return;
+    const atual = linhas.find(x => String(x.id) === String(f.id));
+    if (atual && assinatura(atual) === f.assinatura) return;
+    if (!atual) { tempoReal.avisarFormulario('Este registro foi excluído (ou saiu do seu acesso) enquanto o formulário estava aberto. Não dá mais para salvar: feche e confira a lista.'); return; }
+    const quem = atual.atualizado_por ? (atual.atualizado_por === tempoReal.eu() ? 'você, em outra tela' : nomes[atual.atualizado_por] || 'outra pessoa') : 'outra pessoa';
+    const quando = atual.atualizado_em ? ' às ' + new Date(atual.atualizado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const el = tempoReal.avisarFormulario(`Este registro foi alterado por <b>${esc(quem)}</b>${quando} enquanto estava aberto aqui. Se salvar agora, o que está neste formulário substitui a alteração.`,
+      '<button type="button" class="btn fino" data-tr-ver>Ver a versão atual</button><span class="sub">(descarta o que foi digitado aqui)</span>');
+    el?.querySelector('[data-tr-ver]')?.addEventListener('click', () => { f.m.remove(); formAberto = null; abrir(atual); });
   }
 
   cfg.recarregar = carregar;

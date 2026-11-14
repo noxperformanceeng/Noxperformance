@@ -6,7 +6,7 @@
 <title>Aprovações pendentes · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131825">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141134">
 <style>
   .apv-topo { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 0 0 12px; }
   .apv-topo .campo { margin: 0; } .apv-topo label { font-size: 11px; color: var(--texto-suave); display: block; }
@@ -52,18 +52,18 @@
     <div class="campo"><label>De</label><input type="date" id="fDe"></div>
     <div class="campo"><label>Até</label><input type="date" id="fAte"></div>
     <div class="apv-preset"><button class="btn fino" data-p="7">7 dias</button><button class="btn fino" data-p="30">30 dias</button><button class="btn fino" data-p="90">90 dias</button><button class="btn fino" data-p="0">Tudo</button></div>
-    <div class="campo" style="flex:1;min-width:200px"><label>Buscar</label><input id="fBusca" class="busca" type="search" placeholder="pedido, fornecedor, funcionário, produto…" data-livre></div>
+    <div class="campo" style="flex:1;min-width:200px"><label>Buscar</label><input id="fBusca" class="busca" type="search" placeholder="pedido, solicitação, fornecedor, funcionário, produto…" data-livre></div>
   </div>
   <div class="apv-cards" id="cards"></div>
   <div class="abas" id="abas" style="margin-bottom:10px"></div>
   <div id="lista"><div class="apv-vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131825"></script>
-<script src="../../assets/js/ui.js?v=202611131825"></script>
-<script src="../../assets/js/auth.js?v=202611131825"></script>
-<script src="../../assets/js/layout.js?v=202611131825"></script>
-<script src="../../assets/js/comprovante.js?v=202611131825"></script>
+<script src="../../assets/js/supabase.js?v=202611141134"></script>
+<script src="../../assets/js/ui.js?v=202611141134"></script>
+<script src="../../assets/js/auth.js?v=202611141134"></script>
+<script src="../../assets/js/layout.js?v=202611141134"></script>
+<script src="../../assets/js/comprovante.js?v=202611141134"></script>
 <script>
 /* Central de aprovações do master (e de quem tem algo a decidir):
    - Para decidir: agrupado por área (Compras, Financeiro, Cadastros, RH), com aprovação em lote ou individual.
@@ -72,7 +72,7 @@
    - Lista geral e histórico de decisões, com filtro de período. */
 const reais = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dia = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
-const NOME_TIPO = { pedido_compra: 'Pedido de compra', item_avulso: 'Item sem cadastro', nf_sem_pedido: 'NF sem pedido', produto_novo: 'Produto novo',
+const NOME_TIPO = { solicitacao_compra: 'Solicitação de compra', pedido_compra: 'Pedido de compra', item_avulso: 'Item sem cadastro', nf_sem_pedido: 'NF sem pedido', produto_novo: 'Produto novo',
   categoria_nova: 'Categoria nova', comprovante_divergente: 'Comprovante divergente', comprovante: 'Comprovante divergente', vt: 'RH · Vale-transporte', devolvido: 'Devolvido', aviso: 'Aviso' };
 const AREAS = ['Compras', 'Financeiro', 'Cadastros', 'RH'];   // comprovante divergente aparece em Financeiro
 let CTX = null, GRUPOS = [], HIST = [], aba = 'decidir', marcados = new Set();

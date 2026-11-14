@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611131825';
+const VERSAO_TELAS = '202611141134';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -22,6 +22,8 @@ const MENU = [
     { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' }
   ]},
   { grupo: 'Compras', icone: 'compras', itens: [
+    { id: 'solicitacoes_compra', nome: 'Solicitações de compra', arquivo: 'pages/compras/solicitacoes.html' },
+    { id: 'cotacoes_compra', nome: 'Cotações de fornecedores', arquivo: 'pages/compras/cotacoes.html' },
     { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html' },
     { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html' }
   ]},
@@ -150,6 +152,7 @@ async function iniciarTela() {
 
   const ctx = await carregarSessao();
   if (!ctx) return null;
+  tempoReal.iniciar(ctx);   // daqui em diante a tela se atualiza sozinha quando os dados mudam (supabase.js)
 
   const modulo = document.body.dataset.modulo;
   if (modulo && !ctx.pode(modulo)) {
@@ -189,7 +192,7 @@ async function iniciarTela() {
     visiveis.forEach(i => {
       if (!i.arquivo) { menuHtml += `<span class="item breve">${i.nome}<span class="tag">em breve</span></span>`; return; }
       const url = RAIZ + i.arquivo;
-      menuHtml += `<a class="item${atual === url ? ' ativo' : ''}" href="${url}"${atual === url ? ' aria-current="page"' : ''}>${i.nome}</a>`;
+      menuHtml += `<a class="item${atual === url ? ' ativo' : ''}" href="${url}" data-mod="${i.id}"${atual === url ? ' aria-current="page"' : ''}>${i.nome}</a>`;
     });
     menuHtml += '</div></div>';
   });
@@ -224,7 +227,7 @@ async function iniciarTela() {
     faixa.addEventListener('click', e => { const b = e.target.closest('[data-emp]'); if (b) trocarEmpresa(b.dataset.emp ? Number(b.dataset.emp) : null); });
   }
   desenharFaixa(ctx); marcarEmpresa(ctx);
-  // Aprovações pendentes: contador no menu (atualiza a cada 2 min)
+  // Aprovações pendentes: contador no menu (na hora, pelo tempo real; a cada 2 min por garantia)
   const contarAprov = async () => {
     const { data } = await db.rpc('minhas_aprovacoes');
     const n = (data || []).filter(g => !g.aviso).reduce((t, g) => t + (g.itens || []).length, 0);   // decidir + devolvidos
@@ -234,6 +237,22 @@ async function iniciarTela() {
     if (d) { d.hidden = !av; d.title = av + ' aviso(s) de pendência'; }
   };
   contarAprov(); setInterval(contarAprov, 120000); window.addEventListener('nox:aprovacoes', contarAprov);
+  ouvirMudancas(tempoReal.fontes('minhas_aprovacoes'), contarAprov, { auxiliar: true, mesmoOculto: true });
+  // Contadores por tela no menu (ex.: solicitações de compra): amarelo = aguardando aprovação, vermelho = pede ação agora
+  const contarTelas = async () => {
+    const { data } = await db.rpc('menu_contadores'); if (!data) return;
+    document.querySelectorAll('.menu a.item[data-mod]').forEach(a => {
+      const c = data[a.dataset.mod]; a.querySelectorAll('.cont-menu').forEach(x => x.remove()); if (!c) return;
+      if (c.amarelo) a.insertAdjacentHTML('beforeend', `<span class="cont-menu av-aprov" title="${c.amarelo} aguardando">${c.amarelo}</span>`);
+      if (c.vermelho) a.insertAdjacentHTML('beforeend', `<span class="cont-menu n-aprov pisca" title="${c.vermelho} para agir">${c.vermelho}</span>`);
+      const g = a.closest('.grupo')?.querySelector('.grupo-titulo'); if (!g) return;   // grupo fechado: mostra no título também
+      g.querySelectorAll('.cont-menu').forEach(x => x.remove());
+      const t = [...a.closest('.grupo').querySelectorAll('a.item .cont-menu.n-aprov')].reduce((s, x) => s + Number(x.textContent), 0);
+      if (t) g.querySelector('.seta-grupo').insertAdjacentHTML('beforebegin', `<span class="cont-menu n-aprov pisca">${t}</span>`);
+    });
+  };
+  contarTelas(); setInterval(contarTelas, 120000); window.addEventListener('nox:aprovacoes', contarTelas);
+  if (typeof ouvirMudancas === 'function') ouvirMudancas(['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra'], contarTelas, { auxiliar: true, mesmoOculto: true });
   // Menu lateral recolhível (lembra a escolha)
   const recolher = v => { document.body.classList.toggle('menu-recolhido', v); try { localStorage.setItem('nox_menu_recolhido', v ? '1' : ''); } catch {} };
   try { if (localStorage.getItem('nox_menu_recolhido')) document.body.classList.add('menu-recolhido'); } catch {}
