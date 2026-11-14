@@ -6,47 +6,65 @@
 <title>Locais de estoque · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131718">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141142">
 </head>
 <body data-modulo="locais" data-titulo="Locais de estoque">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131718"></script>
-<script src="../../assets/js/ui.js?v=202611131718"></script>
-<script src="../../assets/js/auth.js?v=202611131718"></script>
-<script src="../../assets/js/layout.js?v=202611131718"></script>
-<script src="../../assets/js/cadastro.js?v=202611131718"></script>
+<script src="../../assets/js/supabase.js?v=202611141142"></script>
+<script src="../../assets/js/ui.js?v=202611141142"></script>
+<script src="../../assets/js/auth.js?v=202611141142"></script>
+<script src="../../assets/js/layout.js?v=202611141142"></script>
+<script src="../../assets/js/cadastro.js?v=202611141142"></script>
 <script>
+/* Local de estoque = só o endereço físico (galpão, rua, prateleira, posição). O produto é alocado no local
+   pela tela Posição de estoque (ou em lote no Inventário); aqui a lista só mostra quantos produtos há em cada um. */
+let PRODS = [];
 const AREAS = [{ v: 'estoque', n: 'Estoque' }, { v: 'almoxarifado', n: 'Almoxarifado' }, { v: 'producao', n: 'Produção' },
   { v: 'expedicao', n: 'Expedição' }, { v: 'quarentena', n: 'Quarentena / avaria' }, { v: 'terceiros', n: 'Em terceiros' }];
+const endereco = d => [d.rua, d.prateleira, d.posicao].filter(Boolean).join('-');
+const doLocal = id => PRODS.filter(p => p.local_id === id);
+const ehProduto = cod => cod && PRODS.some(p => (p.codigo || '').toUpperCase() === cod.toUpperCase());
 
 montarCadastro({
   tabela: 'locais_estoque', modulo: 'locais', titulo: 'Locais de estoque', singular: 'local', plural: 'locais',
-  subtitulo: 'Onde cada item fica guardado. O código vira etiqueta para leitura na separação e no inventário.',
-  dicaBusca: 'código, rua, prateleira, descrição…', ordem: 'codigo', revisao: false,
+  subtitulo: 'Os endereços do estoque (galpão, rua, prateleira, posição). O código vira etiqueta. Para guardar um produto num local, use a Posição de estoque.',
+  dicaBusca: 'código, rua, prateleira, produto…', ordem: 'codigo', revisao: false,
   abas: { campo: 'area', padrao: '', opcoes: [{ v: '', n: 'Todas as áreas' }, ...AREAS] },
   campos: [
-    { id: 'codigo', label: 'Código', lista: true, maiusculo: true, ajuda: 'Em branco = monta sozinho com rua-prateleira-posição (ex.: A-02-03)' },
-    { id: 'area', label: 'Área', tipo: 'select', opcoes: AREAS, obrig: true, padrao: 'estoque', lista: true },
+    { id: 'codigo', label: 'Código', lista: true, maiusculo: true, ajuda: 'Monta sozinho com rua-prateleira-posição (ex.: RUA 1-B-015). É o que vai na etiqueta. Não use o código do produto.' },
+    { id: 'area', label: 'Área', tipo: 'select', opcoes: AREAS, obrig: true, padrao: 'almoxarifado', lista: true },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo', filtro: true },
-    { id: 'deposito', label: 'Depósito / galpão', filtro: true, lista_sugestoes: ['Galpão principal', 'Mezanino'] },
+    { id: 'deposito', label: 'Depósito / galpão', filtro: true, maiusculo: true, lista_sugestoes: ['GALPÃO PRINCIPAL', 'MEZANINO'] },
     { id: 'rua', label: 'Rua / corredor', maiusculo: true, lista: true },
     { id: 'prateleira', label: 'Prateleira / estante', maiusculo: true, lista: true },
     { id: 'posicao', label: 'Posição / nível', maiusculo: true, lista: true },
     { id: 'capacidade', label: 'Capacidade / tamanho', placeholder: 'ex.: caixa 40x30, palete' },
-    { id: 'descricao', label: 'Descrição', col: 4, lista: true, placeholder: 'ex.: tubos inox até 2"' },
-    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 }
+    { id: 'observacoes', label: 'Observações do local', tipo: 'textarea', col: 4, placeholder: 'Opcional, sobre o lugar (ex.: só peças leves, acesso por escada). O produto não vai aqui.' }
   ],
   subtituloLinha: r => r.deposito,
-  apagado: r => r.situacao === 'inativo',
-  antesSalvar: d => {
-    if (!d.codigo && d.rua) d.codigo = [d.rua, d.prateleira, d.posicao].filter(Boolean).join('-');
+  async carregarExtra() {
+    PRODS = await buscarTodos(() => db.from('produtos').select('id, codigo, descricao, local_id').eq('situacao', 'ativo').order('codigo'));
+    return {};
   },
-  validar: d => !d.codigo ? 'Informe o código ou pelo menos a rua' : null,
+  colunasExtras: [{ label: 'Produtos aqui', texto: r => doLocal(r.id).map(p => p.codigo).join(', '),
+    html: r => { const ps = doLocal(r.id); return ps.length ? `<span title="${esc(ps.map(p => `${p.codigo} ${p.descricao}`).join('\n'))}">${ps.length} · ${esc(ps.slice(0, 3).map(p => p.codigo).join(', '))}${ps.length > 3 ? '…' : ''}</span>` : '<span class="sub">vazio</span>'; } }],
+  textoBuscaExtra: r => doLocal(r.id).map(p => `${p.codigo} ${p.descricao}`).join(' '),
+  secaoExtra: r => { const ps = doLocal(r.id); return `<div class="secao">Produtos guardados aqui</div><div class="info">${ps.length ? ps.map(p => `<div><b>${esc(p.codigo || '')}</b> ${esc(p.descricao)}</div>`).join('') : '<div>Nenhum.</div>'}
+    <div class="sub">Para pôr ou tirar produto deste local, use a tela <b>Posição de estoque</b> (botão Local no produto).</div></div>`; },
+  aoAbrir: m => {   // código acompanha o endereço enquanto o usuário não digita outro
+    const cod = m.querySelector('#f_codigo'), f = id => m.querySelector('#f_' + id);
+    let auto = !cod.value || cod.value === endereco({ rua: f('rua').value, prateleira: f('prateleira').value, posicao: f('posicao').value });
+    cod.addEventListener('input', () => auto = false);
+    ['rua', 'prateleira', 'posicao'].forEach(k => f(k).addEventListener('input', () => { if (auto) cod.value = endereco({ rua: f('rua').value, prateleira: f('prateleira').value, posicao: f('posicao').value }).toUpperCase(); }));
+  },
+  antesSalvar: d => { if (!d.codigo && d.rua) d.codigo = endereco(d); },
+  validar: (d, r) => !d.codigo ? 'Informe pelo menos a rua (o código é montado com o endereço)'
+    : d.codigo !== r.codigo && ehProduto(d.codigo) ? `${d.codigo} é código de produto. O local é o endereço (ex.: RUA 1-B-015); o produto se aloca no local pela Posição de estoque.` : null,
   acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
   chaveHistorico: r => r.codigo,
   tituloRegistro: r => r.codigo,
-  msgDuplicado: 'Já existe local com este código'
+  msgDuplicado: 'Já existe local com este código (mesmo endereço)'
 });
 </script>
 </body>

@@ -31,7 +31,10 @@ function abrirModal(html) {
   const fundo = document.createElement('div');
   fundo.className = 'modal-fundo';
   fundo.innerHTML = '<div class="modal">' + html + '</div>';
-  fundo.addEventListener('click', e => { if (e.target === fundo) fundo.remove(); });
+  // Fecha só com clique que começa e termina no fundo: selecionar texto num campo e soltar fora não fecha
+  let noFundo = false;
+  fundo.addEventListener('mousedown', e => { noFundo = e.target === fundo; });
+  fundo.addEventListener('click', e => { if (noFundo && e.target === fundo) fundo.remove(); noFundo = false; });
   document.body.appendChild(fundo);
   return fundo;
 }

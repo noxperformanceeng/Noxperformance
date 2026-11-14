@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131718">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141142">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131718"></script>
-<script src="../../assets/js/ui.js?v=202611131718"></script>
-<script src="../../assets/js/auth.js?v=202611131718"></script>
-<script src="../../assets/js/layout.js?v=202611131718"></script>
-<script src="../../assets/js/cadastro.js?v=202611131718"></script>
-<script src="../../assets/js/comprovante.js?v=202611131718"></script>
+<script src="../../assets/js/supabase.js?v=202611141142"></script>
+<script src="../../assets/js/ui.js?v=202611141142"></script>
+<script src="../../assets/js/auth.js?v=202611141142"></script>
+<script src="../../assets/js/layout.js?v=202611141142"></script>
+<script src="../../assets/js/cadastro.js?v=202611141142"></script>
+<script src="../../assets/js/comprovante.js?v=202611141142"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -293,15 +293,26 @@ function htmlPagamentos(r) {
 
 /* ---------- Anexos (comprovantes, boletos, notas) ---------- */
 const CAT_ANEXO = { comprovante: 'Comprovante', boleto: 'Boleto', nota: 'Nota / recibo', outro: 'Outro' };
+const selCatAnexo = (id, padrao) => `<select id="${id}" data-simples style="width:auto">${Object.entries(CAT_ANEXO).map(([v, n]) => `<option value="${v}" ${v === padrao ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
+// Quem enviou o arquivo pode excluí-lo por até 7 dias (engano); o master, sempre. A regra de verdade está no banco (SQL 113).
+function podeExcluirAnexo(a) {
+  const ctx = window.__ctxNox; if (!ctx) return false;
+  return ctx.admin || (a.criado_por === ctx.usuario?.id && Date.now() - new Date(a.criado_em) < 7 * 864e5 && ctx.pode('pagar', 'criar'));
+}
 function htmlAnexos(r) {
-  if (!r.id) return '';
-  const ls = extraAtual.anexos[r.id] || [], ctx = window.__ctxNox, podeAnexar = ctx?.pode('pagar', 'criar');
+  const ctx = window.__ctxNox, podeAnexar = ctx?.pode('pagar', 'criar');
+  // Título novo: escolhe os arquivos agora (o boleto, normalmente) e eles sobem logo depois de salvar
+  if (!r.id) return podeAnexar ? `<div class="secao">Anexos</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${selCatAnexo('anCatNovo', 'boleto')}
+      <label class="btn fino" style="cursor:pointer">+ Escolher arquivo<input type="file" id="anNovo" multiple accept="application/pdf,image/*,.xml" hidden></label>
+      <small class="sub" id="anNovoLista">Boleto, nota ou outro documento (PDF ou imagem, até 15 MB). É enviado ao salvar; no parcelado, vai para a 1ª parcela.</small></div>` : '';
+  const ls = extraAtual.anexos[r.id] || [];
   return `<div class="secao">Anexos${ls.length ? ' · ' + ls.length : ''}</div>
     ${ls.length ? `<table class="lista-mini"><tbody>${ls.map(a => `<tr><td><a href="#" data-anexo="${a.id}" style="color:var(--destaque)">${esc(a.nome)}</a></td>
       <td><span class="tg neutro">${esc(CAT_ANEXO[a.categoria] || a.categoria)}</span>${a.pagamento_id ? ' <small class="sub">do pagamento de ' + dataCurta((extraAtual.pagamentos[r.id] || []).find(p => p.id === a.pagamento_id)?.data_pagamento) + '</small>' : ''}</td>
-      <td class="sub">${dataHoraBR(a.criado_em)}</td>${ctx?.admin ? `<td><button type="button" class="btn discreto fino" data-anexo-rm="${a.id}">Excluir</button></td>` : '<td></td>'}</tr>`).join('')}</tbody></table>`
+      <td class="sub">${dataHoraBR(a.criado_em)}</td>${podeExcluirAnexo(a) ? `<td><button type="button" class="btn discreto fino" data-anexo-rm="${a.id}">Excluir</button></td>` : '<td></td>'}</tr>`).join('')}</tbody></table>`
       : '<p class="sub" style="margin:0 0 6px">Nenhum arquivo. Anexe o comprovante do pagamento, o boleto ou a nota.</p>'}
-    ${podeAnexar ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><select id="anCat" data-simples style="width:auto">${Object.entries(CAT_ANEXO).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select>
+    ${podeAnexar ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">${selCatAnexo('anCat', ABERTOS.includes(r.situacao) ? 'boleto' : 'comprovante')}
       <label class="btn fino" style="cursor:pointer">+ Anexar arquivo<input type="file" id="anArq" multiple accept="application/pdf,image/*,.xml" hidden></label><small class="sub">PDF ou imagem, até 15 MB</small></div>` : ''}`;
 }
 async function anexarArquivos(r, arquivos, categoria, pagamentoId, conferencia) {
@@ -329,10 +340,12 @@ function ligarAnexos(m, r) {
   m.querySelectorAll('[data-anexo-rm]').forEach(b => b.onclick = async () => {
     const x = (extraAtual.anexos[r.id] || []).find(y => y.id === Number(b.dataset.anexoRm));
     if (!confirm(`Excluir o anexo "${x.nome}"?`)) return;
-    const { error } = await db.from('titulos_anexos').delete().eq('id', x.id);
-    if (error) return aviso('Não excluiu: ' + error.message, true);
-    await db.storage.from('financeiro').remove([x.caminho]);
-    aviso('Anexo excluído'); m.remove(); cfg.recarregar();
+    // .select() devolve as linhas apagadas: vazio = o banco não deixou (fora do prazo ou não foi você quem enviou)
+    const { data, error } = await db.from('titulos_anexos').delete().eq('id', x.id).select('id');
+    if (error || !data?.length) return aviso('Não excluiu: ' + (error?.message || 'só quem enviou o arquivo (até 7 dias) ou o master pode excluir'), true);
+    const st = await db.storage.from('financeiro').remove([x.caminho]);
+    aviso(st.error ? 'Anexo tirado do título, mas o arquivo ficou no armazenamento: ' + st.error.message : 'Anexo excluído', !!st.error);
+    m.remove(); cfg.recarregar();
   });
   const inp = m.querySelector('#anArq');
   if (inp) inp.onchange = async () => {
@@ -509,7 +522,7 @@ const cfg = {
     { id: 'produto_sem_pedido', nome: 'Compra de produto sem pedido', cor: 'alerta',
       teste: (r, e) => ['manual', 'recorrente'].includes(r.origem) && [r.categoria_financeira_id, ...(e.rateio[r.id] || []).map(x => x.categoria_financeira_id)].some(id => cat(id)?.aplica_produtos) },
     { id: 'sem_codigo', nome: 'Boleto sem código de barras', cor: 'neutro', teste: r => ABERTOS.includes(r.situacao) && forma(r.forma_pagamento_id)?.exige_codigo && !r.codigo_barras },
-    { id: 'sem_comprovante', nome: 'Pago sem comprovante', cor: 'neutro', teste: (r, e) => r.situacao === 'pago' && r.data_pagamento >= '2026-10-23' && !(e.anexos[r.id] || []).length },
+    { id: 'sem_comprovante', nome: 'Pago sem comprovante', cor: 'neutro', teste: (r, e) => r.situacao === 'pago' && r.data_pagamento >= '2026-10-23' && !(e.anexos[r.id] || []).some(a => a.categoria === 'comprovante') },
     { id: 'nao_conc', nome: 'Pago e não conciliado', cor: 'neutro', teste: (r, e) => (e.pagamentos[r.id] || []).some(p => !p.estornado && !p.conciliado) }
   ],
   apagado: r => r.situacao === 'cancelado' || r.situacao === 'pago',
@@ -574,6 +587,7 @@ const cfg = {
     } else el.querySelectorAll('input, select').forEach(i => i.disabled = true);
     conferirRateio();
     if (r.id) ligarAnexos(m, r);
+    else { const inp = m.querySelector('#anNovo'); if (inp) inp.onchange = () => { const nomes = [...inp.files].map(f => f.name); m.querySelector('#anNovoLista').textContent = nomes.length ? '📎 ' + nomes.join(', ') : 'Nenhum arquivo escolhido'; }; }
     // Pagamentos
     if (!r.id || !pode) return;
     m.querySelector('#pgRegistrar')?.addEventListener('click', () => registrarPagamento(r));
@@ -591,6 +605,12 @@ const cfg = {
   },
   // Fornecedor escolhido num título do Tiny sem cadastro: vale também para os outros em aberto com o mesmo nome
   async depoisSalvar(id, dados, r, m) {
+    // Título novo com arquivo escolhido: sobe agora que o título existe
+    const novos = !r?.id ? [...(m.querySelector('#anNovo')?.files || [])] : [];
+    if (novos.length) {
+      const n = await anexarArquivos({ id, empresa_id: dados.empresa_id }, novos, m.querySelector('#anCatNovo').value);
+      if (n < novos.length) aviso(`O título foi salvo, mas ${novos.length - n} arquivo(s) não subiram: abra o título e anexe de novo`, true);
+    }
     if (!r?.id || r.fornecedor_id || !dados.fornecedor_id || !m.querySelector('#fornTodos')?.checked) return;
     const ids = mesmoNomeTiny(r).map(x => x.id); if (!ids.length) return;
     const { error } = await db.from('titulos_pagar').update({ fornecedor_id: dados.fornecedor_id }).in('id', ids);

@@ -6,7 +6,7 @@
 <title>Notas fiscais · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131718">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141142">
 <style>
   .nf-cnpjs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 12px; }
   .nf-cnpj { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
@@ -30,11 +30,12 @@
 <body data-modulo="notas" data-titulo="Notas fiscais" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131718"></script>
-<script src="../../assets/js/ui.js?v=202611131718"></script>
-<script src="../../assets/js/auth.js?v=202611131718"></script>
-<script src="../../assets/js/layout.js?v=202611131718"></script>
-<script src="../../assets/js/cadastro.js?v=202611131718"></script>
+<script src="../../assets/js/supabase.js?v=202611141142"></script>
+<script src="../../assets/js/ui.js?v=202611141142"></script>
+<script src="../../assets/js/auth.js?v=202611141142"></script>
+<script src="../../assets/js/layout.js?v=202611141142"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611141142"></script>
+<script src="../../assets/js/cadastro.js?v=202611141142"></script>
 <script>
 /* =====================================================================
    Notas fiscais de entrada (NF-e emitidas contra a NOX), separadas por CNPJ
@@ -176,12 +177,20 @@ function abrirLancar(r, pai) {
       <div class="campo l2"><label>Conta prevista</label><select id="lConta"><option value="">—</option>${CONTAS.filter(c => c.empresa_id === r.empresa_id).map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
     </div>
     <table class="lista-mini"><thead><tr><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${dups.map(d => `<tr><td>${dataCurta(d.vencimento)}</td><td class="num">${reais(d.valor)}</td></tr>`).join('')}</tbody></table>
+    <div id="lDest"></div>
     <div class="acoes"><button class="btn" id="lN">Voltar</button><button class="btn primario" id="lS">Lançar</button></div>`);
   m.querySelector('#lN').onclick = () => m.remove();
+  // itens da NF ligados a produto pelo código do fornecedor: escolher onde cada um fica (destino-estoque.js)
+  let lerDestinos = () => [];
+  const cods = (r.itens || []).map(i => i.codigo).filter(Boolean);
+  if (r.fornecedor_id && cods.length) db.from('produto_fornecedores').select('produto_id, codigo_fornecedor').eq('fornecedor_id', r.fornecedor_id).in('codigo_fornecedor', cods)
+    .then(({ data: pf }) => montarDestinos(m.querySelector('#lDest'), (pf || []).map(x => ({ produto_id: x.produto_id, descricao: (r.itens.find(i => i.codigo === x.codigo_fornecedor) || {}).descricao })))
+    .then(f => lerDestinos = f));
   m.querySelector('#lS').onclick = async () => {
     const cat = Number(m.querySelector('#lCat').value); if (!cat) return aviso('Escolha a categoria', true);
+    const dest = lerDestinos(); if (!dest) return;
     m.querySelector('#lS').disabled = true;
-    const { data, error } = await db.rpc('nfe_lancar_cp', { p_id: r.id, p_categoria: cat, p_conta: Number(m.querySelector('#lConta').value) || null });
+    const { data, error } = await db.rpc('nfe_lancar_cp_destinos', { p_id: r.id, p_categoria: cat, p_conta: Number(m.querySelector('#lConta').value) || null, p_destinos: dest });
     if (error) { m.querySelector('#lS').disabled = false; return aviso('Não lançou: ' + error.message, true); }
     aviso(`${data} título(s) no contas a pagar`); m.remove(); pai.remove(); cfg.recarregar();
   };

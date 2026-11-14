@@ -6,7 +6,7 @@
 <title>Escala · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131718">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141142">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -30,12 +30,12 @@
 <body data-modulo="escala" data-titulo="Escala" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131718"></script>
-<script src="../../assets/js/ui.js?v=202611131718"></script>
-<script src="../../assets/js/auth.js?v=202611131718"></script>
-<script src="../../assets/js/layout.js?v=202611131718"></script>
-<script src="../../assets/js/cadastro.js?v=202611131718"></script>
-<script src="../../assets/js/rh.js?v=202611131718"></script>
+<script src="../../assets/js/supabase.js?v=202611141142"></script>
+<script src="../../assets/js/ui.js?v=202611141142"></script>
+<script src="../../assets/js/auth.js?v=202611141142"></script>
+<script src="../../assets/js/layout.js?v=202611141142"></script>
+<script src="../../assets/js/cadastro.js?v=202611141142"></script>
+<script src="../../assets/js/rh.js?v=202611141142"></script>
 <script>
 /* =====================================================================
    Escala de trabalho
@@ -70,6 +70,8 @@ const SIGLA = { trabalho: 'T', folga: 'F', feriado: 'FE', compensacao: 'C' };
         linhas: visiveis().map(f => [f.nome, ESCALAS.find(e => e.id === f.escala_id)?.nome || 'Seg a sex (padrão)', ...dias().map(d => SIGLA[diaDaEscala(f, d).tipo])]) });
   try { await Promise.all([carregarFuncionarios(), carregarEscalas(MES)]); desenhar(); }
   catch (e) { aviso('Erro ao carregar: ' + (e.message || e), true); }
+  // Tempo real: escalas, exceções e funcionários alterados por outra pessoa aparecem sozinhos
+  ouvirMudancas(null, async () => { await carregarEscalas(MES); desenhar(); });   // funcionários: rh.js já recarrega
 })();
 
 const dias = () => Array.from({ length: diasNoMes(MES) }, (_, i) => `${MES}-${String(i + 1).padStart(2, '0')}`);
