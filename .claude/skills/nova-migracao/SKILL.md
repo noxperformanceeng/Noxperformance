@@ -13,8 +13,10 @@ description: Criar ou alterar estrutura do banco do ERP NOX (tabela, coluna, fun
    --  · o que muda, em linguagem de negócio (uma linha por item)
    -- =====================================================================
    ```
-3. **Idempotente**: `create table if not exists`, `add column if not exists`, `create or replace function`,
-   `drop policy if exists` antes de cada `create policy`, `insert ... on conflict do nothing`.
+3. **Idempotente e sem `drop`** (com `drop` o conector pede confirmação que não chega e o SQL não sobe):
+   `create table if not exists`, `add column if not exists`, `create or replace function`/`trigger`,
+   `insert ... on conflict do nothing`. Política nova: `create policy` dentro de um `do $$ ... if not exists
+   (select 1 from pg_policies where ...) ... end $$;`; política existente: `alter policy`. Modelo: `122_tempo_real.sql`.
    Para mexer numa função existente sem reescrevê-la toda, siga o padrão de `050` (`pg_get_functiondef` + `replace`).
 4. **Tabela nova** — checklist:
    - colunas de controle e gatilho `carimbo_cadastro()` como nas tabelas vizinhas (ex.: `049_pedidos_compra.sql`);
