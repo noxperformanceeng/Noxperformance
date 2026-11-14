@@ -6,7 +6,7 @@
 <title>Conferência da folha · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611131830">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141134">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -25,12 +25,12 @@
 <body data-modulo="lancamentos" data-titulo="Conferência da folha" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611131830"></script>
-<script src="../../assets/js/ui.js?v=202611131830"></script>
-<script src="../../assets/js/auth.js?v=202611131830"></script>
-<script src="../../assets/js/layout.js?v=202611131830"></script>
-<script src="../../assets/js/cadastro.js?v=202611131830"></script>
-<script src="../../assets/js/rh.js?v=202611131830"></script>
+<script src="../../assets/js/supabase.js?v=202611141134"></script>
+<script src="../../assets/js/ui.js?v=202611141134"></script>
+<script src="../../assets/js/auth.js?v=202611141134"></script>
+<script src="../../assets/js/layout.js?v=202611141134"></script>
+<script src="../../assets/js/cadastro.js?v=202611141134"></script>
+<script src="../../assets/js/rh.js?v=202611141134"></script>
 <script>
 /* =====================================================================
    Conferência da folha — segunda conferência antes de fechar o mês.
@@ -59,7 +59,7 @@ const TIPO = { faltou: 'Não veio neste mês', novo: 'Novo neste mês', variou: 
       <th class="num" id="hAnt">Mês anterior</th><th class="num" id="hAtu">Este mês</th><th class="num">Diferença</th><th class="num">%</th><th>Conferência</th></tr></thead>
       <tbody id="lista"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody></table></div>`;
   const c = document.getElementById('comp'); c.value = COMP;
-  c.onchange = () => { if (!c.value) return; COMP = c.value; gravarCompetencia(COMP); carregar(); };
+  c.onchange = () => { if (!c.value) return; COMP = c.value; gravarCompetencia(COMP); marcados.clear(); carregar(); };
   ligarBusca('busca', desenhar);
   document.getElementById('todos').onchange = e => { visiveis().filter(d => !d.confirmada).forEach(d => e.target.checked ? marcados.add(chave(d)) : marcados.delete(chave(d))); desenhar(); };
   window.addEventListener('empresa', () => { CTX.empresa = lerEmpresa(); carregar(); });
@@ -72,12 +72,13 @@ const TIPO = { faltou: 'Não veio neste mês', novo: 'Novo neste mês', variou: 
 
 const chave = d => `${d.funcionario_id}|${d.evento_id}|${d.tipo}`;
 async function carregar() {
-  marcados.clear();
   document.getElementById('hAnt').textContent = mesBR(somaMes(COMP, -1)); document.getElementById('hAtu').textContent = mesBR(COMP);
   const emp = CTX.empresa ? [CTX.empresa] : CTX.empresas.map(e => e.id);
   const rs = await Promise.all(emp.map(id => db.rpc('rh_divergencias', { p_empresa: id, p_competencia: COMP + '-01' })));
   const erro = rs.find(r => r.error); if (erro) return aviso('Erro: ' + erro.error.message, true);
   DIV = rs.flatMap(r => r.data || []);
+  const ainda = new Set(DIV.filter(d => !d.confirmada).map(chave));   // seleção sobrevive à atualização automática
+  [...marcados].forEach(k => { if (!ainda.has(k)) marcados.delete(k); });
   const { data } = await db.from('rh_lancamentos').select('funcionario_id, empresa_id').eq('competencia', COMP + '-01').eq('conferido', false);
   CONF = (data || []).filter(l => !CTX.empresa || l.empresa_id === CTX.empresa);
   desenhar();
