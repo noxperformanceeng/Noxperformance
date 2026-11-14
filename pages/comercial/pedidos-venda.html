@@ -6,7 +6,7 @@
 <title>Pedidos de venda · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611141134">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611141137">
 <style>
   .tot-ped { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 8px; }
   .tot-ped b { font-variant-numeric: tabular-nums; }
@@ -17,11 +17,11 @@
 <body data-modulo="pedidos" data-titulo="Pedidos de venda" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611141134"></script>
-<script src="../../assets/js/ui.js?v=202611141134"></script>
-<script src="../../assets/js/auth.js?v=202611141134"></script>
-<script src="../../assets/js/layout.js?v=202611141134"></script>
-<script src="../../assets/js/cadastro.js?v=202611141134"></script>
+<script src="../../assets/js/supabase.js?v=202611141137"></script>
+<script src="../../assets/js/ui.js?v=202611141137"></script>
+<script src="../../assets/js/auth.js?v=202611141137"></script>
+<script src="../../assets/js/layout.js?v=202611141137"></script>
+<script src="../../assets/js/cadastro.js?v=202611141137"></script>
 <script>
 /* =====================================================================
    Pedidos de venda — uma lista só para marketplace e distribuidores
@@ -41,7 +41,7 @@ const LOG = [{ v: 'full', n: 'Full' }, { v: 'flex', n: 'Flex' }, { v: 'coleta', 
   { v: 'transportadora', n: 'Transportadora' }, { v: 'retira', n: 'Retira' }, { v: 'outro', n: 'Outro' }];
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const num2 = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-let CANAIS = [], CLIENTES = [], PRODS = [], CATS = [], TIPOS_ENC = [], CONDS = [], FORMAS = [], ACOES = new Set(), modalAtual = null, ex = {};
+let CANAIS = [], CLIENTES = [], PRODS = [], CATS = [], TIPOS_ENC = [], CONDS = [], FORMAS = [], ACOES = new Set(), modalAtual = null, ex = {}, DISP = new Map();
 const canal = id => CANAIS.find(c => c.id === id);
 const cli = id => CLIENTES.find(c => c.id === id);
 const prod = id => PRODS.find(p => p.id === id);
@@ -58,7 +58,7 @@ const recebStatus = (r, e) => { const ts = (e.titulos[r.id] || []).filter(t => t
 const optProds = sel => '<option value="">— produto —</option>' + PRODS.filter(p => p.situacao === 'ativo' && (p.aprovacao || 'aprovado') === 'aprovado' || p.id === sel)
   .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo || '—') + ' · ' + p.descricao)}</option>`).join('');
 const linhaItem = (x = {}) => `<tr data-id="${x.id || ''}" data-anuncio-ref="${x.anuncio_ref || ''}" data-anuncio="${esc(x.anuncio_id || '')}" data-variacao="${esc(x.variacao_id || '')}" data-sku="${esc(x.sku || '')}" data-desc="${esc(x.descricao || '')}">
-  <td><select data-k="produto_id">${optProds(x.produto_id)}</select>${x.anuncio_id || x.sku ? `<div class="ro">${esc([x.anuncio_id, x.variacao_id, x.sku && 'SKU ' + x.sku, x.descricao].filter(Boolean).join(' · '))}</div>` : ''}</td>
+  <td><select data-k="produto_id">${optProds(x.produto_id)}</select>${x.anuncio_id || x.sku ? `<div class="ro">${esc([x.anuncio_id, x.variacao_id, x.sku && 'SKU ' + x.sku, x.descricao].filter(Boolean).join(' · '))}</div>` : ''}<div class="ro" data-k="estq"></div></td>
   <td style="width:80px"><input data-k="quantidade" inputmode="decimal" value="${num2(x.quantidade ?? 1)}"></td>
   <td style="width:110px"><input data-k="valor_unitario" inputmode="decimal" value="${num2(x.valor_unitario)}"></td>
   <td style="width:90px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num2(x.desconto) : ''}" placeholder="0,00"></td>
@@ -93,6 +93,7 @@ function recalcular() {
   modalAtual.querySelectorAll('#itens tbody tr').forEach(tr => {
     const q = lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, u = lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0, d = lerNumero(tr.querySelector('[data-k=desconto]').value) || 0;
     const t = Math.round((q * u - d) * 100) / 100; prodT += t; tr.querySelector('[data-k=total]').textContent = reais(t);
+    estoqueItem(tr, q);
   });
   const v = id => lerNumero(modalAtual.querySelector('#f_' + id)?.value) || 0;
   const total = prodT - v('desconto') + v('frete_cliente') + v('outras_receitas');
@@ -100,6 +101,18 @@ function recalcular() {
   modalAtual.querySelector('#totPed').innerHTML = `<span>Produtos <b>${reais(prodT)}</b></span><span>Total do pedido <b>${reais(total)}</b></span>
     <span>Tarifas/encargos <b class="${enc ? 'valor-neg' : ''}">${enc ? '− ' + reais(enc) : reais(0)}</b></span><span>Líquido a receber <b>${reais(total - enc)}</b></span>`;
 }
+
+/* Estoque do produto no item: físico, reservado (pedidos confirmados ainda não expedidos) e disponível.
+   Vender sem disponível é permitido (sob encomenda): só avisa. Pedido novo ainda não reserva, então compara com a quantidade. */
+function estoqueItem(tr, q) {
+  const el = tr.querySelector('[data-k=estq]'), p = prod(Number(tr.querySelector('[data-k=produto_id]').value));
+  if (!el) return; if (!p || p.controla_estoque === false) { el.innerHTML = ''; return; }
+  const d = DISP.get(p.id) || { fisico: 0, reservado: 0, disponivel: 0 }, novo = !tr.dataset.id;
+  const falta = novo ? q - Math.max(d.disponivel, 0) : -d.disponivel;
+  el.innerHTML = `Estoque: físico ${qtd(d.fisico)} · reservado ${qtd(d.reservado)} · disponível <b>${qtd(d.disponivel)}</b>`
+    + (falta > 0.0001 ? ` <span class="valor-neg">· falta ${qtd(falta)} (vai para produção/compras)</span>` : '');
+}
+const qtd = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 
 /* ---------- Rastreio e financeiro do pedido ---------- */
 function secaoPedido(r) {
@@ -302,7 +315,7 @@ const cfg = {
     const [c, cl, p, ca, te, co, fo, it, en, ti, rc, pe, pei] = await Promise.all([
       buscarTodos(() => db.from('canais_venda').select('*').order('nome')),
       buscarTodos(() => db.from('clientes').select('id, nome, nome_fantasia, tipo_cliente, situacao, representante_id').order('nome')),
-      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao, aprovacao, unidade').in('tipo', ['acabado', 'kit', 'semiacabado', 'componente']).order('descricao')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, tipo, situacao, aprovacao, unidade, controla_estoque').in('tipo', ['acabado', 'kit', 'semiacabado', 'componente']).order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('encargos_tipos').select('*').order('nome')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
@@ -314,7 +327,8 @@ const cfg = {
       buscarTodos(() => db.from('pedidos_venda_entregas').select('*').order('id')),
       buscarTodos(() => db.from('pedidos_venda_entregas_itens').select('*').order('id'))
     ]);
-    const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
+    const [ac, dp] = await Promise.all([db.rpc('minhas_acoes'), db.rpc('estoque_disponivel')]); ACOES = new Set(ac.data || []);
+    DISP = new Map((dp.data || []).map(x => [x.produto_id, x]));
     CANAIS = c; CLIENTES = cl; PRODS = p; CATS = ca; TIPOS_ENC = te; CONDS = co; FORMAS = fo;
     const itens = {}, encargos = {}, titulos = {};
     it.forEach(x => (itens[x.pedido_id] ||= []).push(x));

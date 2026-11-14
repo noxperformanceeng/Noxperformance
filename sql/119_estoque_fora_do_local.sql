@@ -12,7 +12,7 @@
 --    e "Baixar" (devolvido ao fornecedor, não veio, perda), as duas com quantidade parcial.
 --  · O que está fora conta no saldo físico (é da NOX e já foi pago), mas NÃO no disponível para venda
 --    (decisão do Alexandre, 13/11/2026). A sugestão de compra continua contando (o produto vai voltar).
---  · Rodar DEPOIS do 118 (estoque reservado): este arquivo refaz estoque_disponivel descontando o que está fora.
+--  · Refaz estoque_disponivel (do 118, já aplicado) descontando o que está fora; mesmas colunas.
 -- =====================================================================
 
 -- ---------- Locais especiais: PODER DE TERCEIRO (área terceiros) e QUARENTENA ----------
@@ -239,6 +239,7 @@ revoke execute on function public.estoque_disponivel(bigint[]) from public, anon
 grant execute on function public.estoque_disponivel(bigint[]) to authenticated;
 
 select public.ligar_auditoria('estoque_fora_local');
+select public.ligar_tempo_real('estoque_fora_local');
 
 -- Conferência: esperado 1 local em cada área (PODER DE TERCEIRO em "terceiros" e QUARENTENA em "quarentena")
 select area, codigo, situacao from public.locais_estoque where area in ('terceiros', 'quarentena') order by area, id;
