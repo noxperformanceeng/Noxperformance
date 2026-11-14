@@ -22,13 +22,17 @@ Sistema de gestão da NOX Peças (indústria e comércio). Responda e escreva se
    holerites. Cargas com dados de pessoas ficam em `/mnt/project-files/`, fora do Git. No `sql/` só estrutura.
 3. Toda tabela nova: `enable row level security` + políticas usando `(select public.pode('modulo'))`
    (o `select` em volta é obrigatório, por desempenho — ver `048_rls_desempenho.sql`) e, no fim do arquivo,
-   `select public.ligar_auditoria('nome_da_tabela');`.
+   `select public.ligar_auditoria('nome_da_tabela');` e `select public.ligar_tempo_real('nome_da_tabela');`.
 4. Função `security definer`: sempre `set search_path = public`, checar `pode(...)` dentro dela e
    `revoke execute ... from public, anon` (e de `authenticated` se for só interna).
 5. Antes de commitar mudanças em `assets/`, rodar `python3 tools/versao.py` (carimba `?v=` nos HTML para o
    navegador pegar a versão nova). O hook do projeto faz isso sozinho no `git commit`.
 
 ## Convenções
+- **Tempo real é obrigatório**: toda mudança aparece sozinha em todas as telas abertas (`supabase.js`, SQL `122`).
+  Tela com `montarCadastro` ou com `function carregar()` global já se atualiza; outra forma de carregar →
+  `ouvirMudancas(null, async ev => {...})`. Função `rpc` nova que lê tabelas → incluir no mapa `FONTES` de `supabase.js`.
+  Recarregar sem perder filtros, seleção, rolagem nem o que está sendo digitado.
 - Permissões: tabela `modulos` (id da tela) + `permissoes` por perfil, níveis `ver` < `criar` < `alterar` <
   `editar` (`047`). O `id` em `MENU` (`layout.js`) e o `data-modulo` da tela precisam bater com `modulos.id`.
 - SQL idempotente: `create ... if not exists`, `drop policy if exists` antes de `create policy`,

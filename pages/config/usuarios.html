@@ -6,7 +6,7 @@
 <title>Usuários e acessos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611132002">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611132003">
 </head>
 <body data-modulo="usuarios" data-titulo="Usuários e acessos">
 <main id="conteudo">
@@ -74,10 +74,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611132002"></script>
-<script src="../../assets/js/ui.js?v=202611132002"></script>
-<script src="../../assets/js/auth.js?v=202611132002"></script>
-<script src="../../assets/js/layout.js?v=202611132002"></script>
+<script src="../../assets/js/supabase.js?v=202611132003"></script>
+<script src="../../assets/js/ui.js?v=202611132003"></script>
+<script src="../../assets/js/auth.js?v=202611132003"></script>
+<script src="../../assets/js/layout.js?v=202611132003"></script>
 <script>
 let ctx, perfis = [], modulos = [], permissoes = [], ajustes = [], usuarios = [];
 let acoes = [], perfilAcoes = [], usuarioAcoes = [];   // ações sensíveis (estornar, cancelar…), por perfil e por pessoa
@@ -297,7 +297,7 @@ function desenharSeletorPerfil() {
   s.innerHTML = perfis.filter(p => p.id !== 'admin').map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('');
   if (atual) s.value = atual;
   s.onchange = desenharMatriz;
-  desenharMatriz();
+  if (!matrizMexida) desenharMatriz();   // tempo real: não apaga a matriz que está sendo ajustada e ainda não foi salva
   document.getElementById('salvarPerfil').onclick = salvarPerfil;
   const bn = document.getElementById('novoPerfil'); bn.hidden = !ctx.admin; bn.onclick = novoPerfil;
 }
@@ -327,8 +327,11 @@ function novoPerfil() {
   };
 }
 
+let matrizMexida = false;
 function desenharMatriz() {
+  matrizMexida = false;
   const perfil = document.getElementById('perfilEscolhido').value;
+  document.getElementById('matrizPerfil').onchange = () => { matrizMexida = true; };
   document.getElementById('matrizPerfil').innerHTML = modulos.map(m => {
     const n = permissoes.find(p => p.perfil_id === perfil && p.modulo_id === m.id)?.nivel || '';
     return `<tr><td style="color:var(--texto-suave)">${GRUPOS[m.grupo]}</td><td>${esc(m.nome)}</td><td>
@@ -349,7 +352,7 @@ async function salvarPerfil() {
   const r1 = await db.from('permissoes').delete().eq('perfil_id', perfil);
   const r2 = gravar.length ? await db.from('permissoes').insert(gravar) : {};
   if (r1.error || r2.error) return aviso('Não salvou: ' + (r1.error || r2.error).message, true);
-  aviso('Perfil salvo'); carregar();
+  matrizMexida = false; aviso('Perfil salvo'); carregar();
 }
 
 /* ---------- EMPRESAS ---------- */
