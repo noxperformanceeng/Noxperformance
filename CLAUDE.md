@@ -35,15 +35,21 @@ Sistema de gestão da NOX Peças (indústria e comércio). Responda e escreva se
   Recarregar sem perder filtros, seleção, rolagem nem o que está sendo digitado.
 - Permissões: tabela `modulos` (id da tela) + `permissoes` por perfil, níveis `ver` < `criar` < `alterar` <
   `editar` (`047`). O `id` em `MENU` (`layout.js`) e o `data-modulo` da tela precisam bater com `modulos.id`.
-- SQL idempotente: `create ... if not exists`, `drop policy if exists` antes de `create policy`,
-  `insert ... on conflict do nothing`.
+- SQL idempotente e **sem `drop`** (o conector do Supabase pede uma confirmação que não chega e o SQL não sobe):
+  `create ... if not exists`, `create or replace function`/`trigger`, `insert ... on conflict do nothing`.
+  Política: crie dentro de `do $$ begin if not exists (select 1 from pg_policies where schemaname = '...' and
+  tablename = '...' and policyname = '...') then create policy ...; end if; end $$;` e, para mudar uma que já
+  existe, `alter policy ... using (...) with check (...)`. Ver `122_tempo_real.sql`.
+- Antes de aplicar SQL ou fazer merge: pedir o ok do Alexandre explicando o que muda (telas, tabelas, risco,
+  se dá para desfazer). Com o ok, o Claude aplica pelo conector "Supabase NOX" e faz o merge.
 - Cabeçalho de cada SQL: bloco `-- ===` com número, título e o que muda, em linguagem de negócio.
 - Mensagens de commit curtas, em português, descrevendo o efeito para o usuário (veja `git log`).
 - Estilo do JS: compacto, funções curtas, sem frameworks; reaproveite `ui.js` e `cadastro.js`.
 
 ## Entrega de SQL para o Alexandre
-Só quando estiver pronto, em **um único arquivo `.sql` anexado** (nunca colado no chat), com uma linha dizendo
-o que rodar e o resultado esperado. Ele cola tudo no SQL Editor do Supabase.
+Só quando estiver pronto, em **um único arquivo `.sql` anexado** (nunca colado no chat), com o que muda e o
+resultado esperado. Depois do ok dele, o Claude aplica pelo conector e confere no banco; colar no SQL Editor é
+só o plano B, se o conector falhar.
 
 ## Verificação
 Não há testes automatizados. Para conferir uma tela, sirva a pasta (`python3 -m http.server`) e abra no
