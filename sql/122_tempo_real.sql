@@ -56,23 +56,25 @@ revoke execute on function public.avisar_mudanca() from public, anon, authentica
 create or replace function public.ligar_tempo_real(p_tabela text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
-  execute format('drop trigger if exists tempo_real_ins on public.%I', p_tabela);
-  execute format('drop trigger if exists tempo_real_upd on public.%I', p_tabela);
-  execute format('drop trigger if exists tempo_real_del on public.%I', p_tabela);
-  execute format('create trigger tempo_real_ins after insert on public.%I referencing new table as novas
+  execute format('create or replace trigger tempo_real_ins after insert on public.%I referencing new table as novas
                   for each statement execute function public.avisar_mudanca()', p_tabela);
-  execute format('create trigger tempo_real_upd after update on public.%I referencing new table as novas
+  execute format('create or replace trigger tempo_real_upd after update on public.%I referencing new table as novas
                   for each statement execute function public.avisar_mudanca()', p_tabela);
-  execute format('create trigger tempo_real_del after delete on public.%I referencing old table as antigas
+  execute format('create or replace trigger tempo_real_del after delete on public.%I referencing old table as antigas
                   for each statement execute function public.avisar_mudanca()', p_tabela);
 end $$;
 revoke execute on function public.ligar_tempo_real(text) from public, anon, authenticated;
 
 -- ---------- Canal privado: só usuário ativo escuta; ninguém publica pelo navegador ----------
-drop policy if exists "nox_tempo_real_escutar" on realtime.messages;
-create policy "nox_tempo_real_escutar" on realtime.messages
-  for select to authenticated
-  using (realtime.topic() = 'nox:mudancas' and extension = 'broadcast' and (select public.sou_usuario_ativo()));
+-- (sem "drop": cria só se ainda não existe, para o arquivo poder rodar de novo)
+do $$
+begin
+  if not exists (select 1 from pg_policy where polrelid = 'realtime.messages'::regclass and polname = 'nox_tempo_real_escutar') then
+    create policy "nox_tempo_real_escutar" on realtime.messages
+      for select to authenticated
+      using (realtime.topic() = 'nox:mudancas' and extension = 'broadcast' and (select public.sou_usuario_ativo()));
+  end if;
+end $$;
 
 -- ---------- Liga em todas as tabelas das telas ----------
 -- Cada gatilho novo pede um bloqueio rápido na tabela. Se alguma estiver ocupada (backup, importação do Tiny),
