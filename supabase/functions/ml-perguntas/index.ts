@@ -42,12 +42,15 @@ async function responder(db: Db, id: number) {
 }
 
 // Uma consulta paginada (offset até 1.000). Para quando a página não traz nada novo, no modo 'recentes'.
-async function varrer(db: Db, conta: Conta, filtro: string, ordem: 'DESC' | 'ASC', limiteOffset: number, pararSeConhecida: boolean) {
+async function varrer(db: Db, conta: Conta, filtro: string, ordem: 'DESC' | 'ASC', limiteOffset: number, pararSeConhecida: boolean, item?: string) {
   const token = await tokenValido(db, conta);
   let total = 0, gravadas = 0;
   for (let off = 0; off <= limiteOffset; off += 50) {
-    const r = await mlGet(token, `/questions/search?seller_id=${conta.ml_user_id}&api_version=4&limit=50&offset=${off}&sort_fields=date_created&sort_types=${ordem}${filtro}`);
+    // por anúncio: filtra pelo item (sem seller_id); se o ML ignorar o filtro, para na hora
+    const base = item ? `/questions/search?item=${item}` : `/questions/search?seller_id=${conta.ml_user_id}`;
+    const r = await mlGet(token, `${base}&api_version=4&limit=50&offset=${off}&sort_fields=date_created&sort_types=${ordem}${filtro}`);
     const qs = r?.questions ?? [];
+    if (item && qs.some((q: { item_id: string }) => q.item_id !== item)) break;
     total = r?.total ?? 0;
     if (!qs.length) break;
     if (pararSeConhecida) {
@@ -78,7 +81,7 @@ async function importar(db: Db, corpo: { modo?: string; conta?: number; fase?: s
       const { data: an } = await db.from('anuncios').select('anuncio_id').eq('canal_id', conta.canal_id).ilike('anuncio_id', 'MLB%').order('anuncio_id');
       const itens = [...new Set((an ?? []).map(x => x.anuncio_id))];
       let pos = corpo.pos ?? 0;
-      for (; pos < itens.length && Date.now() - inicio < 100_000; pos++) await varrer(db, conta, `&item=${itens[pos]}`, 'DESC', 1000, false);
+      for (; pos < itens.length && Date.now() - inicio < 100_000; pos++) await varrer(db, conta, '', 'DESC', 1000, false, itens[pos]);
       if (pos < itens.length) await continuar({ ...corpo, pos });
       log.push({ conta: conta.id, fase: 'itens', ate: pos, de: itens.length });
     }

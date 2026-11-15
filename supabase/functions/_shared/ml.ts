@@ -100,9 +100,12 @@ type Pergunta = { id: number; item_id: string; text: string; status: string; dat
 export async function gravarPerguntas(db: SupabaseClient, conta: Conta, qs: Pergunta[]) {
   if (!qs.length) return 0;
   const ids = qs.map(q => q.id);
-  const { data: ja } = await db.from('ml_perguntas').select('id, resposta, resposta_origem').in('id', ids);
+  const { data: ja } = await db.from('ml_perguntas').select('id, texto, situacao, resposta, resposta_origem').in('id', ids);
   const ant = new Map((ja ?? []).map(r => [Number(r.id), r]));
-  const linhas = qs.map(q => {
+  // só grava o que é novo ou mudou (regravar igual enche o banco à toa)
+  const mudou = (q: Pergunta) => { const a = ant.get(Number(q.id));
+    return !a || a.situacao !== q.status || (a.resposta ?? null) !== (q.answer?.text ?? null) || a.texto !== q.text; };
+  const linhas = qs.filter(mudou).map(q => {
     const a = ant.get(Number(q.id)), resp = q.answer?.text ?? null;
     return {
       id: q.id, canal_id: conta.canal_id, item_id: q.item_id, texto: q.text, comprador_id: q.from?.id ?? null,
@@ -110,6 +113,7 @@ export async function gravarPerguntas(db: SupabaseClient, conta: Conta, qs: Perg
       resposta_origem: resp ? (a?.resposta_origem ?? 'ml') : null, atualizado_em: new Date().toISOString()
     };
   });
+  if (!linhas.length) return 0;
   const { error } = await db.from('ml_perguntas').upsert(linhas);
   if (error) throw error;
   return linhas.length;
