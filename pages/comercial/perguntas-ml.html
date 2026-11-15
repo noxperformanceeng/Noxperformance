@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perguntas do Mercado Livre · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611150328">
+<style>
+  .pq { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .pq img.ft { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--borda); }
+  .pq .anun { font-size: 12.5px; color: var(--texto-suave); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .pq .anun a { color: inherit; } .pq .anun b { color: var(--texto); font-weight: 600; }
+  .pq .txt { font-size: 15px; margin: 6px 0 4px; font-weight: 500; }
+  .pq .quando { font-size: 12px; color: var(--texto-suave); }
+  .pq .quando.tarde { color: var(--erro); font-weight: 600; }
+  .pq .antes { font-size: 12px; background: var(--fundo); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+  .pq .antes div { margin: 2px 0; } .pq .antes i { color: var(--texto-suave); font-style: normal; }
+  .pq textarea { width: 100%; min-height: 64px; font-size: 14px; margin-top: 6px; }
+  .pq .acoes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+  .pq .cont { font-size: 11.5px; color: var(--texto-suave); margin-left: auto; }
+  .pq .sug { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .pq .sug button { font-size: 12px; text-align: left; border: 1px solid var(--borda); background: #fff; border-radius: 12px; padding: 3px 9px;
+    cursor: pointer; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pq .sug button:hover { border-color: var(--primaria); }
+  .pq .sug span { font-size: 11px; color: var(--texto-suave); align-self: center; }
+  .pq .ind { position: relative; }
+  .pq .ind input { width: 280px; padding: 5px 8px; font-size: 12.5px; }
+  .pq .ind .res { position: absolute; z-index: 20; top: 100%; left: 0; width: 520px; max-width: 80vw; background: #fff; border: 1px solid var(--borda);
+    border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.12); max-height: 320px; overflow: auto; }
+  .pq .ind .res div { display: flex; gap: 8px; align-items: center; padding: 6px 8px; cursor: pointer; font-size: 12.5px; border-bottom: 1px solid var(--fundo); }
+  .pq .ind .res div:hover { background: var(--fundo); } .pq .ind .res img { width: 34px; height: 34px; object-fit: contain; }
+  .pq .ind .res small { color: var(--texto-suave); display: block; }
+  .pq .estado { font-size: 12.5px; margin-top: 6px; } .pq .estado.erro { color: var(--erro); } .pq .estado.ok { color: var(--ok); }
+  .pq .ia { font-size: 12.5px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--texto-suave); }
+  .pq .ia .tg { font-weight: 600; } .pq .ia button { font-size: 12px; padding: 2px 9px; }
+  .pq .ia-alerta { margin-top: 6px; padding: 7px 10px; border-radius: 6px; background: #fff3cd; border: 1px solid #f0c36d; color: #6b4d00; font-size: 13px; font-weight: 600; }
+  .resp-ml { white-space: pre-wrap; }
+  td .mini { width: 34px; height: 34px; object-fit: contain; vertical-align: middle; margin-right: 6px; }
+</style>
+</head>
+<body data-modulo="perguntas_ml" data-titulo="Perguntas do Mercado Livre">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Perguntas do Mercado Livre</h1>
+    <p class="sub">As perguntas das duas contas chegam sozinhas. Responda aqui e a resposta vai direto para o anúncio. Se o cliente precisa de outro modelo, use <b>Indicar outro anúncio</b> para colocar o link certo na resposta. Quando dá, a resposta já vem escrita pela IA: confira, ajuste se precisar e envie. Tudo fica guardado (inclusive o que foi respondido no próprio ML).</p></div>
+    <div><button class="btn fino" style="white-space:nowrap" type="button" id="btnBuscar" title="Confere agora se há perguntas novas no Mercado Livre">Buscar perguntas agora</button></div>
+  </div>
+  <div class="barra-ferr">
+    <div class="abas" id="abas"></div>
+    <div class="ferr">
+      <input id="fBusca" class="busca" type="search" placeholder="Buscar: pergunta, resposta, anúncio, MLB…" title="Palavras em qualquer ordem">
+      <button class="btn fino" type="button" id="btnFiltros">Filtros<span class="nfilt" id="nFiltros"></span></button>
+      <div id="rel"></div>
+    </div>
+  </div>
+  <div class="cartao filtros painel-filtros" hidden>
+    <div><label>Conta</label><select id="fConta"><option value="">Todas</option></select></div>
+    <div><label>Respondida por</label><select id="fOrig"><option value="">Todas</option><option value="sistema">Pelo sistema</option><option value="automatica">Automática</option><option value="ml">No próprio ML</option></select></div>
+    <div><label>De</label><input id="fDe" type="date"></div>
+    <div><label>Até</label><input id="fAte" type="date"></div>
+    <div class="limpar"><button class="btn discreto fino" type="button" id="btnLimpar">Limpar filtros</button></div>
+  </div>
+  <div class="barra-lista"><span id="contagem"></span></div>
+  <div id="lista"><div class="cartao vazio">Carregando…</div></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611150328"></script>
+<script src="../../assets/js/ui.js?v=202611150328"></script>
+<script src="../../assets/js/auth.js?v=202611150328"></script>
+<script src="../../assets/js/layout.js?v=202611150328"></script>
+<script>
+/* =====================================================================
+   Perguntas do Mercado Livre
+   · Chegam pelo aviso do ML (ml-notificacoes) e pela conferência a cada 3 h (ml-perguntas).
+   · Responder: ml_pergunta_responder grava o texto e o servidor envia ao ML; a tela mostra "enviando",
+     e em tempo real vira "respondida" (ou mostra o erro do ML).
+   · Respostas parecidas: perguntas já respondidas, primeiro do mesmo anúncio, depois das demais,
+     pela semelhança das palavras. Rascunhos ficam guardados mesmo quando a lista se atualiza sozinha.
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const ABAS = [{ v: 'aberta', n: 'Sem resposta' }, { v: 'resp', n: 'Respondidas' }, { v: '', n: 'Todas' }];
+const ORIG = { sistema: 'Pelo sistema', automatica: 'Automática', ml: 'No próprio ML' };
+const SIT = { ANSWERED: 'Respondida', UNANSWERED: 'Sem resposta', CLOSED_UNANSWERED: 'Encerrada sem resposta', DELETED: 'Apagada pelo cliente',
+  BANNED: 'Bloqueada pelo ML', DISABLED: 'Desativada', UNDER_REVIEW: 'Em análise no ML' };
+let CTX = null, PERG = [], ITENS = new Map(), CANAIS = [], USU = new Map(), aba = 'aberta';
+const PEDIU = new Set();                 // perguntas em que se pediu nova sugestão à IA (aguardando)
+const RASC = {}, IND = {};               // rascunho e anúncio indicado de cada pergunta (sobrevivem à atualização da lista)
+const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const canalNome = id => CANAIS.find(c => c.id === id)?.nome || '';
+const semAc = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const PARADAS = new Set('o a os as de da do das dos e em no na nos nas um uma para pra pro com por que se eu meu minha voce vc tem ter esse essa este esta isso ola oi bom dia boa tarde noite amigo serve servir'.split(' '));
+const palavras = t => new Set(semAc(t).replace(/[^a-z0-9.\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !PARADAS.has(w)));
+const espera = q => { const h = (Date.now() - Date.parse(q.criada_em)) / 36e5; return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} dias`; };
+function saudacao() { const h = new Date().getHours(); return (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + ' amigo, '; }
+
+async function carregar() {
+  const [p, it, c, u] = await Promise.all([
+    buscarTodos(() => db.from('ml_perguntas').select('*').order('criada_em', { ascending: false })),
+    buscarTodos(() => db.from('ml_itens').select('item_id, canal_id, titulo, link, foto, preco, situacao')),
+    db.from('canais_venda').select('id, nome, plataforma').order('nome'),
+    db.from('usuarios').select('id, nome')
+  ]);
+  PERG = p; ITENS = new Map(it.map(x => [x.item_id, x])); CANAIS = c.data || []; USU = new Map((u.data || []).map(x => [x.id, x.nome]));
+  const sel = $('#fConta'), v = sel.value;
+  sel.innerHTML = '<option value="">Todas</option>' + CANAIS.filter(x => PERG.some(q => q.canal_id === x.id)).map(x => `<option value="${x.id}">${esc(x.nome)}</option>`).join('');
+  sel.value = v;
+  desenhar();
+}
+
+function filtrados(ignorarAba) {
+  const b = [...palavras($('#fBusca').value)], conta = Number($('#fConta').value) || null, orig = $('#fOrig').value, de = $('#fDe').value, ate = $('#fAte').value;
+  return PERG.filter(q => {
+    if (!ignorarAba && aba === 'aberta' && q.situacao !== 'UNANSWERED') return false;
+    if (!ignorarAba && aba === 'resp' && !q.resposta) return false;
+    if (conta && q.canal_id !== conta) return false;
+    if (orig && q.resposta_origem !== orig) return false;
+    const d = (q.criada_em || '').slice(0, 10);
+    if (de && d < de) return false; if (ate && d > ate) return false;
+    if (b.length) { const t = semAc(`${q.texto} ${q.resposta || ''} ${q.item_id} ${ITENS.get(q.item_id)?.titulo || ''}`); if (!b.every(w => t.includes(w))) return false; }
+    return true;
+  });
+}
+
+// respostas já dadas a perguntas parecidas (mesmo anúncio vale mais)
+function parecidas(q) {
+  const w = palavras(q.texto); if (!w.size) return [];
+  const vistos = new Set();
+  return PERG.filter(x => x.resposta && x.id !== q.id).map(x => {
+    const wx = palavras(x.texto); let comum = 0; w.forEach(p => { if (wx.has(p)) comum++; });
+    const sem = comum / Math.sqrt(w.size * Math.max(wx.size, 1));
+    return { x, nota: sem >= 0.25 ? sem + (x.item_id === q.item_id ? 0.35 : 0) : 0 };
+  }).filter(o => o.nota > 0).sort((a, b) => b.nota - a.nota)
+    .filter(o => { const k = semAc(o.x.resposta).slice(0, 60); if (vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, 4);
+}
+
+function anuncioHtml(q) {
+  const it = ITENS.get(q.item_id);
+  return `<div class="anun"><b>${esc(canalNome(q.canal_id))}</b> · ${it?.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.titulo || q.item_id)}</a>` : esc(it?.titulo || q.item_id)}
+    <span>${esc(q.item_id)}</span>${it?.preco ? `<span>${Number(it.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>` : ''}</div>`;
+}
+
+function cartaoAberta(q) {
+  const it = ITENS.get(q.item_id), anteriores = PERG.filter(x => x.id !== q.id && x.comprador_id && x.comprador_id === q.comprador_id && x.item_id === q.item_id)
+    .sort((a, b) => a.criada_em < b.criada_em ? -1 : 1).slice(-3);
+  const sug = parecidas(q), envi = q.resposta_pendente && !q.resposta_erro, tarde = (Date.now() - Date.parse(q.criada_em)) > 12 * 36e5;
+  const pode = CTX.pode('perguntas_ml', 'alterar');
+  return `<div class="cartao pq" data-id="${q.id}">
+    ${it?.foto ? `<img class="ft" src="${esc(it.foto)}" alt="">` : '<div></div>'}
+    <div>
+      ${anuncioHtml(q)}
+      <div class="txt">${esc(q.texto)}</div>
+      <div class="quando${tarde ? ' tarde' : ''}">Perguntada em ${quando(q.criada_em)} · esperando há ${espera(q)}</div>
+      ${anteriores.length ? `<div class="antes"><i>Este cliente já perguntou neste anúncio:</i>${anteriores.map(a => `<div>• ${esc(a.texto)}${a.resposta ? ` <i>→ ${esc(a.resposta)}</i>` : ''}</div>`).join('')}</div>` : ''}
+      ${!pode ? '' : envi ? `<div class="estado">Enviando a resposta ao Mercado Livre… <i>${esc(q.resposta_pendente)}</i></div>` : `
+      ${iaHtml(q)}
+      <textarea data-r="${q.id}" maxlength="2000" placeholder="Escreva a resposta…">${esc(RASC[q.id] ?? q.sugestao ?? saudacao())}</textarea>
+      ${sug.length ? `<div class="sug"><span>Respostas parecidas:</span>${sug.map(o => `<button type="button" data-sug="${o.x.id}" title="${esc(`P: ${o.x.texto}\nR: ${o.x.resposta}`)}">${esc(o.x.resposta)}</button>`).join('')}</div>` : ''}
+      <div class="acoes">
+        <div class="ind"><input data-ind="${q.id}" placeholder="Indicar outro anúncio: digite o carro ou produto…" autocomplete="off"><div class="res" hidden></div></div>
+        ${IND[q.id] ? `<span class="tg ok" title="${esc(IND[q.id].link)}">Indicado: ${esc((IND[q.id].titulo || '').slice(0, 40))}</span>` : ''}
+        <span class="cont" data-cont="${q.id}"></span>
+        <button class="btn" type="button" data-enviar="${q.id}">Responder</button>
+      </div>
+      ${q.resposta_erro ? `<div class="estado erro">Não foi: ${esc(q.resposta_erro)}</div>` : ''}`}
+    </div></div>`;
+}
+
+// sugestão da IA: a equipe confere e envia (nada vai sozinho). Preço e compatibilidade incerta: aviso forte.
+const CONF = { alta: ['ok', 'confiança alta'], media: ['neutro', 'confiança média'], baixa: ['erro', 'confiança baixa'] };
+const ALERTA = { preco: 'Assunto de PREÇO / DESCONTO: confira com atenção antes de enviar (a IA não promete desconto).',
+  compatibilidade: 'COMPATIBILIDADE INCERTA: confira no anúncio/desenho se a peça serve no carro do cliente antes de enviar.' };
+function iaHtml(q) {
+  if (q.sugestao_em && PEDIU.has(q.id)) PEDIU.delete(q.id);
+  if (PEDIU.has(q.id)) return '<div class="ia">🤖 A IA está escrevendo uma sugestão…</div>';
+  if (q.sugestao_erro && !q.sugestao) return `<div class="ia">🤖 Sem sugestão da IA: ${esc(q.sugestao_erro)} <button class="btn fino" type="button" data-nova="${q.id}">Tentar de novo</button></div>`;
+  if (!q.sugestao) return q.sugestao_em ? '' : `<div class="ia">🤖 <button class="btn fino" type="button" data-nova="${q.id}">Pedir sugestão da IA</button></div>`;
+  const c = CONF[q.sugestao_confianca] || CONF.baixa, mudou = RASC[q.id] != null && RASC[q.id].trim() !== q.sugestao.trim();
+  return `<div class="ia">🤖 <b>Resposta sugerida pela IA</b> <span class="tg ${c[0]}">${c[1]}</span>
+      ${q.sugestao_motivo ? `<span title="De onde a IA tirou a resposta">· ${esc(q.sugestao_motivo)}</span>` : ''}
+      ${mudou ? `<button class="btn fino" type="button" data-usar="${q.id}">Voltar à sugestão</button>` : ''}
+      <button class="btn fino" type="button" data-nova="${q.id}" title="Pede à IA outra resposta">Nova sugestão</button></div>
+    ${ALERTA[q.sugestao_alerta] ? `<div class="ia-alerta">⚠ ${ALERTA[q.sugestao_alerta]}</div>` : ''}`;
+}
+
+function desenhar() {
+  const todas = filtrados(true), n = { aberta: 0, resp: 0, '': todas.length };
+  todas.forEach(q => { if (q.situacao === 'UNANSWERED') n.aberta++; if (q.resposta) n.resp++; });
+  $('#abas').innerHTML = ABAS.map(a => `<button type="button" class="aba${a.v === aba ? ' ativa' : ''}" data-aba="${a.v}">${a.n} <span class="n">${n[a.v]}</span></button>`).join('');
+  $('#abas').querySelectorAll('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
+  const lista = filtrados(), foco = document.activeElement?.dataset?.r, caret = document.activeElement?.selectionStart;
+  $('#contagem').textContent = `${lista.length.toLocaleString('pt-BR')} pergunta${lista.length === 1 ? '' : 's'}`;
+  if (aba === 'aberta') {
+    // mais antiga primeiro: quem espera há mais tempo vem antes
+    const ord = [...lista].sort((a, b) => a.criada_em < b.criada_em ? -1 : 1);
+    $('#lista').innerHTML = ord.length ? ord.map(cartaoAberta).join('') : '<div class="cartao vazio">Nenhuma pergunta esperando resposta. 🎉</div>';
+    ligarCartoes();
+    if (foco) { const t = $(`textarea[data-r="${foco}"]`); if (t) { t.focus(); t.setSelectionRange(caret, caret); } }
+  } else {
+    const mostrar = lista.slice(0, 500);
+    $('#lista').innerHTML = `<div class="cartao tabela-rolagem"><table><thead><tr><th>Data</th><th>Conta</th><th>Anúncio</th><th>Pergunta</th><th>Resposta</th><th>Respondida</th></tr></thead><tbody>${
+      mostrar.map(q => { const it = ITENS.get(q.item_id); return `<tr>
+        <td style="white-space:nowrap">${quando(q.criada_em)}</td><td>${esc(canalNome(q.canal_id))}</td>
+        <td>${it?.foto ? `<img class="mini" src="${esc(it.foto)}" alt="">` : ''}${it?.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc((it.titulo || q.item_id).slice(0, 60))}</a>` : esc(q.item_id)}</td>
+        <td>${esc(q.texto)}</td><td class="resp-ml">${q.resposta ? esc(q.resposta) : `<span class="tg neutro">${esc(SIT[q.situacao] || q.situacao)}</span>`}</td>
+        <td style="white-space:nowrap">${q.resposta ? `${quando(q.respondida_em)}<br><small class="sub2">${esc(ORIG[q.resposta_origem] || '')}${q.respondida_por && USU.get(q.respondida_por) ? ' · ' + esc(USU.get(q.respondida_por)) : ''}</small>` : ''}</td></tr>`; }).join('')
+    }</tbody></table></div>${lista.length > mostrar.length ? `<p class="sub">Mostrando as 500 mais recentes de ${lista.length.toLocaleString('pt-BR')}: use a busca ou o período para achar as outras (o relatório leva todas).</p>` : ''}`;
+  }
+}
+
+function ligarCartoes() {
+  $('#lista').querySelectorAll('textarea[data-r]').forEach(t => {
+    const cont = () => { const c = $(`[data-cont="${t.dataset.r}"]`); if (c) c.textContent = `${t.value.length}/2000`; };
+    t.oninput = () => { RASC[t.dataset.r] = t.value; cont(); }; cont();
+  });
+  $('#lista').querySelectorAll('[data-sug]').forEach(b => b.onclick = () => {
+    const x = PERG.find(p => String(p.id) === b.dataset.sug), card = b.closest('.pq'), t = card.querySelector('textarea');
+    t.value = x.resposta; RASC[card.dataset.id] = t.value; t.focus(); t.oninput();
+  });
+  $('#lista').querySelectorAll('[data-usar]').forEach(b => b.onclick = () => { delete RASC[b.dataset.usar]; desenhar(); });
+  $('#lista').querySelectorAll('[data-nova]').forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.nova); b.disabled = true;
+    const { error } = await db.rpc('ml_pergunta_sugerir', { p_id: id });
+    if (error) { b.disabled = false; aviso(error.message, true); return; }
+    PEDIU.add(id); delete RASC[id];
+    const q = PERG.find(p => p.id === id); if (q) { q.sugestao_em = null; q.sugestao_erro = null; }
+    desenhar();
+  });
+  $('#lista').querySelectorAll('input[data-ind]').forEach(inp => {
+    const res = inp.nextElementSibling, q = PERG.find(p => String(p.id) === inp.dataset.ind);
+    inp.oninput = () => {
+      const w = [...palavras(inp.value)]; if (!w.length) { res.hidden = true; return; }
+      const achados = [...ITENS.values()].filter(i => i.situacao === 'active' && i.link && w.every(p => semAc(`${i.titulo} ${i.item_id}`).includes(p)))
+        .sort((a, b) => (b.canal_id === q.canal_id) - (a.canal_id === q.canal_id)).slice(0, 10);
+      res.innerHTML = achados.length ? achados.map(i => `<div data-it="${esc(i.item_id)}">${i.foto ? `<img src="${esc(i.foto)}" alt="">` : ''}<span>${esc(i.titulo)}<small>${esc(i.item_id)} · ${esc(canalNome(i.canal_id))}${i.preco ? ' · ' + Number(i.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''}</small></span></div>`).join('')
+        : '<div><span>Nenhum anúncio ativo com essas palavras</span></div>';
+      res.hidden = false;
+      res.querySelectorAll('[data-it]').forEach(d => d.onmousedown = e => {
+        e.preventDefault();
+        const i = ITENS.get(d.dataset.it), t = inp.closest('.pq').querySelector('textarea'), id = inp.dataset.ind;
+        IND[id] = i;
+        const base = (t.value || '').replace(/\s+$/, '');
+        const virg = /,$/.test(base);
+        t.value = `${base}${base && !/[,.!?:]$/.test(base) ? '.' : ''} ${virg ? 'para' : 'Para'} o seu carro o modelo certo é este: ${i.link}`;
+        RASC[id] = t.value; inp.value = ''; res.hidden = true; desenhar();
+      });
+    };
+    inp.onblur = () => setTimeout(() => res.hidden = true, 150);
+  });
+  $('#lista').querySelectorAll('[data-enviar]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.enviar, t = $(`textarea[data-r="${id}"]`), texto = t.value.trim();
+    if (!texto || texto === saudacao().trim()) { aviso('Escreva a resposta', true); t.focus(); return; }
+    b.disabled = true;
+    // anúncio indicado: o escolhido na busca ou o que a IA colocou na resposta (se o link continua no texto)
+    const q = PERG.find(p => String(p.id) === id), si = q?.sugestao_indicado && ITENS.get(q.sugestao_indicado);
+    const indicado = IND[id]?.item_id || (si?.link && texto.includes(si.link) ? si.item_id : null);
+    const { error } = await db.rpc('ml_pergunta_responder', { p_id: Number(id), p_texto: texto, p_indicado: indicado });
+    if (error) { b.disabled = false; aviso(error.message, true); return; }
+    delete RASC[id]; delete IND[id];
+    aviso('Resposta enviada ao Mercado Livre');
+    carregar();
+  });
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  if (!CTX.pode('perguntas_ml', 'alterar')) $('#btnBuscar').hidden = true;
+  ligarPainelFiltros(document, 'perguntas_ml', desenhar);
+  ['#fConta', '#fOrig', '#fDe', '#fAte'].forEach(s => $(s).onchange = desenhar);
+  ligarBusca($('#fBusca'), desenhar);
+  $('#btnBuscar').onclick = async () => {
+    const { error } = await db.rpc('ml_perguntas_buscar');
+    aviso(error ? error.message : 'Conferindo o Mercado Livre: as perguntas novas aparecem em instantes', !!error);
+  };
+  botoesRelatorio('rel', () => ({ arquivo: 'perguntas_mercado_livre', titulo: 'Perguntas do Mercado Livre',
+    colunas: ['Data', 'Conta', 'Anúncio', 'Título', 'Pergunta', 'Resposta', 'Situação', 'Respondida em', 'Respondida', 'Por'],
+    linhas: filtrados().map(q => [quando(q.criada_em), canalNome(q.canal_id), q.item_id, ITENS.get(q.item_id)?.titulo || '', q.texto, q.resposta || '',
+      SIT[q.situacao] || q.situacao, quando(q.respondida_em), ORIG[q.resposta_origem] || '', USU.get(q.respondida_por) || '']) }));
+  window.addEventListener('aba-ativa', carregar);
+  carregar();
+})();
+</script>
+</body>
+</html>

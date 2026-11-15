@@ -669,3 +669,15 @@ body.embutido:not([data-emp="0"]) .empresa-chips .ec-info { color: var(--emp-cor
 @media print { .faixa-empresa, .troca-empresa, .modal-emp { display: none !important; } }
 .seg[hidden] { display: none; }
 @media (max-width: 760px) { body.embutido .empresa-chips > span:first-child, body.embutido .empresa-chips button { display: none; } body.embutido .empresa-chips .ec-info { margin-left: 0; } }
+
+/* Alerta de perguntas do Mercado Livre: faixa vermelha fixa no topo, em qualquer tela */
+.alerta-perg { position: fixed; top: 0; left: 0; right: 0; z-index: 9999; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 16px; background: #c0262d; color: #fff; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.25); animation: alerta-perg 1.2s ease-in-out infinite; }
+.alerta-perg .sino { font-size: 22px; animation: pisca-alerta 1s ease-in-out infinite; }
+.alerta-perg .ult { font-size: 13px; opacity: .92; flex: 1 1 260px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alerta-perg .btn { background: #fff; color: #c0262d; font-weight: 700; border: 0; }
+.alerta-perg .btn.discreto { background: rgba(255,255,255,.18); color: #fff; font-weight: 500; }
+@keyframes alerta-perg { 0%, 100% { background: #c0262d; } 50% { background: #e0353d; } }
+@media (prefers-reduced-motion: reduce) { .alerta-perg, .alerta-perg .sino { animation: none; } }
+body.com-alerta-perg { padding-top: 52px; }
+.menu .cont-perg { margin-left: auto; }

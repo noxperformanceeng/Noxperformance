@@ -91,3 +91,62 @@ export const cors = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+
+/* ---------- Perguntas dos anúncios ---------- */
+type Pergunta = { id: number; item_id: string; text: string; status: string; date_created: string; from?: { id?: number };
+  answer?: { text: string; status?: string; date_created: string } | null };
+
+// Guarda (ou atualiza) a pergunta. Resposta que veio do ML sem ter saído do sistema = respondida "no ML".
+export async function gravarPerguntas(db: SupabaseClient, conta: Conta, qs: Pergunta[]) {
+  if (!qs.length) return 0;
+  const ids = qs.map(q => q.id);
+  const { data: ja } = await db.from('ml_perguntas').select('id, resposta, resposta_origem').in('id', ids);
+  const ant = new Map((ja ?? []).map(r => [Number(r.id), r]));
+  const linhas = qs.map(q => {
+    const a = ant.get(Number(q.id)), resp = q.answer?.text ?? null;
+    return {
+      id: q.id, canal_id: conta.canal_id, item_id: q.item_id, texto: q.text, comprador_id: q.from?.id ?? null,
+      criada_em: q.date_created, situacao: q.status, resposta: resp, respondida_em: q.answer?.date_created ?? null,
+      resposta_origem: resp ? (a?.resposta_origem ?? 'ml') : null, atualizado_em: new Date().toISOString()
+    };
+  });
+  const { error } = await db.from('ml_perguntas').upsert(linhas);
+  if (error) throw error;
+  return linhas.length;
+}
+
+// Atualiza título, link, foto e preço dos anúncios (lotes de 20, como o ML aceita)
+export async function atualizarItens(db: SupabaseClient, conta: Conta, itemIds: string[]) {
+  const token = await tokenValido(db, conta);
+  const unicos = [...new Set(itemIds.filter(Boolean))];
+  for (let i = 0; i < unicos.length; i += 20) {
+    const lote = unicos.slice(i, i + 20);
+    const r = await mlGet(token, `/items?ids=${lote.join(',')}&attributes=id,title,permalink,thumbnail,price,status`);
+    const linhas = (r ?? []).filter((x: { code: number }) => x.code === 200).map((x: { body: Record<string, unknown> }) => ({
+      item_id: x.body.id, canal_id: conta.canal_id, titulo: x.body.title, link: x.body.permalink,
+      foto: String(x.body.thumbnail ?? '').replace(/^http:/, 'https:'), preco: x.body.price, situacao: x.body.status,
+      atualizado_em: new Date().toISOString()
+    }));
+    if (linhas.length) await db.from('ml_itens').upsert(linhas);
+  }
+}
+
+// Pergunta avulsa (aviso do ML): busca, guarda e garante o anúncio na lista
+export async function buscarEGravarPergunta(db: SupabaseClient, conta: Conta, perguntaId: string | number) {
+  const token = await tokenValido(db, conta);
+  const q = await mlGet(token, `/questions/${perguntaId}?api_version=4`);
+  if (!q) return null;
+  await gravarPerguntas(db, conta, [q]);
+  const { data: it } = await db.from('ml_itens').select('item_id').eq('item_id', q.item_id).maybeSingle();
+  if (!it) await atualizarItens(db, conta, [q.item_id]);
+  if (q.status === 'UNANSWERED') {
+    // pergunta nova: pede a sugestão de resposta da IA (função ml-perguntas)
+    const { data: p } = await db.from('ml_perguntas').select('sugestao, sugestao_em').eq('id', q.id).maybeSingle();
+    if (!p?.sugestao && !p?.sugestao_em) {
+      const { data: cfg } = await db.from('integracao_config').select('valor').eq('chave', 'chave_interna').maybeSingle();
+      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ml-perguntas`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-nox-chave': cfg?.valor ?? '' }, body: JSON.stringify({ acao: 'sugerir', id: q.id }) }).catch(() => null);
+    }
+  }
+  return q.id;
+}

@@ -1,6 +1,6 @@
-// ERP NOX · ml-notificacoes — avisos do Mercado Livre (venda nova/alterada, pagamento, reclamação)
+// ERP NOX · ml-notificacoes — avisos do Mercado Livre (venda nova/alterada, pagamento, reclamação, pergunta)
 // Responde rápido (o ML exige) e processa em seguida: busca a venda completa e atualiza o pedido no sistema.
-import { adminDb, buscarEGravarVenda, CLIENT_ID, Conta } from '../_shared/ml.ts';
+import { adminDb, buscarEGravarPergunta, buscarEGravarVenda, CLIENT_ID, Conta } from '../_shared/ml.ts';
 
 Deno.serve(async req => {
   if (req.method !== 'POST') return new Response('ok');
@@ -12,6 +12,12 @@ Deno.serve(async req => {
     try {
       const { data: conta } = await db.from('ml_contas').select('*').eq('ml_user_id', n.user_id).eq('situacao', 'ativo').maybeSingle();
       if (!conta) throw new Error('conta não autorizada no sistema');
+      if (n.topic === 'questions') {
+        // pergunta nova (ou respondida/apagada no ML): guarda para a tela Perguntas do Mercado Livre
+        const q = await buscarEGravarPergunta(db, conta as Conta, String(n.resource).split('/').pop()!);
+        await db.from('ml_eventos').update({ processado_em: new Date().toISOString(), erro: q ? null : 'pergunta não encontrada no ML' }).eq('id', ev!.id);
+        return;
+      }
       let orderId: string | null = null;
       if (['orders_v2', 'orders'].includes(n.topic)) orderId = String(n.resource).split('/').pop()!;
       else if (n.topic === 'payments') {

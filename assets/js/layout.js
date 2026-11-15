@@ -7,12 +7,13 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611141142';
+const VERSAO_TELAS = '202611150328';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html' },
     { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html' },
+    { id: 'perguntas_ml',  nome: 'Perguntas do Mercado Livre', arquivo: 'pages/comercial/perguntas-ml.html' },
     { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
   ]},
@@ -253,6 +254,9 @@ async function iniciarTela() {
   };
   contarTelas(); setInterval(contarTelas, 120000); window.addEventListener('nox:aprovacoes', contarTelas);
   if (typeof ouvirMudancas === 'function') ouvirMudancas(['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra'], contarTelas, { auxiliar: true, mesmoOculto: true });
+  // Perguntas do Mercado Livre sem resposta: alerta forte em qualquer tela (faixa vermelha piscando, som,
+  // aviso do computador e título da aba piscando). Some quando todas forem respondidas.
+  if (ctx.pode('perguntas_ml', 'alterar')) alertaPerguntasML();
   // Menu lateral recolhível (lembra a escolha)
   const recolher = v => { document.body.classList.toggle('menu-recolhido', v); try { localStorage.setItem('nox_menu_recolhido', v ? '1' : ''); } catch {} };
   try { if (localStorage.getItem('nox_menu_recolhido')) document.body.classList.add('menu-recolhido'); } catch {}
@@ -533,4 +537,62 @@ function montarEmbutido(ctx, usaEmpresa) {
     if (!c && !a.href.startsWith('javascript:') && !a.getAttribute('href').startsWith('#')) a.target = '_top';
   });
   return ctx;
+}
+
+/* ---------- Alerta de perguntas do Mercado Livre (só na janela principal) ---------- */
+function alertaPerguntasML() {
+  const vistas = new Set(); let primeira = true, silencioAte = 0, ultimoSom = 0, piscaTitulo = null;
+  const tituloOrig = document.title;
+  const faixa = document.createElement('div'); faixa.id = 'alertaPerg'; faixa.className = 'alerta-perg nao-imprimir'; faixa.hidden = true;
+  document.body.appendChild(faixa);
+  const tocar = () => {   // três bipes fortes (não precisa de arquivo de som)
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      [0, .28, .56].forEach(t => { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = 880;
+        g.gain.setValueAtTime(.25, ac.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + t + .22);
+        o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + .23); });
+    } catch {}
+    ultimoSom = Date.now();
+  };
+  const notificar = (q, n) => {
+    try { if (window.Notification && Notification.permission === 'granted') {
+      const nt = new Notification(`Pergunta nova no Mercado Livre${n > 1 ? ` (${n} esperando)` : ''}`, { body: q.texto, tag: 'nox-perguntas', requireInteraction: true });
+      nt.onclick = () => { window.focus(); document.querySelector('#alertaPerg a')?.click(); nt.close(); };
+    } } catch {}
+  };
+  const titulo = n => {
+    clearInterval(piscaTitulo); piscaTitulo = null; document.title = tituloOrig;
+    if (!n) return; let on = false;
+    piscaTitulo = setInterval(() => { on = !on; document.title = on ? `🔴 ${n} pergunta${n > 1 ? 's' : ''} no ML!` : tituloOrig; }, 900);
+  };
+  const minutos = v => { const m = Math.round((Date.now() - Date.parse(v)) / 6e4); return m < 60 ? `${Math.max(1, m)} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+  async function conferir() {
+    const { data, error } = await db.from('ml_perguntas').select('id, texto, criada_em, resposta_pendente, resposta_erro')
+      .eq('situacao', 'UNANSWERED').order('criada_em');
+    if (error) return;
+    const abertas = (data || []).filter(q => !q.resposta_pendente || q.resposta_erro), n = abertas.length;
+    const novas = abertas.filter(q => !vistas.has(q.id)); abertas.forEach(q => vistas.add(q.id));
+    titulo(n);
+    document.querySelectorAll('.menu a.item[data-mod="perguntas_ml"]').forEach(a => {
+      a.querySelectorAll('.cont-perg').forEach(x => x.remove());
+      if (n) a.insertAdjacentHTML('beforeend', `<span class="cont-perg n-aprov pisca" title="${n} sem resposta">${n}</span>`);
+    });
+    if (!n) { faixa.hidden = true; document.body.classList.remove('com-alerta-perg'); primeira = false; return; }
+    const velha = abertas[0];
+    faixa.innerHTML = `<span class="sino">🔔</span><b>${n} pergunta${n > 1 ? 's' : ''} no Mercado Livre esperando resposta</b>
+      <span class="ult">“${esc(String(velha.texto).slice(0, 90))}${velha.texto.length > 90 ? '…' : ''}” · há ${minutos(velha.criada_em)}</span>
+      <a class="btn" href="${RAIZ}pages/comercial/perguntas-ml.html">Responder agora</a>
+      ${window.Notification && Notification.permission === 'default' ? '<button type="button" class="btn discreto" data-notif>Ativar aviso no computador</button>' : ''}
+      <button type="button" class="btn discreto" data-mudo title="Para o som por 10 minutos (a faixa continua)">${Date.now() < silencioAte ? 'Som pausado' : 'Silenciar 10 min'}</button>`;
+    faixa.hidden = false; document.body.classList.add('com-alerta-perg');
+    faixa.querySelector('[data-notif]')?.addEventListener('click', () => Notification.requestPermission().then(conferir));
+    faixa.querySelector('[data-mudo]').onclick = () => { silencioAte = Date.now() + 10 * 6e4; conferir(); };
+    // som e aviso do computador: na hora, a cada pergunta nova; e de novo a cada 2 min enquanto ninguém responder
+    if (Date.now() > silencioAte && (novas.length && !primeira || Date.now() - ultimoSom > 2 * 6e4)) {
+      tocar(); if (novas.length) notificar(novas[novas.length - 1], n);
+    }
+    primeira = false;
+  }
+  conferir(); setInterval(conferir, 30000);
+  if (typeof ouvirMudancas === 'function') ouvirMudancas(['ml_perguntas'], conferir, { auxiliar: true, mesmoOculto: true });
 }
