@@ -3,7 +3,9 @@
 //  · responder {id}: envia ao ML a resposta escrita na tela (ml_pergunta_responder) e confirma no sistema;
 //  · importar {modo: 'recentes' | 'tudo'}: traz perguntas e respostas (o ML pagina no máximo 1.000 por consulta:
 //    no modo 'tudo' busca das mais novas e das mais antigas e, se ainda faltar, anúncio por anúncio);
-//  · itens: atualiza título, link e foto dos anúncios das contas.
+//  · itens: atualiza título, link e foto dos anúncios das contas;
+//  · sugerir {id}: pede à IA uma resposta pronta (fica gravada; a equipe confere e envia).
+import { sugerir } from './ia.ts';
 import { adminDb, atualizarItens, gravarPerguntas, mlGet, ML_API, tokenValido, Conta } from '../_shared/ml.ts';
 
 const resp = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { 'Content-Type': 'application/json' } });
@@ -82,6 +84,7 @@ async function importar(db: Db, corpo: { modo?: string; conta?: number; fase?: s
     }
   }
   await completarItens(db, lista);
+  await sugerirPendentes(db);
   return log;
 }
 
@@ -94,6 +97,13 @@ async function completarItens(db: Db, lista: Conta[]) {
     const faltam = [...new Set((qs ?? []).map(x => x.item_id))].filter(i => !tem.has(i));
     if (faltam.length) await atualizarItens(db, conta, faltam);
   }
+}
+
+// perguntas sem resposta e sem sugestão (ex.: aviso do ML perdido): pede a sugestão
+async function sugerirPendentes(db: Db) {
+  const { data } = await db.from('ml_perguntas').select('id').eq('situacao', 'UNANSWERED').is('sugestao', null).is('sugestao_erro', null).limit(30);
+  const ids = (data ?? []).map(q => q.id);
+  for (let i = 0; i < ids.length; i += 5) await Promise.allSettled(ids.slice(i, i + 5).map(id => continuar({ acao: 'sugerir', id })));
 }
 
 async function itens(db: Db) {
@@ -118,6 +128,11 @@ Deno.serve(async req => {
   if (!cfg?.valor || req.headers.get('x-nox-chave') !== cfg.valor) return resp({ erro: 'Sem permissão' }, 403);
   const corpo = await req.json().catch(() => ({}));
   if (corpo.acao === 'responder') return resp(await responder(db, Number(corpo.id)));
+  if (corpo.acao === 'sugerir') {
+    const { data: p } = await db.from('ml_perguntas').select('canal_id').eq('id', Number(corpo.id)).maybeSingle();
+    const conta = (await contas(db)).find(c => c.canal_id === p?.canal_id);
+    return resp(conta ? await sugerir(db, conta, Number(corpo.id)) : { erro: 'conta não encontrada' });
+  }
   const tarefa = (async () => {
     try {
       if (corpo.acao === 'importar') await importar(db, corpo);

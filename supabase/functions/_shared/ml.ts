@@ -139,5 +139,14 @@ export async function buscarEGravarPergunta(db: SupabaseClient, conta: Conta, pe
   await gravarPerguntas(db, conta, [q]);
   const { data: it } = await db.from('ml_itens').select('item_id').eq('item_id', q.item_id).maybeSingle();
   if (!it) await atualizarItens(db, conta, [q.item_id]);
+  if (q.status === 'UNANSWERED') {
+    // pergunta nova: pede a sugestão de resposta da IA (função ml-perguntas)
+    const { data: p } = await db.from('ml_perguntas').select('sugestao, sugestao_em').eq('id', q.id).maybeSingle();
+    if (!p?.sugestao && !p?.sugestao_em) {
+      const { data: cfg } = await db.from('integracao_config').select('valor').eq('chave', 'chave_interna').maybeSingle();
+      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ml-perguntas`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-nox-chave': cfg?.valor ?? '' }, body: JSON.stringify({ acao: 'sugerir', id: q.id }) }).catch(() => null);
+    }
+  }
   return q.id;
 }

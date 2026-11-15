@@ -6,7 +6,7 @@
 <title>Perguntas do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611150323">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611150328">
 <style>
   .pq { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
   .pq img.ft { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--borda); }
@@ -33,6 +33,9 @@
   .pq .ind .res div:hover { background: var(--fundo); } .pq .ind .res img { width: 34px; height: 34px; object-fit: contain; }
   .pq .ind .res small { color: var(--texto-suave); display: block; }
   .pq .estado { font-size: 12.5px; margin-top: 6px; } .pq .estado.erro { color: var(--erro); } .pq .estado.ok { color: var(--ok); }
+  .pq .ia { font-size: 12.5px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--texto-suave); }
+  .pq .ia .tg { font-weight: 600; } .pq .ia button { font-size: 12px; padding: 2px 9px; }
+  .pq .ia-alerta { margin-top: 6px; padding: 7px 10px; border-radius: 6px; background: #fff3cd; border: 1px solid #f0c36d; color: #6b4d00; font-size: 13px; font-weight: 600; }
   .resp-ml { white-space: pre-wrap; }
   td .mini { width: 34px; height: 34px; object-fit: contain; vertical-align: middle; margin-right: 6px; }
 </style>
@@ -40,7 +43,7 @@
 <body data-modulo="perguntas_ml" data-titulo="Perguntas do Mercado Livre">
 <main id="conteudo">
   <div class="cab-tela"><div><h1>Perguntas do Mercado Livre</h1>
-    <p class="sub">As perguntas das duas contas chegam sozinhas. Responda aqui e a resposta vai direto para o anúncio. Se o cliente precisa de outro modelo, use <b>Indicar outro anúncio</b> para colocar o link certo na resposta. Tudo fica guardado (inclusive o que foi respondido no próprio ML) para as respostas parecidas e, no futuro, a resposta automática.</p></div>
+    <p class="sub">As perguntas das duas contas chegam sozinhas. Responda aqui e a resposta vai direto para o anúncio. Se o cliente precisa de outro modelo, use <b>Indicar outro anúncio</b> para colocar o link certo na resposta. Quando dá, a resposta já vem escrita pela IA: confira, ajuste se precisar e envie. Tudo fica guardado (inclusive o que foi respondido no próprio ML).</p></div>
     <div><button class="btn fino" style="white-space:nowrap" type="button" id="btnBuscar" title="Confere agora se há perguntas novas no Mercado Livre">Buscar perguntas agora</button></div>
   </div>
   <div class="barra-ferr">
@@ -62,10 +65,10 @@
   <div id="lista"><div class="cartao vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611150323"></script>
-<script src="../../assets/js/ui.js?v=202611150323"></script>
-<script src="../../assets/js/auth.js?v=202611150323"></script>
-<script src="../../assets/js/layout.js?v=202611150323"></script>
+<script src="../../assets/js/supabase.js?v=202611150328"></script>
+<script src="../../assets/js/ui.js?v=202611150328"></script>
+<script src="../../assets/js/auth.js?v=202611150328"></script>
+<script src="../../assets/js/layout.js?v=202611150328"></script>
 <script>
 /* =====================================================================
    Perguntas do Mercado Livre
@@ -81,6 +84,7 @@ const ORIG = { sistema: 'Pelo sistema', automatica: 'Automática', ml: 'No próp
 const SIT = { ANSWERED: 'Respondida', UNANSWERED: 'Sem resposta', CLOSED_UNANSWERED: 'Encerrada sem resposta', DELETED: 'Apagada pelo cliente',
   BANNED: 'Bloqueada pelo ML', DISABLED: 'Desativada', UNDER_REVIEW: 'Em análise no ML' };
 let CTX = null, PERG = [], ITENS = new Map(), CANAIS = [], USU = new Map(), aba = 'aberta';
+const PEDIU = new Set();                 // perguntas em que se pediu nova sugestão à IA (aguardando)
 const RASC = {}, IND = {};               // rascunho e anúncio indicado de cada pergunta (sobrevivem à atualização da lista)
 const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 const canalNome = id => CANAIS.find(c => c.id === id)?.nome || '';
@@ -149,7 +153,8 @@ function cartaoAberta(q) {
       <div class="quando${tarde ? ' tarde' : ''}">Perguntada em ${quando(q.criada_em)} · esperando há ${espera(q)}</div>
       ${anteriores.length ? `<div class="antes"><i>Este cliente já perguntou neste anúncio:</i>${anteriores.map(a => `<div>• ${esc(a.texto)}${a.resposta ? ` <i>→ ${esc(a.resposta)}</i>` : ''}</div>`).join('')}</div>` : ''}
       ${!pode ? '' : envi ? `<div class="estado">Enviando a resposta ao Mercado Livre… <i>${esc(q.resposta_pendente)}</i></div>` : `
-      <textarea data-r="${q.id}" maxlength="2000" placeholder="Escreva a resposta…">${esc(RASC[q.id] ?? saudacao())}</textarea>
+      ${iaHtml(q)}
+      <textarea data-r="${q.id}" maxlength="2000" placeholder="Escreva a resposta…">${esc(RASC[q.id] ?? q.sugestao ?? saudacao())}</textarea>
       ${sug.length ? `<div class="sug"><span>Respostas parecidas:</span>${sug.map(o => `<button type="button" data-sug="${o.x.id}" title="${esc(`P: ${o.x.texto}\nR: ${o.x.resposta}`)}">${esc(o.x.resposta)}</button>`).join('')}</div>` : ''}
       <div class="acoes">
         <div class="ind"><input data-ind="${q.id}" placeholder="Indicar outro anúncio: digite o carro ou produto…" autocomplete="off"><div class="res" hidden></div></div>
@@ -159,6 +164,23 @@ function cartaoAberta(q) {
       </div>
       ${q.resposta_erro ? `<div class="estado erro">Não foi: ${esc(q.resposta_erro)}</div>` : ''}`}
     </div></div>`;
+}
+
+// sugestão da IA: a equipe confere e envia (nada vai sozinho). Preço e compatibilidade incerta: aviso forte.
+const CONF = { alta: ['ok', 'confiança alta'], media: ['neutro', 'confiança média'], baixa: ['erro', 'confiança baixa'] };
+const ALERTA = { preco: 'Assunto de PREÇO / DESCONTO: confira com atenção antes de enviar (a IA não promete desconto).',
+  compatibilidade: 'COMPATIBILIDADE INCERTA: confira no anúncio/desenho se a peça serve no carro do cliente antes de enviar.' };
+function iaHtml(q) {
+  if (q.sugestao_em && PEDIU.has(q.id)) PEDIU.delete(q.id);
+  if (PEDIU.has(q.id)) return '<div class="ia">🤖 A IA está escrevendo uma sugestão…</div>';
+  if (q.sugestao_erro && !q.sugestao) return `<div class="ia">🤖 Sem sugestão da IA: ${esc(q.sugestao_erro)} <button class="btn fino" type="button" data-nova="${q.id}">Tentar de novo</button></div>`;
+  if (!q.sugestao) return q.sugestao_em ? '' : `<div class="ia">🤖 <button class="btn fino" type="button" data-nova="${q.id}">Pedir sugestão da IA</button></div>`;
+  const c = CONF[q.sugestao_confianca] || CONF.baixa, mudou = RASC[q.id] != null && RASC[q.id].trim() !== q.sugestao.trim();
+  return `<div class="ia">🤖 <b>Resposta sugerida pela IA</b> <span class="tg ${c[0]}">${c[1]}</span>
+      ${q.sugestao_motivo ? `<span title="De onde a IA tirou a resposta">· ${esc(q.sugestao_motivo)}</span>` : ''}
+      ${mudou ? `<button class="btn fino" type="button" data-usar="${q.id}">Voltar à sugestão</button>` : ''}
+      <button class="btn fino" type="button" data-nova="${q.id}" title="Pede à IA outra resposta">Nova sugestão</button></div>
+    ${ALERTA[q.sugestao_alerta] ? `<div class="ia-alerta">⚠ ${ALERTA[q.sugestao_alerta]}</div>` : ''}`;
 }
 
 function desenhar() {
@@ -195,6 +217,15 @@ function ligarCartoes() {
     const x = PERG.find(p => String(p.id) === b.dataset.sug), card = b.closest('.pq'), t = card.querySelector('textarea');
     t.value = x.resposta; RASC[card.dataset.id] = t.value; t.focus(); t.oninput();
   });
+  $('#lista').querySelectorAll('[data-usar]').forEach(b => b.onclick = () => { delete RASC[b.dataset.usar]; desenhar(); });
+  $('#lista').querySelectorAll('[data-nova]').forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.nova); b.disabled = true;
+    const { error } = await db.rpc('ml_pergunta_sugerir', { p_id: id });
+    if (error) { b.disabled = false; aviso(error.message, true); return; }
+    PEDIU.add(id); delete RASC[id];
+    const q = PERG.find(p => p.id === id); if (q) { q.sugestao_em = null; q.sugestao_erro = null; }
+    desenhar();
+  });
   $('#lista').querySelectorAll('input[data-ind]').forEach(inp => {
     const res = inp.nextElementSibling, q = PERG.find(p => String(p.id) === inp.dataset.ind);
     inp.oninput = () => {
@@ -220,7 +251,10 @@ function ligarCartoes() {
     const id = b.dataset.enviar, t = $(`textarea[data-r="${id}"]`), texto = t.value.trim();
     if (!texto || texto === saudacao().trim()) { aviso('Escreva a resposta', true); t.focus(); return; }
     b.disabled = true;
-    const { error } = await db.rpc('ml_pergunta_responder', { p_id: Number(id), p_texto: texto, p_indicado: IND[id]?.item_id || null });
+    // anúncio indicado: o escolhido na busca ou o que a IA colocou na resposta (se o link continua no texto)
+    const q = PERG.find(p => String(p.id) === id), si = q?.sugestao_indicado && ITENS.get(q.sugestao_indicado);
+    const indicado = IND[id]?.item_id || (si?.link && texto.includes(si.link) ? si.item_id : null);
+    const { error } = await db.rpc('ml_pergunta_responder', { p_id: Number(id), p_texto: texto, p_indicado: indicado });
     if (error) { b.disabled = false; aviso(error.message, true); return; }
     delete RASC[id]; delete IND[id];
     aviso('Resposta enviada ao Mercado Livre');

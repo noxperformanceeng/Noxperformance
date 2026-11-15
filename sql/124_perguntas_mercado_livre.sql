@@ -9,6 +9,12 @@
 --    para as "respostas parecidas" que a tela já sugere.
 --  · O envio da resposta ao ML é feito pelo servidor (função ml-perguntas); o navegador nunca vê o acesso
 --    (token) da conta. Ninguém altera pergunta direto pela tela: só pela função de responder.
+--  · Sugestão automática (IA): assim que a pergunta chega, o servidor pede ao Claude (API da Anthropic) uma resposta
+--    pronta, usando o anúncio (título, ficha e descrição), o histórico de respostas parecidas e a lista dos nossos
+--    anúncios (para indicar o modelo certo). A equipe confere e envia. Preço/desconto e compatibilidade incerta
+--    chegam marcados "conferir com atenção". Nada é enviado sozinho nesta etapa.
+--  · Fica registrado se a resposta enviada foi a sugestão sem mudança: é a medida para, mais adiante, ligar o
+--    envio automático das perguntas simples.
 --  · Quem vê e responde: perfil Comercial (e administradores). Demais perfis não veem a tela.
 -- =====================================================================
 
@@ -48,6 +54,14 @@ create table if not exists public.ml_perguntas (
   resposta_pendente text,                           -- texto enviado, aguardando a confirmação do ML
   enviando_em       timestamptz,
   resposta_erro     text,
+  sugestao          text,                           -- resposta sugerida pela IA (a equipe confere e envia)
+  sugestao_confianca text check (sugestao_confianca in ('alta', 'media', 'baixa')),
+  sugestao_alerta   text,                           -- preco | compatibilidade: conferir com atenção
+  sugestao_motivo   text,                           -- de onde a IA tirou a resposta
+  sugestao_indicado text,                           -- outro anúncio sugerido (MLB…)
+  sugestao_em       timestamptz,
+  sugestao_erro     text,
+  usou_sugestao     boolean,                        -- resposta enviada = sugestão sem alteração
   atualizado_em     timestamptz default now()
 );
 create index if not exists ml_perguntas_situacao_idx on public.ml_perguntas (situacao, criada_em desc);
@@ -82,12 +96,24 @@ begin
   if v.enviando_em is not null and v.enviando_em > now() - interval '2 minutes' and v.resposta_erro is null then
     raise exception 'A resposta desta pergunta já está sendo enviada'; end if;
   update public.ml_perguntas set resposta_pendente = p_texto, anuncio_indicado = nullif(btrim(coalesce(p_indicado, '')), ''),
+    usou_sugestao = case when v.sugestao is null then null else regexp_replace(btrim(v.sugestao), '\s+', ' ', 'g') = regexp_replace(p_texto, '\s+', ' ', 'g') end,
     respondida_por = auth.uid(), enviando_em = now(), resposta_erro = null, atualizado_em = now()
    where id = p_id;
   perform public.integracao_disparar('ml-perguntas', jsonb_build_object('acao', 'responder', 'id', p_id));
 end $$;
 revoke execute on function public.ml_pergunta_responder(bigint, text, text) from public, anon;
 grant execute on function public.ml_pergunta_responder(bigint, text, text) to authenticated;
+
+-- ---------- Pedir outra sugestão à IA (botão da tela) ----------
+create or replace function public.ml_pergunta_sugerir(p_id bigint)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not (select public.pode('perguntas_ml', 'alterar')) then raise exception 'Sem permissão'; end if;
+  update public.ml_perguntas set sugestao_erro = null, sugestao_em = null where id = p_id and situacao = 'UNANSWERED';
+  perform public.integracao_disparar('ml-perguntas', jsonb_build_object('acao', 'sugerir', 'id', p_id));
+end $$;
+revoke execute on function public.ml_pergunta_sugerir(bigint) from public, anon;
+grant execute on function public.ml_pergunta_sugerir(bigint) to authenticated;
 
 -- ---------- Buscar agora (botão da tela) ----------
 create or replace function public.ml_perguntas_buscar()
