@@ -40,13 +40,14 @@ Sistema de gestão da NOX Peças (indústria e comércio). Responda e escreva se
   Política: crie dentro de `do $$ begin if not exists (select 1 from pg_policies where schemaname = '...' and
   tablename = '...' and policyname = '...') then create policy ...; end if; end $$;` e, para mudar uma que já
   existe, `alter policy ... using (...) with check (...)`. Ver `122_tempo_real.sql`.
-- Antes de aplicar SQL ou fazer merge: pedir o ok do Alexandre explicando o que muda (telas, tabelas, risco,
-  se dá para desfazer). Com o ok, o Claude aplica pelo conector "Supabase NOX" e faz o merge.
+- Antes de aplicar SQL ou fazer merge: pedir o ok do **Paulo** (dono do sistema e quem aprova) explicando, em
+  linguagem simples, o que muda (telas, tabelas, risco, se dá para desfazer). Com o ok, o Claude aplica pelo
+  conector "Supabase NOX" e faz o merge.
 - Cabeçalho de cada SQL: bloco `-- ===` com número, título e o que muda, em linguagem de negócio.
 - Mensagens de commit curtas, em português, descrevendo o efeito para o usuário (veja `git log`).
 - Estilo do JS: compacto, funções curtas, sem frameworks; reaproveite `ui.js` e `cadastro.js`.
 
-## Entrega de SQL para o Alexandre
+## Entrega de SQL para aprovação do Paulo
 Só quando estiver pronto, em **um único arquivo `.sql` anexado** (nunca colado no chat), com o que muda e o
 resultado esperado. Depois do ok dele, o Claude aplica pelo conector e confere no banco; colar no SQL Editor é
 só o plano B, se o conector falhar.

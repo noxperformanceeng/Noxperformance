@@ -31,5 +31,5 @@ description: Criar ou alterar estrutura do banco do ERP NOX (tabela, coluna, fun
 6. **Nada de dados pessoais** no arquivo (CPF, salário, conta bancária de pessoas). Carga de pessoas →
    `/mnt/project-files/`, fora do Git.
 7. Peça ao subagente `revisor-rls` para revisar o arquivo antes de entregar.
-8. **Entrega**: se o Alexandre for rodar à mão, anexe o arquivo `.sql` pronto (não cole no chat) com uma linha
+8. **Entrega**: se alguém for rodar à mão (plano B), anexe o arquivo `.sql` pronto (não cole no chat) com uma linha
    dizendo o que rodar e o que esperar.
