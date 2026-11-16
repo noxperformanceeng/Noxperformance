@@ -86,9 +86,25 @@ async function importar(db: Db, corpo: { modo?: string; conta?: number; fase?: s
       log.push({ conta: conta.id, fase: 'itens', ate: pos, de: itens.length });
     }
   }
+  await reconferirAbertas(db, lista);
   await completarItens(db, lista);
   await sugerirPendentes(db);
   return log;
+}
+
+// perguntas que no sistema ainda estão "sem resposta": confere uma a uma no ML (podem ter sido apagadas pelo
+// comprador, removidas pelo ML ou respondidas por outro caminho sem aparecer na busca)
+async function reconferirAbertas(db: Db, lista: Conta[]) {
+  const { data } = await db.from('ml_perguntas').select('id, canal_id').eq('situacao', 'UNANSWERED').limit(200);
+  for (const p of data ?? []) {
+    const conta = lista.find(c => c.canal_id === p.canal_id); if (!conta) continue;
+    try {
+      const q = await mlGet(await tokenValido(db, conta), `/questions/${p.id}?api_version=4`);
+      if (!q) await db.from('ml_perguntas').update({ situacao: 'DELETED', atualizado_em: new Date().toISOString() }).eq('id', p.id);
+      else if (q.status !== 'UNANSWERED' || q.deleted_from_listing) await gravarPerguntas(db, conta, [q]);
+      console.log('reconferida', p.id, q?.status ?? '404', q?.deleted_from_listing ?? '', q?.hold ?? '');
+    } catch (e) { console.error('reconferir', p.id, e); }
+  }
 }
 
 // anúncios citados nas perguntas que ainda não têm título/link guardados

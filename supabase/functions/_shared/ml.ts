@@ -94,7 +94,9 @@ export const cors = {
 
 /* ---------- Perguntas dos anúncios ---------- */
 type Pergunta = { id: number; item_id: string; text: string; status: string; date_created: string; from?: { id?: number };
-  answer?: { text: string; status?: string; date_created: string } | null };
+  answer?: { text: string; status?: string; date_created: string } | null; deleted_from_listing?: boolean };
+// pergunta tirada do anúncio (apagada/moderada) continua "UNANSWERED" na API, mas não aparece mais no ML: trata como apagada
+const situacaoDe = (q: Pergunta) => q.deleted_from_listing ? 'DELETED' : q.status;
 
 // Guarda (ou atualiza) a pergunta. Resposta que veio do ML sem ter saído do sistema = respondida "no ML".
 export async function gravarPerguntas(db: SupabaseClient, conta: Conta, qs: Pergunta[]) {
@@ -104,12 +106,12 @@ export async function gravarPerguntas(db: SupabaseClient, conta: Conta, qs: Perg
   const ant = new Map((ja ?? []).map(r => [Number(r.id), r]));
   // só grava o que é novo ou mudou (regravar igual enche o banco à toa)
   const mudou = (q: Pergunta) => { const a = ant.get(Number(q.id));
-    return !a || a.situacao !== q.status || (a.resposta ?? null) !== (q.answer?.text ?? null) || a.texto !== q.text; };
+    return !a || a.situacao !== situacaoDe(q) || (a.resposta ?? null) !== (q.answer?.text ?? null) || a.texto !== q.text; };
   const linhas = qs.filter(mudou).map(q => {
     const a = ant.get(Number(q.id)), resp = q.answer?.text ?? null;
     return {
       id: q.id, canal_id: conta.canal_id, item_id: q.item_id, texto: q.text, comprador_id: q.from?.id ?? null,
-      criada_em: q.date_created, situacao: q.status, resposta: resp, respondida_em: q.answer?.date_created ?? null,
+      criada_em: q.date_created, situacao: situacaoDe(q), resposta: resp, respondida_em: q.answer?.date_created ?? null,
       resposta_origem: resp ? (a?.resposta_origem ?? 'ml') : null, atualizado_em: new Date().toISOString()
     };
   });
@@ -141,9 +143,10 @@ export async function buscarEGravarPergunta(db: SupabaseClient, conta: Conta, pe
   const q = await mlGet(token, `/questions/${perguntaId}?api_version=4`);
   if (!q) return null;
   await gravarPerguntas(db, conta, [q]);
+  if (q.deleted_from_listing) return q.id;
   const { data: it } = await db.from('ml_itens').select('item_id').eq('item_id', q.item_id).maybeSingle();
   if (!it) await atualizarItens(db, conta, [q.item_id]);
-  if (q.status === 'UNANSWERED') {
+  if (q.status === 'UNANSWERED' && !q.deleted_from_listing) {
     // pergunta nova: pede a sugestão de resposta da IA (função ml-perguntas)
     const { data: p } = await db.from('ml_perguntas').select('sugestao, sugestao_em').eq('id', q.id).maybeSingle();
     if (!p?.sugestao && !p?.sugestao_em) {
