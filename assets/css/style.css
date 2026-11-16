@@ -126,6 +126,7 @@ td select { padding: 6px 8px; min-width: 160px; }
 .selo { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; background: var(--fundo); color: var(--texto-suave); }
 .selo.ok { background: #e8f5ec; color: var(--ok); }
 .selo.erro { background: #fdeceb; color: var(--erro); }
+.selo.aguardando { background: #fff4d6; color: #8a6100; }
 
 .abas { display: flex; gap: 4px; margin-bottom: 16px; }
 .aba { background: none; border: 0; padding: 8px 14px; border-radius: 8px; font: 500 14px var(--fonte); color: var(--texto-suave); cursor: pointer; }

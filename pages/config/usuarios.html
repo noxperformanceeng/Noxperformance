@@ -6,7 +6,7 @@
 <title>Usuários e acessos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161459">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611161530">
 </head>
 <body data-modulo="usuarios" data-titulo="Usuários e acessos">
 <main id="conteudo">
@@ -30,7 +30,7 @@
   <section id="aba-usuarios">
     <div class="cartao filtros painel-filtros" hidden>
       <div><label>Perfil</label><select id="fPerfil"><option value="">Todos</option><option value="-">Sem perfil</option></select></div>
-      <div><label>Situação</label><select id="fAtivo"><option value="">Todas</option><option value="1">Ativo</option><option value="0">Inativo</option></select></div>
+      <div><label>Situação</label><select id="fAtivo"><option value="">Todas</option><option value="1">Ativo</option><option value="p">Aguardando 1º acesso</option><option value="0">Inativo</option></select></div>
       <div><label>Telas extras</label><select id="fExtras"><option value="">Todos</option><option value="1">Com ajuste individual</option></select></div>
       <div><label>Cadastrado de</label><input type="date" id="fDe"></div>
       <div><label>até</label><input type="date" id="fAte"></div>
@@ -74,10 +74,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161459"></script>
-<script src="../../assets/js/ui.js?v=202611161459"></script>
-<script src="../../assets/js/auth.js?v=202611161459"></script>
-<script src="../../assets/js/layout.js?v=202611161459"></script>
+<script src="../../assets/js/supabase.js?v=202611161530"></script>
+<script src="../../assets/js/ui.js?v=202611161530"></script>
+<script src="../../assets/js/auth.js?v=202611161530"></script>
+<script src="../../assets/js/layout.js?v=202611161530"></script>
 <script>
 let ctx, perfis = [], modulos = [], permissoes = [], ajustes = [], usuarios = [];
 let acoes = [], perfilAcoes = [], usuarioAcoes = [];   // ações sensíveis (estornar, cancelar…), por perfil e por pessoa
@@ -101,7 +101,7 @@ const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, inc
     arquivo: 'usuarios',
     colunas: ['Nome', 'E-mail', 'Perfil', 'Telas extras', 'Situação', 'Cadastro'],
     linhas: usuariosFiltrados().map(u => [u.nome, u.email, perfis.find(p => p.id === u.perfil_id)?.nome || 'Sem perfil',
-      resumoAjustes(u.id), u.ativo ? 'Ativo' : 'Inativo', dataBR(u.criado_em)])
+      resumoAjustes(u.id), !u.ativo ? 'Inativo' : u.sem_acesso ? 'Aguardando 1º acesso' : 'Ativo', dataBR(u.criado_em)])
   }));
   const bnu = document.getElementById('novoUsuario'); bnu.hidden = !ctx.admin; bnu.onclick = novoUsuario;
   await carregar();
@@ -109,6 +109,13 @@ const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, inc
   const alvo = new URLSearchParams(location.search).get('usuario');
   if (alvo && ctx.admin && usuarios.some(u => u.id === alvo)) editarUsuario(alvo);
 })();
+
+// Situação: Inativo (bloqueado) · Aguardando 1º acesso (ainda não criou a senha/entrou) · Ativo
+function situacaoUsuario(u) {
+  if (!u.ativo) return '<span class="selo erro">Inativo</span>';
+  if (u.sem_acesso) return '<span class="selo aguardando" title="Cadastro liberado, mas a pessoa ainda não criou a senha nem entrou. Envie o link para criar a senha.">Aguardando 1º acesso</span>';
+  return `<span class="selo ok"${u.ultimo_acesso ? ` title="Último acesso: ${new Date(u.ultimo_acesso).toLocaleString('pt-BR')}"` : ''}>Ativo</span>`;
+}
 
 async function carregar() {
   const r = await Promise.all([
@@ -122,6 +129,9 @@ async function carregar() {
   const erro = r.find(x => x.error);
   if (erro) return aviso('Erro ao carregar: ' + erro.error.message, true);
   [perfis, modulos, permissoes, ajustes, usuarios] = r.map(x => x.data);
+  // último acesso (quem nunca entrou fica "Aguardando 1º acesso")
+  const { data: ua } = await db.rpc('usuarios_ultimo_acesso');
+  if (ua) { const m = new Map(ua.map(x => [x.id, x.ultimo_acesso])); usuarios.forEach(u => { u.ultimo_acesso = m.get(u.id) ?? null; u.sem_acesso = m.has(u.id) && !m.get(u.id); }); }
   // Ações (se a estrutura ainda não existir no banco, a tela segue sem elas)
   const ra = await Promise.all([db.from('acoes').select('*').order('ordem'), db.from('perfil_acoes').select('*'), db.from('usuario_acoes').select('*')]);
   [acoes, perfilAcoes, usuarioAcoes] = ra.map(x => x.error ? [] : x.data || []);
@@ -147,7 +157,7 @@ function usuariosFiltrados() {
   return usuarios.filter(u =>
     (!b || `${u.nome} ${u.email}`.toLowerCase().includes(b)) &&
     (!v('fPerfil') || (v('fPerfil') === '-' ? !u.perfil_id : u.perfil_id === v('fPerfil'))) &&
-    (!v('fAtivo') || String(+u.ativo) === v('fAtivo')) &&
+    (!v('fAtivo') || (v('fAtivo') === 'p' ? u.ativo && u.sem_acesso : String(+u.ativo) === v('fAtivo'))) &&
     (!v('fExtras') || ajustes.some(a => a.usuario_id === u.id)) &&
     (!de || new Date(u.criado_em) >= new Date(de + 'T00:00:00')) &&
     (!ate || new Date(u.criado_em) <= new Date(ate + 'T23:59:59.999')));
@@ -165,7 +175,7 @@ function desenharUsuarios() {
       <td>${esc(u.email)}</td>
       <td><select data-perfil="${u.id}" ${ctx.admin ? '' : 'disabled'}>${opcoes(u.perfil_id)}</select></td>
       <td>${resumo}</td>
-      <td><span class="selo ${u.ativo ? 'ok' : 'erro'}">${u.ativo ? 'Ativo' : 'Inativo'}</span></td>
+      <td>${situacaoUsuario(u)}</td>
       <td>${dataBR(u.criado_em)}</td>
       <td style="text-align:right">${ctx.admin ? `<button class="btn discreto" data-editar="${u.id}">Editar</button>` : ''}</td></tr>`;
   }).join('') : '<tr><td colspan="7" class="vazio">Nenhum usuário com esses filtros.</td></tr>';
