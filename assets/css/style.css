@@ -681,3 +681,13 @@ body.embutido:not([data-emp="0"]) .empresa-chips .ec-info { color: var(--emp-cor
 @media (prefers-reduced-motion: reduce) { .alerta-perg, .alerta-perg .sino { animation: none; } }
 body.com-alerta-perg { padding-top: 52px; }
 .menu .cont-perg { margin-left: auto; }
+.alerta-vendas { position: fixed; right: 16px; bottom: 16px; z-index: 9998; display: flex; flex-direction: column; gap: 10px; width: 340px; max-width: calc(100vw - 32px); }
+.alerta-vendas .venda { background: #1e8e4e; color: #fff; border-radius: 10px; padding: 10px 14px; box-shadow: 0 6px 18px rgba(0,0,0,.28); font-size: 14px; animation: venda-entra .35s ease-out, venda-pulsa 1.4s ease-in-out 3; }
+.alerta-vendas .v-topo { display: flex; background: none; padding: 0; margin: 0; position: static; height: auto; color: #fff; align-items: center; gap: 8px; font-size: 15px; }
+.alerta-vendas .v-ic { font-size: 20px; }
+.alerta-vendas .v-fechar { margin-left: auto; background: rgba(255,255,255,.2); color: #fff; border: 0; border-radius: 6px; width: 26px; height: 26px; font-size: 18px; line-height: 1; cursor: pointer; }
+.alerta-vendas .v-sub { color: #fff; font-size: 12.5px; opacity: .92; margin-top: 2px; }
+.alerta-vendas ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+@keyframes venda-entra { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes venda-pulsa { 0%, 100% { box-shadow: 0 6px 18px rgba(0,0,0,.28); } 50% { box-shadow: 0 0 0 6px rgba(30,142,78,.35); } }
+@media (prefers-reduced-motion: reduce) { .alerta-vendas .venda { animation: none; } }

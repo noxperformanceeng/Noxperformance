@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611152244';
+const VERSAO_TELAS = '202611152248';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -258,6 +258,8 @@ async function iniciarTela() {
   // aviso do computador e título da aba piscando). Some quando todas forem respondidas.
   // Som só para quem atende o ML (perfil Comercial: Caio e Kleyton); os demais veem só o aviso visual.
   if (ctx.pode('perguntas_ml', 'alterar')) alertaPerguntasML(ctx.usuario?.perfil_id === 'comercial');
+  // Venda nova: cartão verde + som para Comercial e Expedição
+  if (['comercial', 'expedicao'].includes(ctx.usuario?.perfil_id)) alertaVendas();
   // Menu lateral recolhível (lembra a escolha)
   const recolher = v => { document.body.classList.toggle('menu-recolhido', v); try { localStorage.setItem('nox_menu_recolhido', v ? '1' : ''); } catch {} };
   try { if (localStorage.getItem('nox_menu_recolhido')) document.body.classList.add('menu-recolhido'); } catch {}
@@ -593,4 +595,42 @@ function alertaPerguntasML(comSom) {
   }
   conferir(); setInterval(conferir, 30000);
   if (typeof ouvirMudancas === 'function') ouvirMudancas(['ml_perguntas'], conferir, { auxiliar: true, mesmoOculto: true });
+}
+
+/* ---------- Aviso de venda nova (Comercial e Expedição) ---------- */
+function alertaVendas() {
+  const vistas = new Set(); let desde = null;
+  const caixa = document.createElement('div'); caixa.id = 'alertaVendas'; caixa.className = 'alerta-vendas nao-imprimir';
+  document.body.appendChild(caixa);
+  const tocar = () => {   // "plim" de caixa registradora (diferente do bipe das perguntas)
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      [[1047, 0], [1319, .12], [1568, .24], [2093, .36]].forEach(([f, t]) => { const o = ac.createOscillator(), g = ac.createGain();
+        o.type = 'triangle'; o.frequency.value = f; g.gain.setValueAtTime(.3, ac.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + t + .45);
+        o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + .5); });
+    } catch {}
+  };
+  const cartao = v => {
+    const el = document.createElement('div'); el.className = 'venda';
+    const itens = (v.itens || []).map(i => `<li><b>${Number(i.quantidade) || 1}×</b> ${esc(i.descricao || '')}</li>`).join('');
+    el.innerHTML = `<div class="v-topo"><span class="v-ic">🛒</span><b>Venda nova · ${esc(v.canal || '')}</b>
+        <button type="button" class="v-fechar" title="Fechar">×</button></div>
+      <div class="v-sub">Pedido ${esc(v.numero)}${v.cliente ? ' · ' + esc(v.cliente) : ''}${v.logistica ? ' · ' + esc(v.logistica) : ''}</div>
+      ${itens ? `<ul>${itens}</ul>` : ''}`;
+    el.querySelector('.v-fechar').onclick = () => el.remove();
+    setTimeout(() => el.remove(), 10 * 6e4);   // some sozinho em 10 min
+    caixa.prepend(el);
+    while (caixa.children.length > 5) caixa.lastElementChild.remove();
+  };
+  async function conferir() {
+    const { data, error } = await db.rpc('vendas_recentes', { p_desde: desde });
+    if (error || !data) return;
+    if (!desde) { desde = data.agora; return; }   // começa a contar a partir de agora
+    const novas = (data.vendas || []).filter(v => !vistas.has(v.id));
+    novas.forEach(v => { vistas.add(v.id); cartao(v); });
+    if (novas.length) tocar();
+  }
+  conferir(); setInterval(conferir, 60000);
+  if (typeof ouvirMudancas === 'function') ouvirMudancas(['pedidos_venda', 'pedidos_venda_itens'], conferir, { auxiliar: true, mesmoOculto: true });
 }
