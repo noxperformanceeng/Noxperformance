@@ -77,17 +77,16 @@ function nomeNoComprovante(texto) {
 }
 // somaGrupo: quando o mesmo comprovante pagou vários títulos, o total deles (aceito se o valor do título sozinho não aparecer)
 function conferirComprovante(texto, { valor, data, nome, fantasia, doc, apelidos, somaGrupo }) {
-  // junta números que o OCR separou ("1 088 , 00" → "1088,00"; "1.088, 00" → "1.088,00")
-  const t = _norm(texto).replace(/\s+/g, ' ').replace(/(\d) ?([.,]) ?(\d)/g, '$1$2$3'), soNum = t.replace(/\D/g, ''), out = [];
+  // junta números que o OCR separou ("1.088 ,00" → "1.088,00"); vírgula seguida de espaço é texto ("0728, 24 horas")
+  const t = _norm(texto).replace(/\s+/g, ' ').replace(/(\d) ?([.,])(\d)/g, '$1$2$3'), soNum = t.replace(/\D/g, ''), out = [];
   // Valor: 1.234,56 · 1234,56 · 1234.56
   const v = Number(valor || 0), fixo = v.toFixed(2), br = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const achouValor = new RegExp('(^|[^\\d.,])(' + [br, br.replace(/\./g, ''), fixo, br.replace(/\./g, ' ')].map(x => x.replace(/[.$]/g, '\\$&')).join('|') + ')(?![\\d]|[.,]\\d)').test(t);
-  // sem o valor exato: aceita o total do grupo e diferença de até R$ 0,10 (juros/centavos do boleto), mostrando a diferença
-  const valores = valoresNoTexto(t), perto = alvo => valores.find(x => Math.abs(x - alvo) < 0.105);
+  // sem o valor exato: aceita só o total exato do grupo (mesmo comprovante para vários títulos); qualquer diferença fica pendente
+  const valores = valoresNoTexto(t), perto = alvo => valores.find(x => Math.abs(x - alvo) < 0.005);
   const fmt = x => x.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let okValor = achouValor, detValor = br + ' encontrado';
   if (!okValor && somaGrupo && Math.abs(somaGrupo - v) > 0.005 && perto(somaGrupo) != null) { okValor = true; detValor = `${br} faz parte de um pagamento de ${fmt(perto(somaGrupo))} (vários títulos no mesmo comprovante)`; }
-  if (!okValor && perto(v) != null) { const x = perto(v); okValor = true; detValor = `${fmt(x)} no comprovante (diferença de R$ ${fmt(Math.abs(x - v))})`; }
   if (!okValor) detValor = br + ' não encontrado no comprovante' + (valores.filter(x => x > 0).length ? ` (o comprovante mostra ${[...new Set(valores.filter(x => x > 0))].slice(0, 3).map(fmt).join(', ')})` : '');
   out.push({ item: 'Valor', ok: okValor, detalhe: detValor });
   // Data: numérica (dd/mm/aaaa, dd.mm.aa, aaaa-mm-dd…) ou com o mês escrito (23 out. 2026, 23 de outubro de 2026)
