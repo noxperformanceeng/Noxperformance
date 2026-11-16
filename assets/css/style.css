@@ -438,6 +438,8 @@ a.ext, .link-cad, .rastro-item small a, .campo .obrig { color: var(--destaque-te
 .menu .grupo:has(.item.ativo) > .grupo-titulo { color: #fff; }
 .menu .grupo:has(.item.ativo) > .grupo-titulo .ico { color: var(--destaque); }
 .menu .grupo-itens { padding: 2px 0 6px 28px; position: relative; }
+.menu .menu-sub { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: #6b717a; padding: 8px 10px 2px; }
+.menu .menu-sub:first-child { padding-top: 2px; }
 .menu .grupo-itens::before { content: ''; position: absolute; left: 19px; top: 2px; bottom: 8px; width: 1px; background: var(--grafite-3); }
 .menu .grupo-itens .item { font-size: 13px; padding: 6px 10px; color: var(--aco); }
 .menu .grupo-itens .item.ativo::before { left: -10px; }
