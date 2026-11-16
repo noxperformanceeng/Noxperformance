@@ -6,7 +6,7 @@
 <title>Lançamentos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162030">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162032">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -24,12 +24,12 @@
 <body data-modulo="lancamentos" data-titulo="Lançamentos" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162030"></script>
-<script src="../../assets/js/ui.js?v=202611162030"></script>
-<script src="../../assets/js/auth.js?v=202611162030"></script>
-<script src="../../assets/js/layout.js?v=202611162030"></script>
-<script src="../../assets/js/cadastro.js?v=202611162030"></script>
-<script src="../../assets/js/rh.js?v=202611162030"></script>
+<script src="../../assets/js/supabase.js?v=202611162032"></script>
+<script src="../../assets/js/ui.js?v=202611162032"></script>
+<script src="../../assets/js/auth.js?v=202611162032"></script>
+<script src="../../assets/js/layout.js?v=202611162032"></script>
+<script src="../../assets/js/cadastro.js?v=202611162032"></script>
+<script src="../../assets/js/rh.js?v=202611162032"></script>
 <script>
 /* =====================================================================
    Lançamentos do mês (competência)
@@ -361,17 +361,17 @@ async function fecharReabrir() {
   const empresas = CTX.empresa ? [CTX.empresa] : CTX.empresas.map(e => e.id);
   const fechar = !empresas.every(fechada);
   const nomes = empresas.map(id => CTX.empresas.find(e => e.id === id)?.nome).join(', ');
-  if (!confirm(fechar ? `Fechar a folha de ${mesBR(COMP)} (${nomes})?\n\n• Os lançamentos do mês ficam travados em todas as telas do RH.\n• O líquido do 5º dia útil de cada colaborador vai para o Contas a pagar (1 título por pessoa).\n• Férias e 13º seguem nos títulos próprios.\n\nConfira os holerites antes de fechar.`
-      : `Reabrir a folha de ${mesBR(COMP)} (${nomes})?\n\nOs títulos de salário ainda não pagos saem do Contas a pagar. Se algum já foi pago, o financeiro precisa estornar antes.`)) return;
+  if (!confirm(fechar ? `Fechar a folha de ${mesBR(COMP)} (${nomes})?\n\n• Os lançamentos do mês ficam travados em todas as telas do RH.\n• O líquido do 5º dia útil de cada colaborador vai para o Contas a pagar somado em 1 título (sem nomes; o detalhe fica no RH).\n• Férias e 13º seguem nos títulos próprios.\n\nConfira os holerites antes de fechar.`
+      : `Reabrir a folha de ${mesBR(COMP)} (${nomes})?\n\nO título da folha sai do Contas a pagar (se ainda não foi pago). Se algum já foi pago, o financeiro precisa estornar antes.`)) return;
   const msgs = [];
   for (const id of empresas) {
     const { data, error } = await db.rpc('rh_fechar_competencia', { p_empresa: id, p_competencia: COMP + '-01', p_fechar: fechar });
     if (error) return aviso('Não salvou: ' + error.message, true);
     const nome = CTX.empresas.find(e => e.id === id)?.nome || id;
     if (fechar && data?.sem_titulos) msgs.push(`${nome}: fechada (folha anterior ao sistema: já paga pelo histórico do Tiny, sem títulos novos)`);
-    else if (fechar) msgs.push(`${nome}: ${data?.titulos || 0} título(s) no Contas a pagar · ${reais(data?.total)} · vencimento ${dataBR((data?.vencimento || '') + 'T12:00:00')}`
+    else if (fechar) msgs.push(`${nome}: ${data?.titulos || 0} título no Contas a pagar com o total de ${data?.colaboradores || 0} colaborador(es) · ${reais(data?.total)} · vencimento ${dataBR((data?.vencimento || '') + 'T12:00:00')}`
       + (data?.negativos?.length ? `\nLíquido negativo (sem título, revisar): ${data.negativos.join(', ')}` : ''));
-    else msgs.push(`${nome}: reaberta · ${data?.titulos || 0} título(s) de salário retirado(s) do financeiro`);
+    else msgs.push(`${nome}: reaberta · salário de ${data?.colaboradores || 0} colaborador(es) retirado do financeiro`);
   }
   alert(msgs.join('\n\n')); carregar();
 }

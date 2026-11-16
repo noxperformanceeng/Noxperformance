@@ -1,5 +1,5 @@
 -- =====================================================================
--- 135 · Comprovante: um "Ciente" vale para os iguais
+-- 136 · Comprovante: um "Ciente" vale para os iguais
 --  · Quando o master dá ciente num comprovante em que só o fornecedor não bateu (ex.: Storinox pago a
 --    uma pessoa física), o nome lido vira "outro nome" do fornecedor (já era assim desde o 114) e,
 --    agora, os outros comprovantes pendentes do MESMO fornecedor com o MESMO nome lido também
