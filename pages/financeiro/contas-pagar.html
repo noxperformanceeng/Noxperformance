@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161949">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611161959">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161949"></script>
-<script src="../../assets/js/ui.js?v=202611161949"></script>
-<script src="../../assets/js/auth.js?v=202611161949"></script>
-<script src="../../assets/js/layout.js?v=202611161949"></script>
-<script src="../../assets/js/cadastro.js?v=202611161949"></script>
-<script src="../../assets/js/comprovante.js?v=202611161949"></script>
+<script src="../../assets/js/supabase.js?v=202611161959"></script>
+<script src="../../assets/js/ui.js?v=202611161959"></script>
+<script src="../../assets/js/auth.js?v=202611161959"></script>
+<script src="../../assets/js/layout.js?v=202611161959"></script>
+<script src="../../assets/js/cadastro.js?v=202611161959"></script>
+<script src="../../assets/js/comprovante.js?v=202611161959"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -422,6 +422,117 @@ function janela(titulo, corpo, botao, aoConfirmar) {
   return m;
 }
 
+/* ---------- Fila "NF recebidas para lançar" (SQL 132) ----------
+   O almoxarifado deu entrada da NF (estoque atualizado); o financeiro confere e lança (vira título real) ou devolve com o motivo.
+   Entra também a NF sem pedido aprovada pelo master, depois da entrada no estoque. */
+let FILA = [], PC_ABERTOS = [], abrirFilaAoCarregar = new URLSearchParams(location.search).has('fila');
+function desenharFila() {
+  let box = document.getElementById('filaNF');
+  const podeLancar = window.__ctxNox?.pode('pagar', 'criar'), ag = FILA.filter(x => x.situacao === 'aguardando'), dev = FILA.filter(x => x.situacao === 'devolvido');
+  if (!podeLancar || !FILA.length) { box?.remove(); document.getElementById('mFila')?.remove(); return; }
+  if (!box) { box = document.createElement('div'); box.id = 'filaNF'; box.className = 'aviso-box'; box.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px';
+    document.querySelector('#conteudo .barra-ferr')?.before(box); }
+  box.innerHTML = `<b>NF recebidas para lançar:</b> ${ag.length} aguardando conferência · ${reais(ag.reduce((s, x) => s + Number(x.valor || 0), 0))}${dev.length ? ` · <span class="tg erro">${dev.length} devolvida(s)</span>` : ''}
+    <button type="button" class="btn fino primario" id="btnFila">Abrir a fila</button>`;
+  box.querySelector('#btnFila').onclick = abrirFila;
+  if (document.getElementById('mFila')) abrirFila();   // fila aberta: redesenha com o que mudou (tempo real)
+}
+function abrirFila() {
+  const linha = x => `<tr><td>${x.situacao === 'devolvido' ? '<span class="tg erro">devolvida</span>' : '<span class="tg alerta">aguardando</span>'}</td>
+    <td>NF ${esc(x.nf)}${x.serie ? '-' + esc(x.serie) : ''}<br><small class="sub2">emissão ${dataCurta(x.emissao)}</small></td><td>${esc(x.fornecedor || '')}</td>
+    <td>${x.pedido_id ? `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${x.pedido_id}" style="color:var(--destaque)">${esc(x.pedido)}</a>` : '<span class="tg neutro">sem pedido (master)</span>'}</td>
+    <td>${esc(x.quem || '')}<br><small class="sub2">${dataCurta(x.recebida_em)}</small></td><td class="num">${reais(x.valor)}</td>
+    <td>${x.situacao === 'devolvido' ? `<small>${esc(x.devolvido_motivo || '')}</small>` : `<button type="button" class="btn fino primario" data-lancar="${x.tipo}:${x.id}">Conferir e lançar…</button>`}</td></tr>`;
+  const html = `<h2>NF recebidas para lançar no contas a pagar</h2>
+    <p class="sub" style="margin:0 0 8px">O almoxarifado já deu entrada (estoque atualizado). Confira valor, vencimentos e categoria e lance; se algo não bater, devolva com o motivo.</p>
+    ${FILA.length ? `<table class="lista-mini"><thead><tr><th></th><th>NF</th><th>Fornecedor</th><th>Pedido</th><th>Entrada por</th><th class="num">Valor</th><th></th></tr></thead><tbody>${FILA.map(linha).join('')}</tbody></table>`
+      : '<p class="sub">Nada na fila. ✓</p>'}
+    <div class="acoes"><button class="btn" id="fX">Fechar</button></div>`;
+  let m = document.getElementById('mFila');
+  if (m) m.querySelector('.modal').innerHTML = html;   // já aberta: só troca o conteúdo (fica atrás da conferência, se houver)
+  else { m = abrirModal(html); m.id = 'mFila'; }
+  m.querySelector('#fX').onclick = () => m.remove();
+  m.querySelectorAll('[data-lancar]').forEach(b => b.onclick = () => { const [t, id] = b.dataset.lancar.split(':'); abrirConferencia(FILA.find(x => x.tipo === t && String(x.id) === id)); });
+}
+async function abrirConferencia(x) {
+  if (!x) return;
+  const sp = x.tipo === 'nf_sem_pedido';
+  let itens = [];
+  if (!sp) { const { data } = await db.from('pedidos_compra_itens').select('id, descricao, unidade, quantidade, quantidade_recebida, valor_total').eq('pedido_id', x.pedido_id); itens = data || []; }
+  const recebidos = sp ? (x.itens || []).map(i => ({ descricao: i.descricao, unidade: i.unidade, nesta: i.quantidade, valor: i.valor }))
+    : (x.itens || []).filter(q => Number(q.quantidade) > 0).map(q => { const i = itens.find(y => y.id === q.item_id) || {};
+        return { descricao: i.descricao, unidade: i.unidade, pedido: i.quantidade, nesta: q.quantidade, valor: Math.round(Number(i.valor_total || 0) * Number(q.quantidade) / Number(i.quantidade || 1) * 100) / 100 }; });
+  const somaItens = recebidos.reduce((s, i) => s + Number(i.valor || 0), 0), parc = (x.parcelas || []).length ? x.parcelas : [{ vencimento: x.emissao, valor: x.valor }];
+  const linhaParc = (k, p) => `<tr><td style="width:24px;padding-top:7px">${k}</td><td style="width:140px"><input type="date" data-venc value="${esc(String(p.vencimento || '').slice(0, 10))}"></td>
+    <td style="width:120px"><input data-val inputmode="decimal" value="${num2(p.valor)}"></td><td><input data-cb value="${esc(p.codigo_barras || '')}"></td><td style="width:22px"><button type="button" class="rm">×</button></td></tr>`;
+  const m = abrirModal(`<h2>Conferir e lançar · NF ${esc(x.nf)} · ${esc(x.fornecedor || '')}</h2>
+    <p class="sub" style="margin:0 0 8px">${sp ? `Sem pedido, aprovada pelo master${x.motivo_sem_pedido ? ' (' + esc(x.motivo_sem_pedido) + ')' : ''}.` : `Pedido <b>${esc(x.pedido)}</b> · valor do pedido ${reais(x.valor_pedido)} · já recebido ${reais(x.valor_recebido_pedido)}.`}
+      Entrada dada por ${esc(x.quem || '—')} em ${dataCurta(x.recebida_em)}.</p>
+    <div class="sub-ed"><div class="secao">O que chegou</div><table><thead><tr><th>Item</th>${sp ? '' : '<th>Pedido</th>'}<th>Nesta NF</th><th class="num">Valor</th></tr></thead><tbody>
+      ${recebidos.map(i => `<tr><td>${esc(i.descricao || '')}</td>${sp ? '' : `<td>${num2(i.pedido)} ${esc(i.unidade || '')}</td>`}<td>${num2(i.nesta)} ${esc(i.unidade || '')}</td><td class="num">${reais(i.valor)}</td></tr>`).join('')}</tbody></table>
+      <p class="sub" style="margin:4px 0 0">Itens ${reais(somaItens)} · valor da NF <b>${reais(x.valor)}</b>${Math.abs(somaItens - Number(x.valor)) > 0.05 ? ' <span class="tg alerta">diferença de ' + reais(Number(x.valor) - somaItens) + ' (frete, impostos ou desconto?)</span>' : ' <span class="tg ok">confere</span>'}</p></div>
+    <div class="grade-campos">
+      <div class="campo l2"><label>Categoria financeira ${sp ? '<span class="obrig">*</span>' : '<span class="sub">(vazio = a dos itens do pedido)</span>'}</label><select id="qCat">${optCats(null)}</select></div>
+      ${sp ? `<div class="campo l2"><label>Conta prevista</label><select id="qConta"><option value="">—</option>${CONTAS.filter(c => c.empresa_id === x.empresa_id && c.situacao === 'ativo' && c.tipo !== 'historico').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>` : ''}
+    </div>
+    <div class="sub-ed" id="qParc"><div class="secao">Parcelas (duplicatas da NF ou condição do pedido)</div><table><thead><tr><th>#</th><th>Vencimento</th><th>Valor (R$)</th><th>Código de barras (opcional)</th><th></th></tr></thead>
+      <tbody>${parc.map((p, k) => linhaParc(k + 1, p)).join('')}</tbody></table>
+      <button type="button" class="btn fino" id="qAdd" style="margin-top:4px">+ Parcela</button><div class="sub" id="qSoma" style="margin-top:4px"></div></div>
+    <div class="acoes">${sp ? '' : '<button class="btn" id="qDev">Devolver…</button>'}<span style="flex:1"></span><button class="btn" id="qN">Voltar</button><button class="btn primario" id="qS">Lançar no contas a pagar</button></div>`);
+  const q = s => m.querySelector(s);
+  const conferir = () => { const s = [...m.querySelectorAll('[data-val]')].reduce((a, i) => a + (lerNumero(i.value) || 0), 0);
+    q('#qSoma').innerHTML = `Soma das parcelas <b>${reais(s)}</b>${Math.abs(s - Number(x.valor)) > 0.009 ? ` <span class="tg erro">diferente da NF (${reais(x.valor)})</span>` : ' <span class="tg ok">confere</span>'}`; };
+  conferir();
+  q('#qParc').addEventListener('input', conferir);
+  q('#qParc').addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); conferir(); } });
+  q('#qAdd').onclick = () => { q('#qParc tbody').insertAdjacentHTML('beforeend', linhaParc(m.querySelectorAll('#qParc tbody tr').length + 1, { vencimento: x.emissao, valor: 0 })); conferir(); };
+  q('#qN').onclick = () => m.remove();
+  if (q('#qDev')) q('#qDev').onclick = async () => {
+    const t = await pedirTextoCP('Devolver NF ' + x.nf, 'O que não bateu? (volta para compras/almoxarifado acertar e reenviar)');
+    if (!t) return;
+    const { error } = await db.rpc('pc_recebimento_acao', { p_rec: x.id, p_acao: 'devolver', p_motivo: t });
+    if (error) return aviso('Não devolveu: ' + error.message, true);
+    aviso('NF devolvida para compras/almoxarifado'); m.remove(); cfg.recarregar();
+  };
+  q('#qS').onclick = async () => {
+    const parcelas = [...m.querySelectorAll('#qParc tbody tr')].map(tr => ({ vencimento: tr.querySelector('[data-venc]').value, valor: lerNumero(tr.querySelector('[data-val]').value) || 0,
+      codigo_barras: tr.querySelector('[data-cb]').value.replace(/\s/g, '') || null })).filter(p => p.valor);
+    if (!parcelas.length) return aviso('Informe as parcelas', true);
+    if (parcelas.some(p => !p.vencimento)) return aviso('Parcela sem vencimento', true);
+    const catSel = Number(q('#qCat').value) || null;
+    if (sp && !catSel) return aviso('Escolha a categoria', true);
+    q('#qS').disabled = true;
+    const { data, error } = sp
+      ? await db.rpc('nfe_lancar_cp', { p_id: x.id, p_categoria: catSel, p_conta: Number(q('#qConta').value) || null, p_parcelas: parcelas })
+      : await db.rpc('pc_recebimento_lancar', { p_rec: x.id, p_parcelas: parcelas, p_categoria: catSel });
+    if (error) { q('#qS').disabled = false; return aviso('Não lançou: ' + error.message, true); }
+    aviso(`NF ${x.nf} lançada · ${data} título(s) no contas a pagar`); m.remove(); cfg.recarregar();
+  };
+}
+const num2 = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+function pedirTextoCP(titulo, rotulo) {
+  return new Promise(res => {
+    const m = abrirModal(`<h2>${esc(titulo)}</h2><div class="campo"><label>${esc(rotulo)}</label><textarea id="pt" rows="3"></textarea></div>
+      <div class="acoes"><button class="btn" id="ptN">Voltar</button><button class="btn primario" id="ptS">Confirmar</button></div>`);
+    m.querySelector('#pt').focus();
+    m.querySelector('#ptN').onclick = () => { m.remove(); res(null); };
+    m.querySelector('#ptS').onclick = () => { const v = m.querySelector('#pt').value.trim(); if (!v) return aviso('Preencha o campo', true); m.remove(); res(v); };
+  });
+}
+// Título manual para fornecedor com pedido de compra em aberto: avisa e pede confirmação (compra entra pela fila)
+function confirmarSemPedido(fornId) {
+  const ps = PC_ABERTOS.filter(p => p.fornecedor_id === fornId);
+  if (!ps.length) return Promise.resolve(true);
+  return new Promise(res => {
+    const m = abrirModal(`<h2>Fornecedor com pedido de compra em aberto</h2>
+      <p>Este fornecedor tem ${ps.length} pedido(s) de compra em aberto: <b>${esc(ps.map(p => p.numero).join(', '))}</b>.</p>
+      <p class="sub">Compra de pedido entra no contas a pagar só depois da entrada da NF pelo almoxarifado (fila "NF recebidas para lançar"). Lance aqui só se for outra despesa, que não é desse pedido.</p>
+      <div class="acoes"><button class="btn" id="cfN">Voltar</button><button class="btn primario" id="cfS">É outra despesa · lançar</button></div>`);
+    m.querySelector('#cfN').onclick = () => { m.remove(); res(false); };
+    m.querySelector('#cfS').onclick = () => { m.remove(); res(true); };
+  });
+}
+
 const cfg = {
   tabela: 'titulos_pagar', modulo: 'pagar', titulo: 'Contas a pagar', singular: 'título', plural: 'títulos',
   subtitulo: 'Despesas e títulos por empresa. Compra de produto entra pelo pedido de compra / NF; aqui, manualmente, só despesas.',
@@ -497,6 +608,9 @@ const cfg = {
       carregarApelidos()
     ]);
     APELIDOS = ap;
+    const [fl, pa] = await Promise.all([ctx.pode('pagar', 'criar') ? db.rpc('cp_fila_nf_recebidas') : { data: [] },
+      ctx.pode('compras') ? db.from('pedidos_compra').select('id, numero, fornecedor_id').in('situacao', ['aprovado', 'enviado', 'recebido_parcial']) : { data: [] }]);
+    FILA = fl.data || []; PC_ABERTOS = pa.data || [];
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
     FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x), nome: x.nome, fantasia: x.nome_fantasia, doc: x.cnpj }));
     CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' }));
@@ -531,6 +645,7 @@ const cfg = {
   ],
   apagado: r => r.situacao === 'cancelado' || r.situacao === 'pago',
   depoisDesenhar: (v, api) => desenharBarras(api),
+  depoisCarregar: () => { desenharFila(); if (abrirFilaAoCarregar && FILA.length) { abrirFilaAoCarregar = false; abrirFila(); } },
   aoAbrir(m, r, ctx) {
     window.__ctxNox = ctx;
     modalAtual = m;
@@ -642,6 +757,7 @@ const cfg = {
     return null;
   },
   async salvar(dados, r, m, novo) {
+    if (novo && dados.fornecedor_id && !(await confirmarSemPedido(Number(dados.fornecedor_id)))) throw new Error('Lançamento cancelado');
     const rat = lerRateio();
     if (novo && parcelado()) return salvarParcelas(dados, rat);
     const { data, error } = await db.rpc('salvar_titulo_pagar', { p_titulo: { ...dados, id: novo ? null : r.id }, p_rateio: rat.length || (r.id && (extraAtual.rateio[r.id] || []).length) ? rat : null });
