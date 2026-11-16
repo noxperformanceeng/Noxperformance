@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611161604';
+const VERSAO_TELAS = '202611161918';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -28,6 +28,7 @@ const MENU = [
     { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html', sub: 'Compras' }
   ]},
   { grupo: 'Produção', icone: 'producao', itens: [
+    { id: 'pcp',           nome: 'PCP',                arquivo: null },
     { id: 'ordens',        nome: 'Ordens de produção', arquivo: 'pages/fabricacao/ordens.html' },
     { id: 'etapas',        nome: 'Etapas',             arquivo: null },
     { id: 'apontamento',   nome: 'Apontamento',        arquivo: 'pages/fabricacao/apontamento.html' },
@@ -57,6 +58,12 @@ const MENU = [
     { id: 'advertencias',  nome: 'Documentos e advertências', arquivo: 'pages/rh/documentos.html' },
     { id: 'rh_eventos',    nome: 'Eventos da folha',  arquivo: 'pages/rh/eventos.html' },
     { id: 'rh_relatorios', nome: 'Relatórios do RH',  arquivo: 'pages/rh/relatorios.html' }
+  ]},
+  // Indicadores da empresa toda (painéis por área)
+  { grupo: 'Indicadores', icone: 'grafico', itens: [
+    { id: 'ind_financeiro', nome: 'Financeiro', arquivo: null },
+    { id: 'ind_producao',   nome: 'Produção',   arquivo: null },
+    { id: 'ind_marketing',  nome: 'Marketing',  arquivo: null }
   ]},
   { grupo: 'Cadastros', icone: 'cadastros', gerenciar: true, itens: [
     { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
