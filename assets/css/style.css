@@ -679,6 +679,7 @@ body.embutido:not([data-emp="0"]) .empresa-chips .ec-info { color: var(--emp-cor
 .alerta-perg .btn.discreto { background: rgba(255,255,255,.18); color: #fff; font-weight: 500; }
 @keyframes alerta-perg { 0%, 100% { background: #c0262d; } 50% { background: #e0353d; } }
 @media (prefers-reduced-motion: reduce) { .alerta-perg, .alerta-perg .sino { animation: none; } }
+.alerta-perg[hidden] { display: none; }   /* sem pergunta esperando: some de vez (o display:flex acima vencia o hidden) */
 body.com-alerta-perg { padding-top: 52px; }
 .menu .cont-perg { margin-left: auto; }
 .alerta-vendas { position: fixed; right: 16px; bottom: 16px; z-index: 9998; display: flex; flex-direction: column; gap: 10px; width: 340px; max-width: calc(100vw - 32px); }
