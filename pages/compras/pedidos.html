@@ -582,7 +582,7 @@ function secaoPedido(r) {
   if (s === 'recebido') acoes.push(btn('pdf', 'Baixar PDF'));
   if (temDesenho(r)) acoes.push(btn('desenhos', 'Baixar desenhos (ZIP)'));
   if (s === 'recebido_parcial' && podeAlt) acoes.push(btn('encerrar', 'Encerrar saldo…'));
-  if (['em_aprovacao', 'aprovado', 'enviado'].includes(s) && podeAlt && !Number(r.valor_recebido)) acoes.push(btn('reabrir', 'Reabrir (voltar a rascunho)…', 'discreto'));
+  if (['em_aprovacao', 'aprovado', 'enviado'].includes(s) && podeAlt && !Number(r.valor_recebido)) acoes.push(btn('reabrir', 'Alterar pedido…', s === 'em_aprovacao' ? 'discreto' : ''));
   if (['aprovado', 'enviado'].includes(s) && (CTX.admin || ACOES.has('compras.aprovar'))) acoes.push(btn('recusar', 'Recusar…', 'discreto'));
   if (!FINAL.includes(s) && CTX.pode('compras', 'total')) acoes.push(btn('cancelar', 'Cancelar pedido…', 'discreto'));
   acoes.push(btn('comentario', '+ Comentário', 'discreto'));
@@ -632,7 +632,11 @@ async function executarAcao(r, a, m) {
   if (a === 'enviar_aprovacao') { if (await acao(r, a)) fim('Enviado para aprovação'); }
   else if (a === 'aprovar') { const c = await pedirTexto('Aprovar ' + r.numero, 'Comentário (opcional)', false, 'Aprovar'); if (c === null) return; const s = await acao(r, a, c); if (s) fim(s === 'aprovado' ? 'Pedido aprovado · previsão lançada no contas a pagar' : 'Aprovado neste nível · segue para o próximo'); }
   else if (a === 'recusar') { const c = await pedirTexto('Recusar ' + r.numero, 'Motivo (volta para o comprador ajustar; não cancela)', true, 'Recusar'); if (c && await acao(r, a, c)) fim('Pedido recusado'); }
-  else if (a === 'reabrir') { const c = await pedirTexto('Voltar ' + r.numero + ' para rascunho', 'Motivo (a aprovação será refeita)', true, 'Reabrir'); if (c && await acao(r, a, c)) fim('Pedido voltou para rascunho'); }
+  else if (a === 'reabrir') {   // Alterar depois de aprovado: volta a rascunho, a aprovação anterior é desfeita e passa de novo por toda a escala
+    const c = await pedirTexto('Alterar ' + r.numero, `O pedido volta para rascunho para você alterar. Depois clique em "Enviar para aprovação": ele passa de novo pela aprovação (diretoria), e a previsão no contas a pagar sai até ser aprovado.${r.enviado_em ? ` Atenção: o fornecedor já recebeu este pedido em ${dataCurta(r.enviado_em)}. Depois da nova aprovação, use "Reenviar ao fornecedor" para mandar a versão alterada.` : ''} Motivo da alteração:`, true, 'Alterar pedido');
+    if (!c || !await acao(r, a, c)) return;
+    aviso('Pedido voltou para rascunho: altere, salve e envie para aprovação'); m.remove(); await cfg.recarregar();
+    document.querySelector(`#cLista tr[data-id="${r.id}"]`)?.click(); }
   else if (a === 'cancelar') { const c = await pedirTexto('Cancelar ' + r.numero, 'Motivo do cancelamento', true, 'Cancelar pedido'); if (c && await acao(r, a, c)) fim('Pedido cancelado'); }
   else if (a === 'liberar_avulso') { const c = await pedirTexto('Liberar item sem cadastro · ' + r.numero, 'Motivo (ex.: compra ocasional para manutenção, não precisa de SKU)', true, 'Liberar'); if (c && await acao(r, a, c)) fim('Item(ns) sem cadastro liberado(s)'); }
   else if (a === 'comentario') { const c = await pedirTexto('Comentário em ' + r.numero, 'Comentário', true, 'Salvar'); if (c && await acao(r, a, c)) fim('Comentário registrado'); }
