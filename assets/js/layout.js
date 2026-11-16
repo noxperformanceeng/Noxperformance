@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611161530';
+const VERSAO_TELAS = '202611161856';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -17,16 +17,15 @@ const MENU = [
     { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
   ]},
-  { grupo: 'Estoque', icone: 'estoque', itens: [
-    { id: 'estoque',       nome: 'Posição de estoque', arquivo: 'pages/estoque/posicao.html' },
-    { id: 'inventario',    nome: 'Inventário',        arquivo: 'pages/estoque/inventario.html' },
-    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html' }
-  ]},
-  { grupo: 'Compras', icone: 'compras', itens: [
-    { id: 'solicitacoes_compra', nome: 'Solicitações de compra', arquivo: 'pages/compras/solicitacoes.html' },
-    { id: 'cotacoes_compra', nome: 'Cotações de fornecedores', arquivo: 'pages/compras/cotacoes.html' },
-    { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html' },
-    { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html' }
+  // Suprimentos = estoque + compras num grupo só; "sub" desenha um subtítulo discreto entre as partes
+  { grupo: 'Suprimentos', icone: 'estoque', itens: [
+    { id: 'estoque',       nome: 'Posição de estoque', arquivo: 'pages/estoque/posicao.html', sub: 'Estoque' },
+    { id: 'inventario',    nome: 'Inventário',        arquivo: 'pages/estoque/inventario.html', sub: 'Estoque' },
+    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html', sub: 'Estoque' },
+    { id: 'solicitacoes_compra', nome: 'Solicitações de compra', arquivo: 'pages/compras/solicitacoes.html', sub: 'Compras' },
+    { id: 'cotacoes_compra', nome: 'Cotações de fornecedores', arquivo: 'pages/compras/cotacoes.html', sub: 'Compras' },
+    { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html', sub: 'Compras' },
+    { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html', sub: 'Compras' }
   ]},
   { grupo: 'Produção', icone: 'producao', itens: [
     { id: 'ordens',        nome: 'Ordens de produção', arquivo: 'pages/fabricacao/ordens.html' },
@@ -190,7 +189,9 @@ async function iniciarTela() {
     const aberto = temAtivo || abertos.includes(g.grupo);
     menuHtml += `<div class="grupo${aberto ? '' : ' fechado'}" data-grupo="${g.grupo}">
       <button class="grupo-titulo" type="button" aria-expanded="${aberto}" aria-controls="${id}" title="${g.grupo}">${icone(g.icone)}<span class="rotulo">${g.grupo}</span><span class="seta-grupo">${icone('baixo', 15)}</span></button><div class="grupo-itens" id="${id}">`;
+    const subs = new Set(visiveis.map(i => i.sub).filter(Boolean)); let sub = null;   // subtítulo só se houver mais de uma parte visível
     visiveis.forEach(i => {
+      if (subs.size > 1 && i.sub !== sub) { sub = i.sub; menuHtml += `<div class="menu-sub">${esc(sub)}</div>`; }
       if (!i.arquivo) { menuHtml += `<span class="item breve">${i.nome}<span class="tag">em breve</span></span>`; return; }
       const url = RAIZ + i.arquivo;
       menuHtml += `<a class="item${atual === url ? ' ativo' : ''}" href="${url}" data-mod="${i.id}"${atual === url ? ' aria-current="page"' : ''}>${i.nome}</a>`;
