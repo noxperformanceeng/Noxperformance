@@ -63,7 +63,7 @@ const tempoReal = (() => {
     produtos_duplicados: ['produtos', 'produtos_nao_duplicados'],
     produtos_vendas_resumo: ['anuncios', 'pedidos_venda', 'pedidos_venda_itens'],
     rh_divergencias: ['rh_divergencias_ok', 'rh_lancamentos'],
-    rh_titulos: ['pagamentos', 'titulos_pagar'],
+    rh_titulos: ['pagamentos', 'rh_titulos_itens', 'titulos_pagar'],
     sc_catalogo: ['produtos', 'servicos'],
     sc_pedidos: ['pedidos_compra', 'solicitacoes_compra', 'solicitacoes_compra_itens'],
     sc_cotacoes: ['solicitacoes_compra_itens', 'cotacoes_compra'],
