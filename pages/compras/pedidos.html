@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161959">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611161717">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161959"></script>
-<script src="../../assets/js/ui.js?v=202611161959"></script>
-<script src="../../assets/js/auth.js?v=202611161959"></script>
-<script src="../../assets/js/layout.js?v=202611161959"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611161959"></script>
-<script src="../../assets/js/cadastro.js?v=202611161959"></script>
+<script src="../../assets/js/supabase.js?v=202611161717"></script>
+<script src="../../assets/js/ui.js?v=202611161717"></script>
+<script src="../../assets/js/auth.js?v=202611161717"></script>
+<script src="../../assets/js/layout.js?v=202611161717"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611161717"></script>
+<script src="../../assets/js/cadastro.js?v=202611161717"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -388,7 +388,15 @@ function escolherPintor(linhas) {
    O comprador escolhe o conjunto pronto (ex.: DF-002) e quantos vai fazer: o sistema abre as peças da estrutura
    com saldo em estoque e em pedido, sugere quanto comprar e inclui as linhas. No modo pintura entra uma linha
    de serviço por conjunto. Os desenhos vigentes (DXF/PDF de corte e dobra, montagem) saem num ZIP para o fornecedor. */
-let CONJ = new Set();
+let CONJ = new Set(), ESTR = [];
+// O que vai ser pintado, para a OC de pintura: conjunto(s) reconhecido(s) pelas peças + lista das peças com quantidade
+function textoPintura(pecas) {   // pecas: [{ produto_id, quantidade }]
+  const ids = new Set(pecas.map(x => x.produto_id));
+  const conj = [...CONJ].filter(c => { const cs = ESTR.filter(e => e.produto_id === c).map(e => e.componente_id); return cs.length && cs.every(id => ids.has(id)); })
+    .map(c => prod(c)).filter(Boolean).map(p => `${p.codigo} ${p.descricao}`);
+  const lista = pecas.map(x => { const p = prod(x.produto_id); return `${num(x.quantidade)}× ${p ? p.codigo + ' ' + p.descricao : ''}`; }).join('; ');
+  return [conj.length ? 'CONJUNTO ' + conj.join(', ') : '', lista ? 'PEÇAS: ' + lista : ''].filter(Boolean).join(' · ').slice(0, 900);
+}
 const FIN = { corte_dxf: 'DXF corte', corte_pdf: 'PDF corte', dobra_pdf: 'PDF dobra', dobra_dxf: 'DXF dobra', montagem: 'Montagem' };
 const ehCorte = p => (p.arquivos || []).some(a => a.finalidade === 'corte_dxf' || a.finalidade === 'corte_pdf');
 const chipsArq = arqs => { const f = new Set(arqs.map(a => a.finalidade));
@@ -477,10 +485,10 @@ function abrirConjunto(pre = {}) {
       const emp = Number(modalAtual.querySelector('#f_empresa_id')?.value) || CTX.empresa || EMPRESAS[0]?.id;
       if (!emp) return aviso('Escolha a empresa do pedido antes', true);
       bt.disabled = true;
-      const pc = D._pecas.filter(ehCorte).map(p => p.codigo), origem = ex.porId?.[PED_ATUAL]?.numero;
+      const pc = D._pecas.filter(ehCorte).map(p => `${num(Number(p.por_conjunto) * q)}× ${p.codigo} ${p.descricao}`), origem = ex.porId?.[PED_ATUAL]?.numero;
       const { data: id, error } = await db.rpc('pedido_compra_salvar', {
-        p_pedido: { empresa_id: emp, fornecedor_id: fp, observacoes_internas: `Pintura do ${D.conjunto.codigo}${origem ? ' · peças no pedido ' + origem : ''} (gerada pelo "+ Conjunto")` },
-        p_itens: [{ servico_id: sp.id, descricao: `${sp.nome} · ${D.conjunto.codigo} ${D.conjunto.descricao}${pc.length ? ' · peças ' + pc.join(', ') : ''}`, unidade: 'CJ', quantidade: q,
+        p_pedido: { empresa_id: emp, fornecedor_id: fp, observacoes: `PINTURA DE: CONJUNTO ${D.conjunto.codigo} ${D.conjunto.descricao} × ${num(q)} · PEÇAS: ${pc.join('; ')}`.slice(0, 1000), observacoes_internas: `Pintura do ${D.conjunto.codigo}${origem ? ' · peças no pedido ' + origem : ''} (gerada pelo "+ Conjunto")` },
+        p_itens: [{ servico_id: sp.id, descricao: `${sp.nome} · CONJUNTO ${D.conjunto.codigo} ${D.conjunto.descricao} × ${num(q)}${pc.length ? ' · PEÇAS: ' + pc.join('; ') : ''}`.slice(0, 1000), unidade: 'CJ', quantidade: q,
           valor_unitario: Number(sp.preco_referencia) || 0, categoria_financeira_id: sp.categoria_financeira_id }] });
       if (error) { bt.disabled = false; return aviso('Não gerou a OC de pintura: ' + error.message, true); }
       const { data: n } = await db.from('pedidos_compra').select('numero').eq('id', id).maybeSingle();
@@ -1004,9 +1012,10 @@ const cfg = {
       db.rpc('minhas_acoes'),
       buscarTodos(() => db.from('produto_usinagem').select('produto_id, material, comprimento_mm, perda_mm, preco_servico, fornecedor_id')),
       buscarTodos(() => db.from('servicos').select('id, nome, categoria_financeira_id, unidade, usinagem, fornecedor_id, preco_referencia, situacao').order('nome')),
-      buscarTodos(() => db.from('produto_estrutura').select('produto_id').eq('ativo', true))
+      buscarTodos(() => db.from('produto_estrutura').select('produto_id, componente_id').eq('ativo', true))
     ]);
     CONJ = new Set(es.map(x => x.produto_id));
+    ESTR = es;
     FICHAS = Object.fromEntries(fi.map(x => [x.produto_id, x])); SERVS = sv;
     SUG = ctx.pode('compras', 'criar') ? ((await db.rpc('sugestao_compra')).data || []) : [];
     if (SUG.length) {   // físico e reservado em pedidos de venda (a sugestão já usa o disponível)
@@ -1122,14 +1131,23 @@ const cfg = {
       const fp = await escolherPintor(itens.filter(ehPint));
       if (fp === undefined) throw new Error('Salvamento cancelado');
       if (fp) {
-        const { data: idP, error: eP } = await db.rpc('pedido_compra_salvar', { p_pedido: { empresa_id: dados.empresa_id, fornecedor_id: fp,
-          observacoes_internas: `Pintura separada do pedido ${r.numero || 'novo'} (peças de corte e dobra ficam lá)` }, p_itens: itens.filter(ehPint) });
-        if (eP) throw eP;
+        const pint = itens.filter(ehPint), pecas = itens.filter(i => i.produto_id && !i.servico_id);
         itens = itens.filter(i => !ehPint(i));
+        const { data, error } = await db.rpc('pedido_compra_salvar', { p_pedido: { ...dados, id: novo ? null : r.id }, p_itens: itens });
+        if (error) throw error;
+        const { data: np } = await db.from('pedidos_compra').select('numero').eq('id', data).maybeSingle();
+        const oque = textoPintura(pecas);
+        const { data: idP, error: eP } = await db.rpc('pedido_compra_salvar', { p_pedido: { empresa_id: dados.empresa_id, fornecedor_id: fp,
+            observacoes: oque ? `PINTURA DE: ${oque}` : null,
+            observacoes_internas: `Pintura separada do pedido ${np?.numero || ''} (peças de corte e dobra ficam lá)` },
+          p_itens: pint.map(l => ({ ...l, descricao: [serv(l.servico_id)?.nome, detalheServ(l) || oque].filter(Boolean).join(' · ').slice(0, 1000) })) });
+        if (eP) throw eP;
         modalAtual.querySelectorAll('#itens > table > tbody > tr:not(.hist-precos)').forEach(tr => { const s = Number(tr.querySelector('[data-k=servico_id]')?.value);
           if (s && /PINTURA/i.test(serv(s)?.nome || '')) { if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove(); tr.remove(); } });
         const { data: n } = await db.from('pedidos_compra').select('numero').eq('id', idP).maybeSingle();
-        setTimeout(() => aviso(`Pintura separada na ${n?.numero || 'nova OC'} (${nomeComFantasia(forn(fp))}), em rascunho`), 700);
+        setTimeout(() => aviso(`Pintura separada na ${n?.numero || 'nova OC'} (${nomeComFantasia(forn(fp))}), em rascunho, com as peças a pintar`), 700);
+        sujo = false;
+        return data;
       }
     }
     const { data, error } = await db.rpc('pedido_compra_salvar', { p_pedido: { ...dados, id: novo ? null : r.id }, p_itens: itens });
