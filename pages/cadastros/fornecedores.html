@@ -6,17 +6,51 @@
 <title>Fornecedores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161717">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162030">
 </head>
 <body data-modulo="fornecedores" data-titulo="Fornecedores">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161717"></script>
-<script src="../../assets/js/ui.js?v=202611161717"></script>
-<script src="../../assets/js/auth.js?v=202611161717"></script>
-<script src="../../assets/js/layout.js?v=202611161717"></script>
-<script src="../../assets/js/cadastro.js?v=202611161717"></script>
+<script src="../../assets/js/supabase.js?v=202611162030"></script>
+<script src="../../assets/js/ui.js?v=202611162030"></script>
+<script src="../../assets/js/auth.js?v=202611162030"></script>
+<script src="../../assets/js/layout.js?v=202611162030"></script>
+<script src="../../assets/js/cadastro.js?v=202611162030"></script>
+<script src="../../assets/js/comprovante.js?v=202611162030"></script>
 <script>
+/* Outros nomes no comprovante (SQL 114/135): sócio, pessoa física, intermediador (ex.: Mercado Pago).
+   O comprovante em nome de um deles passa na conferência. Incluir/excluir: só o master (um nome aqui libera pagamentos sem alerta). */
+let EXTRA_FORN = null;
+function htmlOutrosNomes(r, e) {
+  EXTRA_FORN = e; const ls = e.apelidos?.[r.id] || [];
+  return `<div class="secao">Outros nomes no comprovante (${ls.length})</div>
+    <p class="sub" style="margin:0 0 6px">Pagamento feito em nome de outra pessoa ou empresa (sócio, pessoa física, intermediador). O comprovante com um destes nomes passa na conferência.${e.admin ? '' : ' Só o master inclui ou exclui.'}</p>
+    ${ls.length ? `<table class="lista-mini"><tbody>${ls.map(x => `<tr><td><b>${esc(x.apelido)}</b></td><td class="sub">${x.anexo_id ? 'aprendido no ciente' : 'incluído no cadastro'} · ${dataHoraBR(x.criado_em)}</td>
+      <td>${e.admin ? `<button type="button" class="btn discreto fino" data-apelido-rm="${x.id}">Excluir</button>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${e.admin ? `<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><input id="apNovo" placeholder="ex.: EDUARDO DE ARAUJO PAGAN" style="max-width:340px">
+      <button type="button" class="btn fino" id="apIncluir">+ Incluir nome</button></div>` : ''}`;
+}
+function ligarOutrosNomes(m, r) {
+  if (!r?.id) return;
+  m.querySelector('#apIncluir')?.addEventListener('click', async () => {
+    const nome = m.querySelector('#apNovo').value.trim().toUpperCase();
+    if (nome.length < 3) return aviso('Escreva o nome como aparece no comprovante', true);
+    const { error } = await db.from('fornecedores_apelidos').insert({ fornecedor_id: r.id, apelido: nome });
+    if (error) return aviso('Não incluiu: ' + (/duplicate|unique/i.test(error.message) ? 'esse nome já está cadastrado' : error.message), true);
+    m.querySelector('#apNovo').value = '';
+    m.querySelector('#apIncluir').parentElement.insertAdjacentHTML('beforebegin', `<p style="margin:4px 0"><b>${esc(nome)}</b> <span class="sub">incluído agora</span></p>`);
+    // os comprovantes pendentes deste fornecedor são conferidos de novo com o nome novo
+    let msg = 'Nome incluído';
+    try { const x = await reconferirPendentes(() => {}, r.id); if (x.liberados) msg += ` · ${x.liberados} comprovante(s) pendente(s) passaram a conferir`; } catch { /* segue: dá para reconferir nas Aprovações */ }
+    aviso(msg);
+  });
+  m.querySelectorAll('[data-apelido-rm]').forEach(b => b.onclick = async () => {
+    if (!confirm('Excluir este nome? Comprovantes futuros com ele voltam a pedir justificativa.')) return;
+    const { error } = await db.from('fornecedores_apelidos').delete().eq('id', Number(b.dataset.apelidoRm));
+    if (error) return aviso('Não excluiu: ' + error.message, true);
+    b.closest('tr').remove(); aviso('Nome excluído');
+  });
+}
 const SIT = [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }];
 const CATEGORIAS = ['Matéria-prima', 'Usinagem (terceiro)', 'Corte a laser (terceiro)', 'Pintura (terceiro)', 'Polimento (terceiro)',
   'Embalagem', 'Ferramentas e abrasivos', 'Fixadores', 'Filtros e componentes', 'Serviços', 'Transporte', 'Outros'];
@@ -52,11 +86,13 @@ montarCadastro({
     { id: 'prazo_entrega_dias', label: 'Prazo médio de entrega (dias)', tipo: 'numero' },
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
   ],
-  async carregarExtra() {
-    const v = await buscarTodos(() => db.from('produto_fornecedores').select('fornecedor_id, codigo_fornecedor, preferencial, produtos(codigo, descricao, tipo, situacao)').order('id'));
-    const por = {};
+  async carregarExtra(linhas, ctx) {
+    const [v, ap] = await Promise.all([buscarTodos(() => db.from('produto_fornecedores').select('fornecedor_id, codigo_fornecedor, preferencial, produtos(codigo, descricao, tipo, situacao)').order('id')),
+      db.from('fornecedores_apelidos').select('id, fornecedor_id, apelido, anexo_id, criado_em').not('fornecedor_id', 'is', null).order('apelido')]);
+    const por = {}, apelidos = {};
     v.forEach(x => (por[x.fornecedor_id] ||= []).push(x));
-    return { produtos: por };
+    (ap.data || []).forEach(x => (apelidos[x.fornecedor_id] ||= []).push(x));
+    return { produtos: por, apelidos, admin: !!ctx?.admin };
   },
   colunasExtras: [{ label: 'Produtos', texto: (r, e) => String((e.produtos[r.id] || []).length) }],
   textoBuscaExtra: (r, e) => (e.produtos[r.id] || []).map(x => `${x.produtos?.codigo} ${x.produtos?.descricao} ${x.codigo_fornecedor || ''}`).join(' '),
@@ -65,8 +101,10 @@ montarCadastro({
     const ps = e.produtos[r.id] || [];
     return `<div class="secao">Produtos vinculados (${ps.length})</div>` + (ps.length ? `<table class="lista-mini"><tbody>${ps.map(x =>
       `<tr><td><b>${esc(x.produtos?.codigo || '')}</b> ${esc(x.produtos?.descricao || '')}</td><td style="color:var(--texto-suave)">${x.codigo_fornecedor ? 'cód. ' + esc(x.codigo_fornecedor) : ''}</td><td>${x.preferencial ? '<span class="tg ok">preferencial</span>' : ''}</td></tr>`).join('')}</tbody></table>`
-      : '<p class="sub" style="margin:0">Nenhum produto vinculado. O vínculo é feito no cadastro de Produtos.</p>');
+      : '<p class="sub" style="margin:0">Nenhum produto vinculado. O vínculo é feito no cadastro de Produtos.</p>')
+      + htmlOutrosNomes(r, e);
   },
+  aoAbrir: (m, r) => ligarOutrosNomes(m, r),
   pendencias: [
     { id: 'sem_doc', nome: 'Sem CNPJ/CPF', cor: 'erro', bloqueia: true, teste: r => !r.cnpj },
     { id: 'doc_inv', nome: 'Documento inválido', cor: 'erro', bloqueia: true, teste: r => r.cnpj && !(r.cnpj.length === 11 ? cpfValido(r.cnpj) : cnpjValido(r.cnpj)) },

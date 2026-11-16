@@ -3,7 +3,8 @@
    lerComprovante(arquivo) → texto (PDF com texto pelo pdf.js; foto ou PDF escaneado pelo OCR Tesseract, em português)
    conferirComprovante(texto, { valor, data, nome, fantasia, doc, apelidos }) → [{ item, ok, detalhe }]
    nomeNoComprovante(texto) → nome de quem recebeu (linha depois de "para", "favorecido", "recebedor"…)
-   reconferirPendentes(aoAndar) → só o master: lê de novo os comprovantes divergentes ainda sem ciente
+   reconferirPendentes(aoAndar, fornecedorId) → só o master: confere de novo os divergentes ainda sem ciente
+     (usa o texto já lido quando houver; só baixa e lê o arquivo de novo se não houver)
    Tudo roda no navegador: o arquivo não sai da máquina para ser lido.
    ===================================================================== */
 const _carregados = {};
@@ -107,8 +108,8 @@ async function carregarApelidos() {
 const apelidosDe = (lista, fornecedorId, nome) => (lista || []).filter(x => fornecedorId ? x.fornecedor_id === fornecedorId : !x.fornecedor_id && _norm(x.nome_esperado) === _norm(nome)).map(x => x.apelido);
 
 // Lê de novo os comprovantes divergentes ainda sem ciente e grava o resultado (o que bater sai da lista do master)
-async function reconferirPendentes(aoAndar = () => {}) {
-  const { data: an, error } = await db.from('titulos_anexos').select('id, titulo_id, pagamento_id, caminho, nome, mime, conferencia')
+async function reconferirPendentes(aoAndar = () => {}, fornecedorId = null) {
+  let { data: an, error } = await db.from('titulos_anexos').select('id, titulo_id, pagamento_id, caminho, nome, mime, conferencia')
     .eq('tipo', 'pagar').is('ciente_em', null).eq('conferencia->>ok', 'false');
   if (error) throw error;
   if (!an.length) return { total: 0, liberados: 0, falhas: 0 };
@@ -118,6 +119,7 @@ async function reconferirPendentes(aoAndar = () => {}) {
   const fids = [...new Set((tt.data || []).map(x => x.fornecedor_id).filter(Boolean))];
   const { data: fs } = await db.from('fornecedores').select('id, nome, nome_fantasia, cnpj').in('id', fids.length ? fids : [0]);
   const P = new Map((pg.data || []).map(x => [x.id, x])), T = new Map((tt.data || []).map(x => [x.id, x])), F = new Map((fs || []).map(x => [x.id, x]));
+  if (fornecedorId) an = an.filter(x => T.get(x.titulo_id)?.fornecedor_id === fornecedorId);
   // Pagamento em lote: um comprovante para vários títulos (mesma leitura) → confere o total
   const grupos = new Map(); an.forEach(x => { const k = x.conferencia?.lido_em ? x.conferencia.lido_em + '|' + x.nome : 'a' + x.id; (grupos.get(k) || grupos.set(k, []).get(k)).push(x); });
   let feitos = 0, liberados = 0, falhas = 0;
@@ -128,10 +130,12 @@ async function reconferirPendentes(aoAndar = () => {}) {
       const valor = pgs.reduce((s, p) => s + Number(p.valor) + Number(p.juros || 0) - Number(p.desconto || 0), 0);
       const tits = g.map(x => T.get(x.titulo_id)), fornIds = [...new Set(tits.map(t => t?.fornecedor_id || null))];
       const f = fornIds.length === 1 && fornIds[0] ? F.get(fornIds[0]) : null, tiny = !f && fornIds.length === 1 ? tits[0]?.origem_ref?.fornecedor_tiny || '' : '';
-      const { data: blob, error: e2 } = await db.storage.from('financeiro').download(g[0].caminho);
-      if (e2) throw e2;
-      const arq = new File([blob], g[0].nome, { type: g[0].mime || blob.type });
-      const texto = await lerComprovante(arq);
+      let texto = g[0].conferencia?.texto;
+      if (!texto) {
+        const { data: blob, error: e2 } = await db.storage.from('financeiro').download(g[0].caminho);
+        if (e2) throw e2;
+        texto = await lerComprovante(new File([blob], g[0].nome, { type: g[0].mime || blob.type }));
+      }
       const itens = conferirComprovante(texto, { valor, data: pgs[0].data_pagamento, nome: f?.nome || tiny, fantasia: f?.nome_fantasia, doc: f?.cnpj,
         apelidos: apelidosDe(ap, f?.id, tiny) });
       const conf = { itens, nome_lido: nomeNoComprovante(texto), texto: texto.slice(0, 4000) };
