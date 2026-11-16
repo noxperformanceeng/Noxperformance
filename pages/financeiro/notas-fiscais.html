@@ -6,7 +6,7 @@
 <title>Notas fiscais · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161949">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611161959">
 <style>
   .nf-cnpjs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 12px; }
   .nf-cnpj { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
@@ -30,24 +30,24 @@
 <body data-modulo="notas" data-titulo="Notas fiscais" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161949"></script>
-<script src="../../assets/js/ui.js?v=202611161949"></script>
-<script src="../../assets/js/auth.js?v=202611161949"></script>
-<script src="../../assets/js/layout.js?v=202611161949"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611161949"></script>
-<script src="../../assets/js/cadastro.js?v=202611161949"></script>
+<script src="../../assets/js/supabase.js?v=202611161959"></script>
+<script src="../../assets/js/ui.js?v=202611161959"></script>
+<script src="../../assets/js/auth.js?v=202611161959"></script>
+<script src="../../assets/js/layout.js?v=202611161959"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611161959"></script>
+<script src="../../assets/js/cadastro.js?v=202611161959"></script>
 <script>
 /* =====================================================================
    Notas fiscais de entrada (NF-e emitidas contra a NOX), separadas por CNPJ
    Antifraude: toda NF precisa de pedido de compra vinculado e conferido. Sem pedido → aprovação do master.
-   Só NF conferida/aprovada vai para o contas a pagar e para o estoque:
-     · com pedido: "Registrar recebimento" no pedido de compra (a NF preenche o recebimento);
-     · sem pedido (aprovada pelo master): "Lançar no contas a pagar" aqui (parcelas = duplicatas da NF).
+   Só NF conferida/aprovada vai para o estoque e depois para o contas a pagar (SQL 132):
+     · com pedido: o almoxarifado dá entrada no pedido de compra; o financeiro lança pela fila do Contas a pagar;
+     · sem pedido (aprovada pelo master): o almoxarifado dá entrada no estoque aqui e depois o financeiro lança (parcelas = duplicatas da NF).
    Entrada das notas: XML (agora) e SEFAZ / Distribuição DF-e (quando o certificado A1 de cada CNPJ for instalado).
    ===================================================================== */
-const SIT = [{ v: 'nova', n: 'A conferir', cor: 'alerta' }, { v: 'conferida', n: 'Conferida · lançar no pedido', cor: 'ok' },
-  { v: 'aguardando_aprovacao', n: 'Sem pedido · aguardando master', cor: 'erro' }, { v: 'aprovada', n: 'Aprovada pelo master · lançar', cor: 'ok' },
-  { v: 'lancada', n: 'Lançada (CP e estoque)', cor: 'neutro' }, { v: 'ignorada', n: 'Ignorada', cor: 'neutro' }];
+const SIT = [{ v: 'nova', n: 'A conferir', cor: 'alerta' }, { v: 'conferida', n: 'Conferida · dar entrada no pedido', cor: 'ok' },
+  { v: 'aguardando_aprovacao', n: 'Sem pedido · aguardando master', cor: 'erro' }, { v: 'aprovada', n: 'Aprovada pelo master · dar entrada', cor: 'ok' },
+  { v: 'lancada', n: 'Entrada dada', cor: 'neutro' }, { v: 'ignorada', n: 'Ignorada', cor: 'neutro' }];
 const SEFAZ = [{ v: 'autorizada', n: 'Autorizada' }, { v: 'cancelada', n: 'Cancelada' }, { v: 'denegada', n: 'Denegada' }];
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtCnpj = d => (d || '').replace(/\D/g, '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
@@ -85,8 +85,10 @@ function secaoNF(r) {
   const btn = (a, t, cls = '') => `<button type="button" class="btn ${cls}" data-nf="${a}">${t}</button>`, ac = [];
   if (podeAlt && r.situacao === 'nova') { if (r.pedido_compra_id) ac.push(btn('conferida', 'Conferi · NF bate com o pedido', 'primario')); else ac.push(btn('pedir_aprovacao', 'NF sem pedido · pedir aprovação do master…')); }
   if (r.situacao === 'aguardando_aprovacao' && CTX.admin) { ac.push(btn('aprovar', 'Aprovar (master)…', 'primario')); ac.push(btn('recusar', 'Recusar…')); }
-  if (r.situacao === 'conferida' && r.pedido_compra_id) ac.push(`<a class="btn primario" href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}">Registrar recebimento no pedido ${esc(nomePed(ped(r.pedido_compra_id)))} ›</a>`);
-  if (r.situacao === 'aprovada' && CTX.pode('pagar', 'criar')) ac.push(btn('lancar', 'Lançar no contas a pagar e estoque…', 'primario'));
+  const podeEntrada = CTX.pode('estoque', 'alterar') || CTX.pode('compras', 'alterar');
+  if (r.situacao === 'conferida' && r.pedido_compra_id) ac.push(`<a class="btn${podeEntrada ? ' primario' : ''}" href="${RAIZ}pages/compras/pedidos.html?abrir=${r.pedido_compra_id}">${podeEntrada ? 'Dar entrada no pedido' : 'Abrir o pedido'} ${esc(nomePed(ped(r.pedido_compra_id)))} ›</a>`);
+  if (r.situacao === 'aprovada' && !r.entrada_em && podeEntrada) ac.push(btn('entrada', 'Dar entrada no estoque…', 'primario'));
+  if (r.situacao === 'aprovada' && r.entrada_em && CTX.pode('pagar', 'criar')) ac.push(btn('lancar', 'Lançar no contas a pagar…', 'primario'));
   if (podeAlt && ['conferida', 'ignorada'].includes(r.situacao)) ac.push(btn('nova', 'Voltar para conferir', 'discreto'));
   if (podeAlt && !['lancada', 'ignorada'].includes(r.situacao)) ac.push(btn('ignorada', 'Ignorar (não é compra)…', 'discreto'));
   ac.push(btn('sefaz', 'Consultar na SEFAZ', 'discreto'));
@@ -97,6 +99,7 @@ function secaoNF(r) {
     ${r.motivo_sem_pedido ? `<p class="sub" style="margin:0 0 4px">Sem pedido — motivo: <b>${esc(r.motivo_sem_pedido)}</b> (pedido por ${quem(r.aprovacao_pedida_por, r.aprovacao_pedida_em)})</p>` : ''}
     ${r.conferida_por ? `<p class="sub" style="margin:0 0 4px">Conferida por ${quem(r.conferida_por, r.conferida_em)}</p>` : ''}
     ${r.aprovada_por ? `<p class="sub" style="margin:0 0 4px">Aprovada pelo master: ${quem(r.aprovada_por, r.aprovada_em)}</p>` : ''}
+    ${r.situacao === 'aprovada' ? `<p class="sub" style="margin:0 0 4px">${r.entrada_em ? `Entrada no estoque: ${quem(r.entrada_por, r.entrada_em)} · falta o financeiro lançar no contas a pagar` : 'Aguardando o almoxarifado dar entrada no estoque (depois o financeiro lança)'}</p>` : ''}
     ${podeAlt && !['lancada'].includes(r.situacao) ? `
       ${!r.fornecedor_id ? `<div class="linha-vinc"><label class="sub">Fornecedor:</label><select id="nfForn"><option value="">— escolher —</option>${FORN.filter(f => f.situacao === 'ativo').map(f => `<option value="${f.id}">${esc(nomeComFantasia(f))}${f.cnpj ? ' · ' + esc(f.cnpj) : ''}</option>`).join('')}</select>
         <button type="button" class="btn fino" data-nf="fornecedor">Vincular</button> <a class="sub" href="${RAIZ}pages/cadastros/fornecedores.html" style="color:var(--destaque)">cadastrar fornecedor ›</a></div>` : ''}
@@ -167,32 +170,47 @@ async function executar(r, a, m) {
   else if (a === 'sefaz') { try { await navigator.clipboard.writeText(r.chave); aviso('Chave copiada · cole no portal da SEFAZ'); } catch { prompt('Copie a chave:', r.chave); } window.open(PORTAL_SEFAZ, '_blank'); }
   else if (a === 'xml') { const b = new Blob([r.xml], { type: 'application/xml' }), l = document.createElement('a'); l.href = URL.createObjectURL(b); l.download = `NFe${r.chave}.xml`; l.click(); }
   else if (a === 'lancar') abrirLancar(r, m);
+  else if (a === 'entrada') abrirEntrada(r, m);
 }
 function abrirLancar(r, pai) {
   const dups = (r.duplicatas || []).length ? r.duplicatas : [{ vencimento: String(r.data_emissao).slice(0, 10), valor: r.valor_total }];
   const m = abrirModal(`<h2>Lançar NF ${esc(r.numero)} no contas a pagar</h2>
-    <p class="sub" style="margin:0 0 8px">NF sem pedido aprovada pelo master. Gera ${dups.length} título(s) pelas duplicatas e dá entrada no estoque dos itens ligados a produto pelo código do fornecedor.</p>
+    <p class="sub" style="margin:0 0 8px">NF sem pedido aprovada pelo master, com entrada no estoque já dada pelo almoxarifado. Gera ${dups.length} título(s) pelas duplicatas.</p>
     <div class="grade-campos">
       <div class="campo l2"><label>Categoria financeira <span class="obrig">*</span></label><select id="lCat"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}">${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></div>
       <div class="campo l2"><label>Conta prevista</label><select id="lConta"><option value="">—</option>${CONTAS.filter(c => c.empresa_id === r.empresa_id).map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
     </div>
     <table class="lista-mini"><thead><tr><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${dups.map(d => `<tr><td>${dataCurta(d.vencimento)}</td><td class="num">${reais(d.valor)}</td></tr>`).join('')}</tbody></table>
-    <div id="lDest"></div>
     <div class="acoes"><button class="btn" id="lN">Voltar</button><button class="btn primario" id="lS">Lançar</button></div>`);
   m.querySelector('#lN').onclick = () => m.remove();
+  m.querySelector('#lS').onclick = async () => {
+    const cat = Number(m.querySelector('#lCat').value); if (!cat) return aviso('Escolha a categoria', true);
+    m.querySelector('#lS').disabled = true;
+    const { data, error } = await db.rpc('nfe_lancar_cp', { p_id: r.id, p_categoria: cat, p_conta: Number(m.querySelector('#lConta').value) || null });
+    if (error) { m.querySelector('#lS').disabled = false; return aviso('Não lançou: ' + error.message, true); }
+    aviso(`${data} título(s) no contas a pagar`); m.remove(); pai?.remove(); cfg.recarregar();
+  };
+}
+/* NF sem pedido aprovada pelo master: o almoxarifado dá entrada no estoque (o financeiro lança depois) */
+function abrirEntrada(r, pai) {
+  const m = abrirModal(`<h2>Dar entrada da NF ${esc(r.numero)} no estoque</h2>
+    <p class="sub" style="margin:0 0 8px">NF sem pedido aprovada pelo master. Entram no estoque os itens ligados a produto pelo código do fornecedor. Depois o financeiro confere e lança no contas a pagar.</p>
+    <div id="eDest"><p class="sub">Carregando os itens…</p></div>
+    <div class="acoes"><button class="btn" id="eN">Voltar</button><button class="btn primario" id="eS">Dar entrada</button></div>`);
+  m.querySelector('#eN').onclick = () => m.remove();
   // itens da NF ligados a produto pelo código do fornecedor: escolher onde cada um fica (destino-estoque.js)
   let lerDestinos = () => [];
   const cods = (r.itens || []).map(i => i.codigo).filter(Boolean);
   if (r.fornecedor_id && cods.length) db.from('produto_fornecedores').select('produto_id, codigo_fornecedor').eq('fornecedor_id', r.fornecedor_id).in('codigo_fornecedor', cods)
-    .then(({ data: pf }) => montarDestinos(m.querySelector('#lDest'), (pf || []).map(x => ({ produto_id: x.produto_id, descricao: (r.itens.find(i => i.codigo === x.codigo_fornecedor) || {}).descricao })))
-    .then(f => lerDestinos = f));
-  m.querySelector('#lS').onclick = async () => {
-    const cat = Number(m.querySelector('#lCat').value); if (!cat) return aviso('Escolha a categoria', true);
+    .then(({ data: pf }) => montarDestinos(m.querySelector('#eDest'), (pf || []).map(x => ({ produto_id: x.produto_id, descricao: (r.itens.find(i => i.codigo === x.codigo_fornecedor) || {}).descricao }))))
+    .then(f => { lerDestinos = f; const c = m.querySelector('#eDest'); if (!c.innerHTML.trim()) c.innerHTML = '<p class="sub">Nenhum item da NF está ligado a produto que controla estoque: nada entra no estoque (só fica registrado que a mercadoria chegou).</p>'; });
+  else m.querySelector('#eDest').innerHTML = '<p class="sub">Sem itens ligados a produto: nada entra no estoque (só fica registrado que a mercadoria chegou).</p>';
+  m.querySelector('#eS').onclick = async () => {
     const dest = lerDestinos(); if (!dest) return;
-    m.querySelector('#lS').disabled = true;
-    const { data, error } = await db.rpc('nfe_lancar_cp_destinos', { p_id: r.id, p_categoria: cat, p_conta: Number(m.querySelector('#lConta').value) || null, p_destinos: dest });
-    if (error) { m.querySelector('#lS').disabled = false; return aviso('Não lançou: ' + error.message, true); }
-    aviso(`${data} título(s) no contas a pagar`); m.remove(); pai.remove(); cfg.recarregar();
+    m.querySelector('#eS').disabled = true;
+    const { data, error } = await db.rpc('nfe_dar_entrada', { p_id: r.id, p_destinos: dest });
+    if (error) { m.querySelector('#eS').disabled = false; return aviso('Não deu entrada: ' + error.message, true); }
+    aviso(`Entrada dada · ${data} item(ns) no estoque · foi para o financeiro lançar`); m.remove(); pai.remove(); cfg.recarregar();
   };
 }
 
@@ -224,7 +242,7 @@ function desenharCnpjs(linhas) {
       <div class="nums">
         <button class="alerta" data-aba="nova"><b>${n('nova')}</b> a conferir</button>
         <button class="erro" data-aba="aguardando_aprovacao"><b>${n('aguardando_aprovacao')}</b> sem pedido · master</button>
-        <button data-aba="lancar"><b>${n('conferida') + n('aprovada')}</b> prontas para lançar</button>
+        <button data-aba="lancar"><b>${n('conferida') + n('aprovada')}</b> para dar entrada / lançar</button>
         <button class="erro" data-aba="canceladas"><b>${ls.filter(r => r.situacao_sefaz !== 'autorizada' && r.situacao !== 'ignorada').length}</b> canceladas na SEFAZ</button>
       </div>
       <div class="sefaz">SEFAZ: ${c?.consultado_em ? `última busca ${dataHoraBR(c.consultado_em)} · ${esc(c.ultimo_status || '')}` : 'busca automática aguardando o certificado digital A1 deste CNPJ'}</div></div>`;
@@ -240,12 +258,12 @@ function desenharCnpjs(linhas) {
 const cfg = {
   textoNovo: 'Importar XML',
   tabela: 'nfe_entrada', modulo: 'notas', titulo: 'Notas fiscais', singular: 'nota', plural: 'notas',
-  subtitulo: 'NF-e emitidas contra a NOX, por CNPJ. Antifraude: só segue para o contas a pagar e o estoque a nota conferida com o pedido de compra — ou aprovada pelo master quando não houver pedido.',
+  subtitulo: 'NF-e emitidas contra a NOX, por CNPJ. Antifraude: só segue para o estoque (almoxarifado) e depois para o contas a pagar (financeiro) a nota conferida com o pedido de compra — ou aprovada pelo master quando não houver pedido.',
   dicaBusca: 'número, emitente, CNPJ, chave, item…', ordem: 'emissao_dia', revisao: false, porEmpresa: true,
   abas: { campo: 'situacao', padrao: 'nova', opcoes: [
     { v: 'nova', n: 'A conferir' }, { v: 'aguardando_aprovacao', n: 'Sem pedido · master' },
-    { v: 'lancar', n: 'Prontas para lançar', teste: r => ['conferida', 'aprovada'].includes(r.situacao) },
-    { v: 'lancada', n: 'Lançadas' }, { v: 'canceladas', n: 'Canceladas na SEFAZ', teste: r => r.situacao_sefaz !== 'autorizada' },
+    { v: 'lancar', n: 'Para dar entrada / lançar', teste: r => ['conferida', 'aprovada'].includes(r.situacao) },
+    { v: 'lancada', n: 'Entrada dada' }, { v: 'canceladas', n: 'Canceladas na SEFAZ', teste: r => r.situacao_sefaz !== 'autorizada' },
     { v: 'ignorada', n: 'Ignoradas' }, { v: '', n: 'Todas' }] },
   totais: ['valor_total'],
   valorTotal: (r, c) => r.situacao === 'ignorada' || r.situacao_sefaz !== 'autorizada' ? 0 : r[c],

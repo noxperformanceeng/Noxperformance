@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161949">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611161959">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161949"></script>
-<script src="../../assets/js/ui.js?v=202611161949"></script>
-<script src="../../assets/js/auth.js?v=202611161949"></script>
-<script src="../../assets/js/layout.js?v=202611161949"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611161949"></script>
-<script src="../../assets/js/cadastro.js?v=202611161949"></script>
+<script src="../../assets/js/supabase.js?v=202611161959"></script>
+<script src="../../assets/js/ui.js?v=202611161959"></script>
+<script src="../../assets/js/auth.js?v=202611161959"></script>
+<script src="../../assets/js/layout.js?v=202611161959"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611161959"></script>
+<script src="../../assets/js/cadastro.js?v=202611161959"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -548,10 +548,12 @@ function secaoPedido(r) {
   if (!(r.niveis_exigidos || []).length && s !== 'recusado') etapas.push('<span>Aprovação</span>');
   const pos = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'];
   etapas.push(`<span class="${pos.includes(s) ? (s === 'aprovado' ? 'agora' : 'ok') : ''}">Enviar ao fornecedor${r.enviado_em ? ' ✓' : ''}</span>`);
-  etapas.push(`<span class="${s === 'recebido' ? 'ok' : ['enviado', 'recebido_parcial'].includes(s) ? 'agora' : ''}">Recebimento NF${s === 'recebido_parcial' ? ' (entregue parcial)' : s === 'recebido' ? (r.saldo_encerrado_em ? ' ✓ · saldo encerrado' : ' ✓') : ''}</span>`);
+  etapas.push(`<span class="${s === 'recebido' ? 'ok' : ['enviado', 'recebido_parcial'].includes(s) ? 'agora' : ''}">Entrada da NF (almoxarifado)${s === 'recebido_parcial' ? ' (entregue parcial)' : s === 'recebido' ? (r.saldo_encerrado_em ? ' ✓ · saldo encerrado' : ' ✓') : ''}</span>`);
+  const recsFin = ex.recebimentos[r.id] || [];
+  if (recsFin.length) etapas.push(`<span class="${recsFin.some(x => x.situacao_financeiro === 'devolvido') ? 'erro' : recsFin.every(x => x.situacao_financeiro === 'lancado') ? 'ok' : 'agora'}">Financeiro lança${recsFin.every(x => x.situacao_financeiro === 'lancado') ? ' ✓' : ''}</span>`);
   if (s === 'cancelado') etapas.push('<span class="erro">Cancelado</span>');
   const tits = ex.titulos[r.id] || [], recs = ex.recebimentos[r.id] || [], evs = (ex.eventos[r.id] || []).slice().reverse();
-  const podeAlt = CTX.pode('compras', 'alterar'), podeCriar = CTX.pode('compras', 'criar');
+  const podeAlt = CTX.pode('compras', 'alterar'), podeCriar = CTX.pode('compras', 'criar'), podeEntrada = podeAlt || CTX.pode('estoque', 'alterar');
   const btn = (id, txt, cls = '') => `<button type="button" class="btn ${cls}" data-pc="${id}">${txt}</button>`;
   const acoes = [];
   if (EDITAVEL.includes(s) && avulsosPendentes(r).length && possoLiberar()) acoes.push(btn('liberar_avulso', 'Liberar item sem cadastro…', 'primario'));
@@ -560,7 +562,7 @@ function secaoPedido(r) {
   if (pos.includes(s) && s !== 'recebido') {
     acoes.push(btn('pdf', 'Baixar PDF'));
     if (podeCriar) acoes.push(btn('enviar_fornecedor', r.enviado_em ? 'Reenviar ao fornecedor…' : 'Enviar ao fornecedor…', s === 'aprovado' ? 'primario' : ''));
-    if (podeAlt || CTX.pode('pagar', 'criar')) acoes.push(btn('receber', 'Registrar recebimento da NF…', ['enviado', 'recebido_parcial'].includes(s) ? 'primario' : ''));
+    if (podeEntrada) acoes.push(btn('receber', 'Dar entrada da NF…', ['enviado', 'recebido_parcial'].includes(s) ? 'primario' : ''));
   }
   if (s === 'recebido') acoes.push(btn('pdf', 'Baixar PDF'));
   if (temDesenho(r)) acoes.push(btn('desenhos', 'Baixar desenhos (ZIP)'));
@@ -573,6 +575,7 @@ function secaoPedido(r) {
   if (s === 'recusado' && r.motivo_recusa) avisos.push(`<div class="aviso-box erro"><b>Recusado:</b> ${esc(r.motivo_recusa)} — ajuste o pedido, salve e envie de novo para aprovação.</div>`);
   const faltam = (ex.itens[r.id] || []).filter(falta);
   if (s === 'recebido_parcial' && faltam.length) avisos.push(`<div class="aviso-box"><b>Entregue parcial · falta entregar:</b> ${esc(faltam.map(i => `${num(falta(i))} ${i.unidade || 'un'} ${i.descricao}`).join('; '))}. O saldo segue em aberto (e no contas a pagar como projeção) até a próxima NF; se o fornecedor não for entregar, use <b>Encerrar saldo</b>.</div>`);
+  recs.filter(x => x.situacao_financeiro === 'devolvido').forEach(x => avisos.push(`<div class="aviso-box erro"><b>NF ${esc(x.nf_numero)} devolvida pelo financeiro:</b> ${esc(x.devolvido_motivo || '')} <small>(${esc(usu(x.devolvido_por) || '')} · ${dataHoraBR(x.devolvido_em)})</small>${podeEntrada ? ` <button type="button" class="btn fino" data-reenviar="${x.id}">Acertei · reenviar ao financeiro…</button>` : ''}</div>`));
   if (r.saldo_encerrado_em) avisos.push(`<div class="aviso-box">Saldo encerrado por ${esc(usu(r.saldo_encerrado_por) || '')} em ${dataHoraBR(r.saldo_encerrado_em)} · ${esc(r.motivo_encerramento || '')}</div>`);
   if (s === 'em_aprovacao') avisos.push(`<div class="aviso-box">Aguardando <b>${esc(nomeNivel(r, n))}</b> · aprova: ${esc(quemAprova(r, n))}</div>`);
   const pend = avulsosPendentes(r);
@@ -584,10 +587,11 @@ function secaoPedido(r) {
     <div class="secao">Contas a pagar</div>
     ${tits.length ? `<table class="lista-mini"><thead><tr><th>Documento</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Situação</th></tr></thead><tbody>
       ${tits.map(t => `<tr><td>${CTX.pode('pagar') ? `<a href="${RAIZ}pages/financeiro/contas-pagar.html?abrir=${t.id}" style="color:var(--destaque)">${esc(t.documento || '#' + t.id)}</a>` : esc(t.documento || '#' + t.id)}
-        ${t.projecao ? ' <span class="tg pc">projeção · aguardando NF</span>' : ''}</td><td>${dataCurta(t.data_vencimento)}</td><td class="num">${reais(t.valor)}</td><td class="num">${reais(t.valor_pago)}</td><td>${esc(t.situacao)}</td></tr>`).join('')}</tbody></table>`
-      : '<p class="sub" style="margin:0">Entra no contas a pagar quando o pedido for aprovado (como projeção) e vira título real no recebimento da NF.</p>'}
-    ${recs.length ? `<div class="secao">Notas recebidas</div><table class="lista-mini"><thead><tr><th>NF</th><th>Emissão</th><th>Recebida em</th><th>Valor</th><th>Por</th></tr></thead><tbody>
-      ${recs.map(x => `<tr><td>${esc(x.nf_numero)}${x.nf_serie ? '-' + esc(x.nf_serie) : ''}</td><td>${dataCurta(x.nf_data_emissao)}</td><td>${dataCurta(x.data_recebimento)}</td><td class="num">${reais(x.valor_nf)}</td><td>${esc(usu(x.criado_por))}</td></tr>`).join('')}</tbody></table>` : ''}
+        ${t.projecao ? (t.origem_ref?.recebimento_id ? ' <span class="tg alerta">NF recebida · aguardando o financeiro</span>' : ' <span class="tg pc">projeção · aguardando NF</span>') : ''}</td><td>${dataCurta(t.data_vencimento)}</td><td class="num">${reais(t.valor)}</td><td class="num">${reais(t.valor_pago)}</td><td>${esc(t.situacao)}</td></tr>`).join('')}</tbody></table>`
+      : '<p class="sub" style="margin:0">Entra no contas a pagar quando o pedido for aprovado (como projeção). Vira título real depois que o almoxarifado dá entrada da NF e o financeiro confere e lança.</p>'}
+    ${recs.length ? `<div class="secao">Notas recebidas</div><table class="lista-mini"><thead><tr><th>NF</th><th>Emissão</th><th>Recebida em</th><th>Valor</th><th>Entrada por</th><th>Financeiro</th></tr></thead><tbody>
+      ${recs.map(x => `<tr><td>${esc(x.nf_numero)}${x.nf_serie ? '-' + esc(x.nf_serie) : ''}</td><td>${dataCurta(x.nf_data_emissao)}</td><td>${dataCurta(x.data_recebimento)}</td><td class="num">${reais(x.valor_nf)}</td><td>${esc(usu(x.criado_por))}</td>
+        <td>${x.situacao_financeiro === 'lancado' ? `<span class="tg ok">lançada</span> <small>${esc(usu(x.lancado_por) || '')}</small>` : x.situacao_financeiro === 'devolvido' ? '<span class="tg erro">devolvida</span>' : '<span class="tg alerta">aguardando o financeiro</span>'}</td></tr>`).join('')}</tbody></table>` : ''}
     <div class="secao">Linha do tempo</div>
     <ul class="linha-tempo">${evs.map(e => `<li class="${esc(e.acao)}">${esc(e.detalhe || e.acao)}<br><small>${dataHoraBR(e.em)} · ${esc(usu(e.por) || 'sistema')}</small></li>`).join('') || '<li>—</li>'}</ul>`;
 }
@@ -739,8 +743,8 @@ function abrirRecebimento(r, pai) {
   const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem' || i.servico_id), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
   const itens = (ex.itens[r.id] || []).map(i => ({ ...i, pend: Math.max(0, Number(i.quantidade) - Number(i.quantidade_recebida)) }));
   const fatorExtra = Number(r.valor_produtos) ? (Number(r.frete) + Number(r.outras_despesas) - Number(r.desconto)) / Number(r.valor_produtos) : 0;
-  const cond = CONDS.find(c => c.id === r.condicao_pagamento_id) || (r.prazo_livre_dias?.length ? { nome: nomePrazos(r.prazo_livre_dias), dias: r.prazo_livre_dias } : null);
-  const m = abrirModal(`<h2>${soServico ? 'Recebimento do serviço' : 'Recebimento da NF'} · ${esc(r.numero)}</h2>
+  const m = abrirModal(`<h2>${soServico ? 'Entrada do serviço' : 'Entrada da NF'} · ${esc(r.numero)}</h2>
+    <p class="sub" style="margin:0 0 8px">Confira o que chegou e onde foi guardado. O estoque é atualizado agora; o contas a pagar fica para o financeiro conferir e lançar.</p>
     <div class="grade-campos">
       <div class="campo"><label>NF nº ${soServico ? '<span class="sub">(pode ficar vazio: serviço sem nota)</span>' : '<span class="obrig">*</span>'}</label><input id="rNf"></div>
       <div class="campo"><label>Série</label><input id="rSerie"></div>
@@ -756,60 +760,41 @@ function abrirRecebimento(r, pai) {
       <div class="campo"><label>Valor ${soServico ? 'do serviço' : 'da NF'} (R$) <span class="obrig">*</span></label><input id="rValor" inputmode="decimal"></div>
       <div class="campo l3"><label>&nbsp;</label><div class="sub" id="rSug" style="padding-top:6px"></div></div>
     </div>
-    <div class="sub-ed" id="rParc"><div class="secao">Parcelas (vão para o contas a pagar)</div><table><thead><tr><th>#</th><th>Vencimento</th><th>Valor (R$)</th><th>Código de barras (opcional)</th><th></th></tr></thead><tbody></tbody></table>
-      <button type="button" class="btn fino" id="rAdd" style="margin-top:4px">+ Parcela</button> <button type="button" class="btn fino discreto" id="rRefaz">Refazer pela condição${cond ? ' (' + esc(cond.nome) + ')' : ''}</button>
-      <div class="sub" id="rSoma" style="margin-top:4px"></div></div>
-    <div class="acoes"><button class="btn" id="rN">Voltar</button><button class="btn primario" id="rS">Registrar recebimento</button></div>`);
+    <div class="acoes"><button class="btn" id="rN">Voltar</button><button class="btn primario" id="rS">Dar entrada</button></div>`);
   const q = s => m.querySelector(s);
-  const linhaParc = (k, venc, v) => `<tr><td style="width:24px;padding-top:7px">${k}</td><td style="width:140px"><input type="date" data-venc value="${venc}"></td><td style="width:120px"><input data-val inputmode="decimal" value="${num(v)}"></td><td><input data-cb></td><td style="width:22px"><button type="button" class="rm">×</button></td></tr>`;
   let valorEditado = false;
   const somaItens = () => { let t = 0; m.querySelectorAll('[data-item]').forEach(tr => { const v = Math.round((lerNumero(tr.querySelector('[data-q]').value) || 0) * Number(tr.dataset.unit) * 100) / 100; tr.querySelector('[data-v]').textContent = reais(v); t += v; }); return t; };
-  const refazParcelas = () => {
-    const total = lerNumero(q('#rValor').value) || 0, dias = cond?.dias?.length ? cond.dias : [Number(forn(r.fornecedor_id)?.prazo_pagamento_dias || 0)];
-    let ac = 0; q('#rParc tbody').innerHTML = dias.map((d, k) => { const v = k === dias.length - 1 ? Math.round((total - ac) * 100) / 100 : Math.round(total / dias.length * 100) / 100; ac += v; return linhaParc(k + 1, somaDias(q('#rEm').value || hojeISO(), d), v); }).join('');
-    conferir();
-  };
-  const conferir = () => { const t = lerNumero(q('#rValor').value) || 0, s = [...m.querySelectorAll('[data-val]')].reduce((a, i) => a + (lerNumero(i.value) || 0), 0);
-    q('#rSoma').innerHTML = `Soma das parcelas <b>${reais(s)}</b>${Math.abs(s - t) > 0.009 ? ` <span class="tg erro">diferente da NF (${reais(t)})</span>` : ' <span class="tg ok">confere</span>'}`; };
   const atualizar = () => { const it = somaItens(), sug = Math.round(it * (1 + fatorExtra) * 100) / 100;
     q('#rSug').textContent = `Itens desta NF ${reais(it)}${fatorExtra ? ` · com frete/despesas/desconto proporcionais ${reais(sug)}` : ''} · saldo do pedido ${reais(Number(r.valor_total) - Number(r.valor_recebido))}`;
-    if (!valorEditado) { q('#rValor').value = num(sug); refazParcelas(); } };
+    if (!valorEditado) q('#rValor').value = num(sug); };
   m.querySelectorAll('[data-q]').forEach(i => i.addEventListener('input', atualizar));
-  q('#rValor').addEventListener('input', () => { valorEditado = true; refazParcelas(); });
-  q('#rEm').addEventListener('change', refazParcelas);
-  q('#rRefaz').onclick = refazParcelas;
-  q('#rAdd').onclick = () => { const n = m.querySelectorAll('#rParc tbody tr').length + 1; q('#rParc tbody').insertAdjacentHTML('beforeend', linhaParc(n, q('#rEm').value || hojeISO(), 0)); };
-  q('#rParc').addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); conferir(); } });
-  q('#rParc').addEventListener('input', conferir);
+  q('#rValor').addEventListener('input', () => { valorEditado = true; });
   atualizar();
   let lerDestinos = () => [];   // onde cada item fica: local padrão, terceiro, devolução ou outro local (destino-estoque.js)
   montarDestinos(q('#rDest'), itens.filter(i => i.produto_id && !srvIds.has(i.id)).map(i => ({ produto_id: i.produto_id, descricao: i.descricao }))).then(f => lerDestinos = f);
-  // NF importada e conferida na tela de Notas fiscais → preenche o recebimento (número, série, emissão, chave, valor e parcelas pelas duplicatas)
+  // NF importada e conferida na tela de Notas fiscais → preenche a entrada (número, série, emissão, chave e valor; as duplicatas vão para o financeiro)
   db.from('nfe_entrada').select('id, chave, numero, serie, data_emissao, valor_total, duplicatas, situacao').eq('pedido_compra_id', r.id).in('situacao', ['conferida', 'aprovada']).then(({ data: nfs }) => {
     if (!nfs?.length) return;
     q('.grade-campos').insertAdjacentHTML('beforebegin', `<div class="campo" style="margin-bottom:8px"><label>NF conferida em Notas fiscais</label><select id="rNfe" data-simples>
       <option value="">— digitar manualmente —</option>${nfs.map(n => `<option value="${n.id}">NF ${esc(n.numero)}${n.serie ? '-' + esc(n.serie) : ''} · ${dataCurta(n.data_emissao)} · ${reais(n.valor_total)}</option>`).join('')}</select></div>`);
     q('#rNfe').onchange = e => { const n = nfs.find(x => x.id === Number(e.target.value)); if (!n) return;
       q('#rNf').value = n.numero || ''; q('#rSerie').value = n.serie || ''; q('#rEm').value = String(n.data_emissao || '').slice(0, 10); q('#rChave').value = n.chave;
-      q('#rValor').value = num(n.valor_total); valorEditado = true;
-      if ((n.duplicatas || []).length) { q('#rParc tbody').innerHTML = n.duplicatas.map((d, k) => linhaParc(k + 1, d.vencimento, d.valor)).join(''); conferir(); } else refazParcelas(); };
+      q('#rValor').value = num(n.valor_total); valorEditado = true; };
     if (nfs.length === 1) { q('#rNfe').value = nfs[0].id; q('#rNfe').onchange({ target: q('#rNfe') }); }
   });
   q('#rN').onclick = () => m.remove();
   q('#rS').onclick = async () => {
     const nf = { numero: q('#rNf').value.trim(), serie: q('#rSerie').value.trim(), data_emissao: q('#rEm').value, data_recebimento: q('#rRec').value, chave: q('#rChave').value.replace(/\D/g, ''), valor: lerNumero(q('#rValor').value) };
     const its = [...m.querySelectorAll('[data-item]')].map(tr => ({ item_id: Number(tr.dataset.item), quantidade: lerNumero(tr.querySelector('[data-q]').value) || 0 })).filter(x => x.quantidade > 0);
-    const parc = [...m.querySelectorAll('#rParc tbody tr')].map(tr => ({ vencimento: tr.querySelector('[data-venc]').value, valor: lerNumero(tr.querySelector('[data-val]').value) || 0, codigo_barras: tr.querySelector('[data-cb]').value.replace(/\s/g, '') || null })).filter(p => p.valor);
     if (!its.length) return aviso('Informe a quantidade recebida de pelo menos um item', true);
     if (!nf.numero && !its.every(x => srvIds.has(x.item_id))) return aviso('Informe o número da NF', true);
-    if (parc.some(p => !p.vencimento)) return aviso('Parcela sem vencimento', true);
     const recebidos = new Set(its.map(x => itens.find(i => i.id === x.item_id)?.produto_id));
     const dest = lerDestinos(); if (!dest) return;
     q('#rS').disabled = true;
-    const { error } = await db.rpc('pedido_compra_receber_destinos', { p_id: r.id, p_nf: nf, p_itens: its, p_parcelas: parc, p_destinos: dest.filter(d => recebidos.has(d.produto_id)) });
+    const { error } = await db.rpc('pedido_compra_receber_destinos', { p_id: r.id, p_nf: nf, p_itens: its, p_parcelas: [], p_destinos: dest.filter(d => recebidos.has(d.produto_id)) });
     if (error) { q('#rS').disabled = false; return aviso('Não registrou: ' + error.message, true); }
     const fora = dest.filter(d => recebidos.has(d.produto_id) && ['terceiro', 'devolucao'].includes(d.tipo)).length;
-    aviso(`${nf.numero ? 'NF ' + nf.numero : 'Serviço'} registrado · ${parc.length} título(s) no contas a pagar${fora ? ` · ${fora} item(ns) fora do estoque (aviso ao almoxarifado)` : ''}`); m.remove(); pai.remove(); cfg.recarregar();
+    aviso(`Entrada ${nf.numero ? 'da NF ' + nf.numero : 'do serviço'} dada · estoque atualizado · foi para o financeiro lançar${fora ? ` · ${fora} item(ns) fora do estoque (aviso ao almoxarifado)` : ''}`); m.remove(); pai.remove(); cfg.recarregar();
   };
 }
 
@@ -979,7 +964,7 @@ const cfg = {
       buscarTodos(() => db.from('pedidos_compra_itens').select('*').order('id')),
       buscarTodos(() => db.from('pedidos_compra_eventos').select('*').order('id')),
       buscarTodos(() => db.from('pedidos_compra_recebimentos').select('*').order('id')),
-      ctx.pode('pagar') ? buscarTodos(() => db.from('titulos_pagar').select('id, pedido_compra_id, documento, valor, valor_pago, situacao, data_vencimento, projecao').not('pedido_compra_id', 'is', null).order('data_vencimento')) : [],
+      ctx.pode('pagar') ? buscarTodos(() => db.from('titulos_pagar').select('id, pedido_compra_id, documento, valor, valor_pago, situacao, data_vencimento, projecao, origem_ref').not('pedido_compra_id', 'is', null).order('data_vencimento')) : [],
       buscarTodos(() => db.from('produto_fornecedores').select('produto_id, fornecedor_id, codigo_fornecedor, preco, ipi_pct, cotacao_data, unidade_compra')),
       db.from('empresas').select('id, nome, cnpj'),
       db.rpc('usuarios_nomes'),
@@ -1067,6 +1052,11 @@ const cfg = {
     m.querySelectorAll('.campo input, .campo select, .campo textarea, #itens input, #itens select').forEach(i => i.addEventListener('input', () => { sujo = true; }));
     recalcular();
     m.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => executarAcao(r, b.dataset.pc, m));
+    m.querySelectorAll('[data-reenviar]').forEach(b => b.onclick = async () => {
+      const t = await pedirTexto('Reenviar NF ao financeiro', 'O que foi acertado? (opcional)', false, 'Reenviar'); if (t === null) return;
+      const { error } = await db.rpc('pc_recebimento_acao', { p_rec: Number(b.dataset.reenviar), p_acao: 'reenviar', p_motivo: t });
+      if (error) return aviso('Não deu: ' + error.message, true);
+      aviso('NF reenviada ao financeiro'); m.remove(); cfg.recarregar(); });
   },
   secaoExtra: r => secaoPedido(r),
   antesSalvar: (d, r) => {
