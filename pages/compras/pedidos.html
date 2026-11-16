@@ -255,37 +255,29 @@ function atualizarServico(tr) {
   if (!Number(f.preco_servico)) linhas.push('<span class="tg neutro">ficha sem preço do serviço</span>');
   info.innerHTML = linhas.join('<br>');
 }
-// Condição combinada na hora (ex.: 30/60/90): reaproveita a igual ou cria e já seleciona no pedido
-function prazoLivre(m) {
+// Prazo combinado na hora (ex.: 30/60/90): fica gravado só neste pedido, sem cadastrar condição nova.
+// Preenchido, substitui a condição (escolher uma condição apaga o prazo digitado e vice-versa).
+const lerPrazos = t => { t = (t || '').trim(); if (!t) return null;
+  if (/[^\d\s/;,.+\-]/.test(t.replace(/dias?|dd[l]?/gi, ''))) return false;
+  const d = [...new Set(t.split(/[^\d]+/).filter(Boolean).map(Number))].sort((a, b) => a - b);
+  return d.length && d.length <= 24 && d[d.length - 1] <= 720 ? d : false; };
+const nomePrazos = d => d?.length ? d.join('/') + ' dias' : '';
+const condPedido = r => CONDS.find(c => c.id === r.condicao_pagamento_id)?.nome || nomePrazos(r.prazo_livre_dias);
+function prazoLivre(m, r, editavel) {
   const sel = m.querySelector('#f_condicao_pagamento_id'); if (!sel) return;
   const box = document.createElement('div'); box.className = 'prazo-livre'; box.style.marginTop = '4px';
-  box.innerHTML = `<input id="cpLivre" placeholder="ou digite os prazos: 30/60/90" inputmode="numeric" title="Dias a partir da entrega, separados por / ou espaço. Ex.: 30/60/90 ou 0/30 (entrada + 30 dias)">
+  box.innerHTML = `<input id="cpLivre" placeholder="ou digite os prazos: 30/60/90" inputmode="numeric" value="${esc((r.prazo_livre_dias || []).join('/'))}"${editavel ? '' : ' disabled'}
+      title="Prazo combinado com o fornecedor, só para este pedido (não cadastra condição). Dias a partir da entrega/NF, separados por /. Ex.: 30/60/90 ou 0/30 (entrada + 30 dias)">
     <div class="sub" id="cpLivreMsg" style="margin-top:2px"></div>`;
   sel.after(box);
   const inp = box.querySelector('#cpLivre'), msg = box.querySelector('#cpLivreMsg');
-  const aplicar = async () => {
-    const t = inp.value.trim(); if (!t) { msg.textContent = ''; return; }
-    const dias = t.split(/[^\d]+/).filter(Boolean).map(Number);
-    if (!dias.length || /[^\d\s/;,.+\-]/.test(t.replace(/dias?|dd/gi, ''))) { msg.innerHTML = '<span style="color:var(--erro,#c02626)">Use só números de dias, ex.: 30/60/90</span>'; return; }
-    msg.textContent = 'Conferindo…';
-    const { data: id, error } = await db.rpc('condicao_pagamento_garantir', { p_dias: dias });
-    if (error) { msg.innerHTML = `<span style="color:var(--erro,#c02626)">${esc(error.message)}</span>`; return; }
-    if (!CONDS.some(c => c.id === id)) {
-      const { data: c } = await db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('id', id).single();
-      const ds = [...new Set(dias)].sort((a, b) => a - b);
-      CONDS.push(c?.id === id ? c : { id, nome: ds.join('/') + (ds.length === 1 ? ' dias' : ''), dias: ds, situacao: 'ativo' });
-      CONDS.sort((a, b) => a.nome.localeCompare(b.nome));
-    }
-    const v = String(id);
-    sel.innerHTML = '<option value="">—</option>' + CONDS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
-    sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); sel.dispatchEvent(new Event('input', { bubbles: true }));
-    const c = CONDS.find(x => x.id === id);
-    msg.textContent = `✓ ${c?.nome || ''} · ${(c?.dias || dias).length} parcela(s), dias contados da entrega/NF`;
-    inp.value = '';
-  };
-  inp.addEventListener('change', aplicar);
-  inp.addEventListener('input', () => { if (!inp.value.trim()) msg.textContent = ''; });
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aplicar(); } });
+  const mostrar = () => { const d = lerPrazos(inp.value);
+    msg.innerHTML = d === false ? '<span style="color:var(--erro,#c02626)">Use só números de dias, ex.: 30/60/90</span>'
+      : d ? `✓ ${nomePrazos(d)} · ${d.length} parcela(s), só neste pedido` : ''; };
+  inp.addEventListener('input', () => { if (inp.value.trim() && sel.value) { sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true })); } mostrar(); });
+  sel.addEventListener('change', () => { if (sel.value && inp.value) { inp.value = ''; mostrar(); } });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  mostrar();
 }
 const linhaItem = (x = {}, rec = false) => x.tipo_item === 'servico_usinagem' ? linhaServico(x, rec) : x.servico_id ? linhaServ(x, rec) : linhaProduto(x, rec);
 const linhaProduto = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
@@ -636,7 +628,7 @@ async function gerarPdf(r, baixar) {
   } catch { aviso('Não carregou o gerador de PDF (internet?)', true); return null; }
   const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const emp = EMPRESAS.find(e => e.id === r.empresa_id) || {}, f = forn(r.fornecedor_id) || {}, itens = ex.itens[r.id] || [];
-  const cond = CONDS.find(c => c.id === r.condicao_pagamento_id)?.nome, forma = FORMAS.find(x => x.id === r.forma_pagamento_id)?.nome;
+  const cond = condPedido(r), forma = FORMAS.find(x => x.id === r.forma_pagamento_id)?.nome;
   const aprov = (ex.eventos[r.id] || []).filter(e => e.acao === 'aprovado_nivel').map(e => `${usu(e.por)} (${dataHoraBR(e.em)})`);
   // logomarca no canto superior direito (se não carregar, o PDF sai sem ela)
   try {
@@ -740,7 +732,7 @@ function abrirRecebimento(r, pai) {
   const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem' || i.servico_id), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
   const itens = (ex.itens[r.id] || []).map(i => ({ ...i, pend: Math.max(0, Number(i.quantidade) - Number(i.quantidade_recebida)) }));
   const fatorExtra = Number(r.valor_produtos) ? (Number(r.frete) + Number(r.outras_despesas) - Number(r.desconto)) / Number(r.valor_produtos) : 0;
-  const cond = CONDS.find(c => c.id === r.condicao_pagamento_id);
+  const cond = CONDS.find(c => c.id === r.condicao_pagamento_id) || (r.prazo_livre_dias?.length ? { nome: nomePrazos(r.prazo_livre_dias), dias: r.prazo_livre_dias } : null);
   const m = abrirModal(`<h2>${soServico ? 'Recebimento do serviço' : 'Recebimento da NF'} · ${esc(r.numero)}</h2>
     <div class="grade-campos">
       <div class="campo"><label>NF nº ${soServico ? '<span class="sub">(pode ficar vazio: serviço sem nota)</span>' : '<span class="obrig">*</span>'}</label><input id="rNf"></div>
@@ -954,7 +946,7 @@ const cfg = {
       listaHtml: r => `<span class="texto-curto" title="${esc(nomeComFantasia(forn(r.fornecedor_id)))}">${esc(nomeComFantasia(forn(r.fornecedor_id)))}</span>` },
     { id: 'data_entrega_prevista', label: 'Entrega prevista', tipo: 'data', lista: true },
     { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
-    { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Gera as parcelas previstas e as da NF. Sem condição: prazo padrão do fornecedor.' },
+    { id: 'condicao_pagamento_id', label: 'Condição de pagamento', tipo: 'select', opcoes: () => CONDS.map(c => ({ v: c.id, n: c.nome })), ajuda: 'Gera as parcelas previstas e as da NF. Fora das cadastradas: digite os prazos na caixa de baixo (fica só neste pedido). Sem nenhuma: prazo padrão do fornecedor.' },
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', cadastro: false, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })), ajuda: 'Obrigatória para enviar à aprovação: a forma combinada com o fornecedor no fechamento da compra (Pix, boleto…).' },
     { id: 'frete', label: 'Frete (R$)', tipo: 'moeda', secao: 'Valores' },
     { id: 'outras_despesas', label: 'Outras despesas (R$)', tipo: 'moeda' },
@@ -1030,7 +1022,7 @@ const cfg = {
     { id: 'sem_forma', nome: 'Sem forma de pagamento (não vai para aprovação)', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && !r.forma_pagamento_id && r.origem !== 'tiny' },
     { id: 'aumento', nome: 'Preço acima da última compra', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && r.origem !== 'tiny' && (e.itens[r.id] || []).some(i => {
         const u = historico(i.produto_id, i.servico_id, false, r.id)[0]; return u && Number(i.valor_unitario) > Number(u.valor_unitario) + 0.005; }) },
-    { id: 'sem_cond', nome: 'Sem condição de pagamento', cor: 'alerta', teste: r => !FINAL.includes(r.situacao) && !r.condicao_pagamento_id && r.origem !== 'tiny' },
+    { id: 'sem_cond', nome: 'Sem condição de pagamento', cor: 'alerta', teste: r => !FINAL.includes(r.situacao) && !r.condicao_pagamento_id && !r.prazo_livre_dias?.length && r.origem !== 'tiny' },
     { id: 'prod_sem_cat', nome: 'Produto sem categoria no cadastro', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => i.produto_id && !i.servico_id && !prod(i.produto_id)?.categoria_financeira_id && !i.uso_consumo) }
   ],
   apagado: r => r.situacao === 'cancelado',
@@ -1061,7 +1053,6 @@ const cfg = {
       box.addEventListener('change', e => { if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else aoEscolherProduto(tr); } recalcular(); });
       box.addEventListener('input', recalcular);
       ['frete', 'outras_despesas', 'desconto'].forEach(id => m.querySelector('#f_' + id)?.addEventListener('input', recalcular));
-      prazoLivre(m);
       // fornecedor → contato, e-mail e WhatsApp do cadastro
       m.querySelector('#f_fornecedor_id')?.addEventListener('change', e => { const f = forn(Number(e.target.value)); if (!f) return;
         [['contato_fornecedor', f.contato], ['email_fornecedor', f.email], ['whatsapp_fornecedor', f.telefone]].forEach(([k, v]) => { const el = m.querySelector('#f_' + k); if (el && !el.value && v) el.value = v; }); });
@@ -1071,6 +1062,7 @@ const cfg = {
       if (r.id) m.querySelectorAll('.campo input, .campo select, .campo textarea').forEach(i => {
         if (!['f_contato_fornecedor', 'f_email_fornecedor', 'f_whatsapp_fornecedor', 'f_observacoes_internas', 'f_data_entrega_prevista'].includes(i.id) || FINAL.includes(r.situacao)) i.disabled = true; });
     }
+    prazoLivre(m, r, editavel && podeEd);
     m.querySelectorAll('.campo input, .campo select, .campo textarea, #itens input, #itens select').forEach(i => i.addEventListener('input', () => { sujo = true; }));
     mostrarTipo(); recalcular();
     m.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => executarAcao(r, b.dataset.pc, m));
@@ -1079,12 +1071,15 @@ const cfg = {
   antesSalvar: (d, r) => {
     ['fornecedor_id', 'condicao_pagamento_id', 'forma_pagamento_id', 'conta_bancaria_id', 'empresa_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); });
     ['frete', 'outras_despesas', 'desconto'].forEach(k => d[k] = d[k] || 0);
+    const pz = lerPrazos(document.querySelector('#cpLivre')?.value);
+    d.prazo_livre_dias = d.condicao_pagamento_id || !pz ? null : pz;
     delete d.numero; delete d.situacao; delete d.valor_total; delete d.motivo_recusa; delete d.motivo_cancelamento;
   },
   validar: (d, r) => {
     if (r.id && !EDITAVEL.includes(r.situacao)) return null;
     const itens = lerItens();
     if (!itens.length) return 'Inclua pelo menos um item';
+    if (lerPrazos(document.querySelector('#cpLivre')?.value) === false) return 'Prazos de pagamento: use só números de dias, ex.: 30/60/90';
     if (itens.some(i => !(i.quantidade > 0))) return 'Item com quantidade zerada';
     if (itens.some(i => i.linha === 'servico' && !i.servico_id)) return 'Escolha o serviço (ou cadastre em "+ cadastrar serviço")';
     if (itens.some(i => !i.produto_id && !i.descricao)) return 'Item sem cadastro precisa de descrição';
