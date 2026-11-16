@@ -6,7 +6,7 @@
 <title>Notas fiscais · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162040">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162047">
 <style>
   .nf-cnpjs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 12px; }
   .nf-cnpj { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
@@ -30,12 +30,12 @@
 <body data-modulo="notas" data-titulo="Notas fiscais" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162040"></script>
-<script src="../../assets/js/ui.js?v=202611162040"></script>
-<script src="../../assets/js/auth.js?v=202611162040"></script>
-<script src="../../assets/js/layout.js?v=202611162040"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611162040"></script>
-<script src="../../assets/js/cadastro.js?v=202611162040"></script>
+<script src="../../assets/js/supabase.js?v=202611162047"></script>
+<script src="../../assets/js/ui.js?v=202611162047"></script>
+<script src="../../assets/js/auth.js?v=202611162047"></script>
+<script src="../../assets/js/layout.js?v=202611162047"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611162047"></script>
+<script src="../../assets/js/cadastro.js?v=202611162047"></script>
 <script>
 /* =====================================================================
    Notas fiscais de entrada (NF-e emitidas contra a NOX), separadas por CNPJ
@@ -80,7 +80,7 @@ function checagens(r) {
 
 function secaoNF(r) {
   if (!r.id) return '';
-  const itens = r.itens || [], dups = r.duplicatas || [], podeAlt = CTX.pode('notas', 'alterar') || CTX.pode('compras', 'alterar');
+  const itens = r.itens || [], temCusto = itens.some(i => i.custo !== undefined), dups = r.duplicatas || [], podeAlt = CTX.pode('notas', 'alterar') || CTX.pode('compras', 'alterar');
   const pedsForn = PEDS.filter(p => (!r.fornecedor_id || p.fornecedor_id === r.fornecedor_id) && p.empresa_id === r.empresa_id && ['aprovado', 'enviado', 'recebido_parcial'].includes(p.situacao));
   const btn = (a, t, cls = '') => `<button type="button" class="btn ${cls}" data-nf="${a}">${t}</button>`, ac = [];
   if (podeAlt && r.situacao === 'nova') { if (r.pedido_compra_id) ac.push(btn('conferida', 'Conferi · NF bate com o pedido', 'primario')); else ac.push(btn('pedir_aprovacao', 'NF sem pedido · pedir aprovação do master…')); }
@@ -109,9 +109,12 @@ function secaoNF(r) {
         ${['nova', 'conferida'].includes(r.situacao) && r.fornecedor_id ? ' <button type="button" class="btn fino" data-nf="tiny">Ordem de compra do Tiny…</button>' : ''}</div>` : ''}
     <div class="acoes-nf">${ac.join('')}</div>
     <div class="secao">Itens da NF</div>
-    ${itens.length ? `<table class="lista-mini"><thead><tr><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead><tbody>
+    ${itens.length ? `<table class="lista-mini"><thead><tr><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th>${temCusto ? '<th class="num">IPI</th><th class="num">ICMS-ST</th><th class="num" title="Frete + seguro + outras − desconto do item">Acrésc./desc.</th><th class="num" title="Total + IPI + ST + frete + seguro + outras − desconto: é o custo que entra no estoque">Custo</th>' : ''}</tr></thead><tbody>
       ${itens.map(i => `<tr><td>${esc(i.codigo || '')}</td><td>${esc(i.descricao || '')}</td><td>${esc(i.ncm || '')}</td><td>${esc(i.cfop || '')}</td><td>${esc(i.unidade || '')}</td>
-        <td class="num">${Number(i.quantidade || 0).toLocaleString('pt-BR')}</td><td class="num">${reais(i.valor_unitario)}</td><td class="num">${reais(i.valor)}</td></tr>`).join('')}</tbody></table>`
+        <td class="num">${Number(i.quantidade || 0).toLocaleString('pt-BR')}</td><td class="num">${reais(i.valor_unitario)}</td><td class="num">${reais(i.valor)}</td>${temCusto ? `<td class="num">${reais(i.ipi)}</td><td class="num">${reais(i.st)}</td>
+        <td class="num">${reais(Number(i.frete || 0) + Number(i.seguro || 0) + Number(i.outros || 0) - Number(i.desconto || 0))}</td><td class="num"><b>${reais(i.custo)}</b></td>` : ''}</tr>`).join('')}</tbody></table>
+      ${temCusto ? `<p class="sub" style="margin:6px 0 0">${[['Produtos', r.valor_produtos], ['IPI', r.valor_ipi], ['ICMS-ST', r.valor_st], ['Frete', r.valor_frete], ['Seguro', r.valor_seguro], ['Outras', r.valor_outros], ['Desconto', -Number(r.valor_desconto || 0)]]
+        .filter(([, v], k) => k === 0 || Number(v)).map(([t, v]) => `${t} ${reais(v)}`).join(' · ')} · <b>Total da NF ${reais(r.valor_total)}</b></p>` : ''}`
       : '<p class="sub" style="margin:0">Sem itens (só o resumo). Importe o XML da nota.</p>'}
     ${dups.length ? `<div class="secao">Duplicatas (parcelas)</div><table class="lista-mini"><thead><tr><th>Nº</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>
       ${dups.map(d => `<tr><td>${esc(d.numero || '')}</td><td>${dataCurta(d.vencimento)}</td><td class="num">${reais(d.valor)}</td></tr>`).join('')}</tbody></table>` : ''}`;
