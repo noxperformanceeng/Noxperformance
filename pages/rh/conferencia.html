@@ -6,7 +6,7 @@
 <title>Conferência da folha · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162047">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -25,12 +25,12 @@
 <body data-modulo="lancamentos" data-titulo="Conferência da folha" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162047"></script>
-<script src="../../assets/js/ui.js?v=202611162047"></script>
-<script src="../../assets/js/auth.js?v=202611162047"></script>
-<script src="../../assets/js/layout.js?v=202611162047"></script>
-<script src="../../assets/js/cadastro.js?v=202611162047"></script>
-<script src="../../assets/js/rh.js?v=202611162047"></script>
+<script src="../../assets/js/supabase.js?v=202611162108"></script>
+<script src="../../assets/js/ui.js?v=202611162108"></script>
+<script src="../../assets/js/auth.js?v=202611162108"></script>
+<script src="../../assets/js/layout.js?v=202611162108"></script>
+<script src="../../assets/js/cadastro.js?v=202611162108"></script>
+<script src="../../assets/js/rh.js?v=202611162108"></script>
 <script>
 /* =====================================================================
    Conferência da folha — segunda conferência antes de fechar o mês.
@@ -41,7 +41,7 @@
    O RH confirma cada divergência (com observação). Se o valor mudar depois, ela volta.
    A folha só fecha com tudo confirmado e nenhum lançamento "a conferir".
    ===================================================================== */
-let CTX, COMP = lerCompetencia(), DIV = [], CONF = [], aba = 'pend', marcados = new Set(), PODE = false;
+let CTX, COMP = lerCompetencia(), DIV = [], CONF = [], aba = 'pend', marcados = new Set(), PODE = false, ordem = { campo: '', asc: true };
 const TIPO = { faltou: 'Não veio neste mês', novo: 'Novo neste mês', variou: 'Valor mudou' };
 
 (async () => {
@@ -55,8 +55,8 @@ const TIPO = { faltou: 'Não veio neste mês', novo: 'Novo neste mês', variou: 
       <div class="ferr"><input id="busca" class="busca" type="search" placeholder="Buscar colaborador ou evento…"><div id="rel"></div></div></div>
     <div id="resumo" class="resumo-c"></div>
     <div class="cartao lote-c" id="lote" hidden></div>
-    <div class="cartao tabela-rolagem"><table><thead><tr><th style="width:30px"><input type="checkbox" id="todos"></th><th>Evento</th><th>Divergência</th>
-      <th class="num" id="hAnt">Mês anterior</th><th class="num" id="hAtu">Este mês</th><th class="num">Diferença</th><th class="num">%</th><th>Conferência</th></tr></thead>
+    <div class="cartao tabela-rolagem"><table><thead><tr><th style="width:30px"><input type="checkbox" id="todos"></th><th data-ord="evento">Evento</th><th data-ord="tipo">Divergência</th>
+      <th class="num" id="hAnt" data-ord="anterior">Mês anterior</th><th class="num" id="hAtu" data-ord="atual">Este mês</th><th class="num" data-ord="dif">Diferença</th><th class="num" data-ord="pct">%</th><th data-ord="conf">Conferência</th></tr></thead>
       <tbody id="lista"><tr><td colspan="8" class="vazio">Carregando…</td></tr></tbody></table></div>`;
   const c = document.getElementById('comp'); c.value = COMP;
   c.onchange = () => { if (!c.value) return; COMP = c.value; gravarCompetencia(COMP); marcados.clear(); carregar(); };
@@ -99,7 +99,12 @@ function desenhar() {
     <span>${pend ? `<span class="tg alerta">${pend} divergência(s) a confirmar</span>` : '<span class="tg ok">Divergências conferidas</span>'}</span>
     ${CONF.length ? `<span><span class="tg alerta">${CONF.length} lançamento(s) repetido(s) a conferir · ${nConf} colaborador(es)</span> <a href="lancamentos.html">conferir nos Lançamentos →</a></span>` : ''}
     ${!DIV.length ? '<span>Sem divergências (ou mês anterior sem lançamentos para comparar).</span>' : ''}`;
-  const vis = visiveis().sort((a, b) => (funcionario(a.funcionario_id)?.nome || '').localeCompare(funcionario(b.funcionario_id)?.nome || '') || (evento(a.evento_id)?.ordem || 0) - (evento(b.evento_id)?.ordem || 0));
+  // Agrupado por colaborador; dentro de cada um, na ordem dos eventos ou na coluna clicada (ui.js)
+  const K = { evento: d => evento(d.evento_id)?.codigo, tipo: d => TIPO[d.tipo], anterior: d => Number(d.valor_anterior), atual: d => Number(d.valor_atual),
+    dif: d => d.valor_atual - d.valor_anterior, pct: d => d.valor_anterior ? (d.valor_atual - d.valor_anterior) / d.valor_anterior : null, conf: d => d.confirmada ? d.conferido_em : null };
+  const vis = visiveis().sort((a, b) => (funcionario(a.funcionario_id)?.nome || '').localeCompare(funcionario(b.funcionario_id)?.nome || '')
+    || (ordem.campo ? compararOrdem(K[ordem.campo](a), K[ordem.campo](b), ordem.asc) : 0) || (evento(a.evento_id)?.ordem || 0) - (evento(b.evento_id)?.ordem || 0));
+  ligarOrdenacao(document.getElementById('lista').closest('table'), ordem, desenhar);
   let html = '', fAtual = null;
   vis.forEach(d => {
     const f = funcionario(d.funcionario_id), ev = evento(d.evento_id), dif = d.valor_atual - d.valor_anterior;

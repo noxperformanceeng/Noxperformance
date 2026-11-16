@@ -224,6 +224,10 @@ tr.apagado td { color: #9aa0a8; }
 .tg.ok { background: #e8f5ec; color: var(--ok); } .tg.pc { background: #f3effe; color: #6d28d9; } .tg.neutro { background: var(--fundo); color: var(--texto-suave); }
 .rev small { display: block; color: var(--texto-suave); font-size: 11px; margin-top: 3px; }
 th.ord { cursor: pointer; user-select: none; } th.ord:hover { color: var(--texto); }
+/* seta de ordenação: discreta em toda coluna que ordena, firme na coluna ativa */
+th.ord::after { content: ' ⇅'; opacity: .3; font-size: 10px; } th.ord:hover::after { opacity: .7; }
+th.ord.ord-asc::after { content: ' ▲'; opacity: 1; } th.ord.ord-desc::after { content: ' ▼'; opacity: 1; }
+@media print { th.ord::after { content: none; } th.ord.ord-asc::after, th.ord.ord-desc::after { content: none; } }
 td input[type=checkbox], th input[type=checkbox] { width: 16px; height: 16px; }
 .lote { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lote span { font-weight: 500; }

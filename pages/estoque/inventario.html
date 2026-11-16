@@ -6,7 +6,7 @@
 <title>Inventário · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162047">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
 <style>
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.num input { width: 120px; text-align: right; }
@@ -37,7 +37,7 @@
   <div class="barra-lista"><span id="contagem"></span></div>
   <div class="cartao tabela-rolagem">
     <table>
-      <thead><tr><th>Código</th><th>Descrição</th><th>Local</th><th>Un</th><th class="num col-saldo" hidden>Saldo no sistema</th><th class="num">Contado</th></tr></thead>
+      <thead><tr><th data-ord="codigo">Código</th><th data-ord="descricao">Descrição</th><th data-ord="local">Local</th><th data-ord="unidade">Un</th><th class="num col-saldo" data-ord="saldo" hidden>Saldo no sistema</th><th class="num" data-ord="contado">Contado</th></tr></thead>
       <tbody id="lista"><tr><td colspan="6" class="vazio">Carregando…</td></tr></tbody>
     </table>
   </div>
@@ -50,10 +50,10 @@
   </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162047"></script>
-<script src="../../assets/js/ui.js?v=202611162047"></script>
-<script src="../../assets/js/auth.js?v=202611162047"></script>
-<script src="../../assets/js/layout.js?v=202611162047"></script>
+<script src="../../assets/js/supabase.js?v=202611162108"></script>
+<script src="../../assets/js/ui.js?v=202611162108"></script>
+<script src="../../assets/js/auth.js?v=202611162108"></script>
+<script src="../../assets/js/layout.js?v=202611162108"></script>
 <script>
 /* Contagem em lote: o digitado fica guardado na tela (CONTADO) enquanto troca filtros; salva tudo de uma vez.
    "Saldo do sistema" fica escondido por padrão para a contagem ser às cegas. */
@@ -61,7 +61,7 @@ const $ = s => document.querySelector(s);
 const qt = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 const ORIG = [{ id: '', nome: 'Todos' }, { id: 'materia_prima', nome: 'Matéria-prima' }, { id: 'componente', nome: 'Adquirido pronto' },
   { id: 'insumo', nome: 'Insumo' }, { id: 'semiacabado', nome: 'Semiacabado' }, { id: 'acabado', nome: 'Produto pronto' }, { id: 'kit', nome: 'Kit' }, { id: 'ferramenta', nome: 'Ferramenta' }];
-let CTX = null, PRODUTOS = [], SALDOS = new Map(), LOCAIS = [], aba = '';
+let CTX = null, PRODUTOS = [], SALDOS = new Map(), LOCAIS = [], aba = '', ordem = { campo: 'codigo', asc: true };
 const CONTADO = new Map();   // produto_id → quantidade digitada
 const CHAVE = 'nox_inventario_rascunho';
 const guardar = () => { try { localStorage.setItem(CHAVE, JSON.stringify([...CONTADO])); } catch {} };
@@ -90,6 +90,9 @@ function desenhar() {
   $('#abas').innerHTML = ORIG.map(o => `<button class="aba${o.id === aba ? ' ativa' : ''}" data-v="${o.id}">${o.nome}</button>`).join('');
   $('#abas').querySelectorAll('[data-v]').forEach(b => b.onclick = () => { aba = b.dataset.v; desenhar(); });
   const ls = filtrados(), MAX = 400;
+  // Ordenação pelo cabeçalho (ui.js): sobre todos os filtrados, antes de cortar nos 400 (ex.: por local, para contar na ordem da prateleira)
+  ordenarLista(ls, ordem, { local: p => nomeLocal(local(p.local_id)), saldo: p => SALDOS.get(p.id) || 0, contado: p => CONTADO.get(p.id) });
+  ligarOrdenacao($('#lista').closest('table'), ordem, desenhar);
   $('#contagem').textContent = `${ls.length} produto(s)`;
   $('#lista').innerHTML = ls.length ? ls.slice(0, MAX).map(p => { const c = CONTADO.get(p.id), s = SALDOS.get(p.id) || 0;
     return `<tr data-id="${p.id}" class="${c == null ? '' : mostra && c !== s ? 'difere' : 'contado'}"><td><b>${esc(p.codigo || '—')}</b></td><td>${esc(p.descricao)}</td>

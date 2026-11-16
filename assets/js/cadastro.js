@@ -352,10 +352,19 @@ async function montarCadastro(cfg) {
 
     visiveis = filtrar(false);
     contarFiltros(cont);
-    const k = ordem.campo, dir = ordem.asc ? 1 : -1;
-    const chave = r => k === '_rev' ? ({ alerta: 0, neutro: 1, ok: 2 }[statusRev(r).cls]) : cfg.ordenarPor?.[k] ? cfg.ordenarPor[k](r) : semAcento(r[k] ?? '￿');
+    // Ordenação (ui.js): valor/número em ordem numérica, fornecedor/empresa/lista pelo nome que aparece, vazios no fim
+    const k = ordem.campo, cru = !!cfg.ordenarPor?.[k], ck = C[k];
+    const rots = ck && ['select', 'empresa'].includes(ck.tipo) ? new Map(opcoes(ck).map(o => [String(o.v), o.n])) : null;
+    const chaveOrdem = (c, v) => {
+      if (!c || v === null || v === undefined || v === '') return null;
+      if (['moeda', 'numero', 'horas'].includes(c.tipo)) return Number(v);
+      if (c.tipo === 'bool') return v ? 1 : 0;
+      return semAcento(rots ? rots.get(String(v)) ?? v : v);
+    };
+    const setaOrd = id => ordem.campo === id ? (ordem.asc ? ' ord-asc' : ' ord-desc') : '';
+    const chave = r => k === '_rev' ? ({ alerta: 0, neutro: 1, ok: 2 }[statusRev(r).cls]) : cru ? cfg.ordenarPor[k](r) : chaveOrdem(ck, r[k]);
     const ch = new Map(visiveis.map(r => [r, chave(r)]));   // chave calculada uma vez por linha, não a cada comparação
-    visiveis.sort((a, b) => { const x = ch.get(a), y = ch.get(b); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
+    visiveis.sort((a, b) => compararOrdem(ch.get(a), ch.get(b), ordem.asc, cru));
     let mostrados = visiveis, temFilhos = new Set();
     if (cfg.arvore) {
       linhas.forEach(r => { const p = cfg.arvore.pai(cfg.arvore.chave(r)); if (p) temFilhos.add(p); });
@@ -365,9 +374,9 @@ async function montarCadastro(cfg) {
     }
 
     $('#cHead').innerHTML = (podeEditar ? '<th style="width:28px" class="nao-imprimir"><input type="checkbox" id="cTodos"></th>' : '') +
-      colunas.map(c => `<th class="ord" data-ord="${c.id}">${esc(c.label)}${ordem.campo === c.id ? (ordem.asc ? ' ▲' : ' ▼') : ''}</th>`).join('') +
+      colunas.map(c => `<th class="ord${setaOrd(c.id)}" data-ord="${c.id}">${esc(c.label)}</th>`).join('') +
       listaExtras.map(x => `<th>${esc(x.label)}</th>`).join('') +
-      (cfg.revisao ? `<th class="ord" data-ord="_rev">Revisão${ordem.campo === '_rev' ? (ordem.asc ? ' ▲' : ' ▼') : ''}</th>` : '') + '<th>Pendências</th>';
+      (cfg.revisao ? `<th class="ord${setaOrd('_rev')}" data-ord="_rev">Revisão</th>` : '') + '<th>Pendências</th>';
     cont.querySelectorAll('th.ord').forEach(th => th.onclick = () => { ordem = { campo: th.dataset.ord, asc: ordem.campo === th.dataset.ord ? !ordem.asc : true }; desenhar(); });
 
     const LIM = 400, ncol = colunas.length + listaExtras.length + (cfg.revisao ? 1 : 0) + 1 + (podeEditar ? 1 : 0);

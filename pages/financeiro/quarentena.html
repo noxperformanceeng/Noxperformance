@@ -6,7 +6,7 @@
 <title>Quarentena das importações · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162047">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
 <style>
   .filtros-q { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; padding: 10px 12px; margin-bottom: 8px; }
   .filtros-q label { font-size: 11px; margin-bottom: 2px; }
@@ -25,10 +25,10 @@
 <body data-modulo="quarentena" data-titulo="Quarentena das importações" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162047"></script>
-<script src="../../assets/js/ui.js?v=202611162047"></script>
-<script src="../../assets/js/auth.js?v=202611162047"></script>
-<script src="../../assets/js/layout.js?v=202611162047"></script>
+<script src="../../assets/js/supabase.js?v=202611162108"></script>
+<script src="../../assets/js/ui.js?v=202611162108"></script>
+<script src="../../assets/js/auth.js?v=202611162108"></script>
+<script src="../../assets/js/layout.js?v=202611162108"></script>
 <script>
 /* =====================================================================
    Quarentena: títulos importados do Tiny com algo a revisar — numa lista só.
@@ -41,7 +41,7 @@ const ACOES = [
   { v: 'categoria', n: 'Definir categoria' }, { v: 'fornecedor', n: 'Ligar ao fornecedor' },
   { v: 'conta', n: 'Definir conta do pagamento' }, { v: 'data_pagamento', n: 'Corrigir data do pagamento' },
   { v: 'revisado', n: 'Marcar pendência como revisada (sem mudar o título)' }];
-let CTX, DADOS = [], CATS = [], FORN = [], CONTAS = [], marcados = new Set(), ordem = { c: 'data_vencimento', asc: true };
+let CTX, DADOS = [], CATS = [], FORN = [], CONTAS = [], marcados = new Set(), ordem = { campo: 'data_vencimento', asc: true };
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const num2 = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dt = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
@@ -65,13 +65,12 @@ const v = id => document.getElementById(id).value;
     <div class="cartao lote-q" id="lote"></div>
     <div class="barra-lista"><span id="contagem"></span><span class="resumo" id="resumo"></span></div>
     <div class="cartao tabela-rolagem"><table><thead><tr><th style="width:30px"><input type="checkbox" id="todos" title="Marcar todos os da lista"></th>
-      <th class="ord" data-o="id">Título</th><th class="ord" data-o="data_vencimento">Vencimento</th><th class="ord" data-o="fornecedor_tiny">Fornecedor (Tiny)</th>
-      <th>Categoria</th><th>Histórico</th><th class="ord num" data-o="valor">Valor</th><th class="ord" data-o="situacao">Situação / pagamento</th><th>Pendências</th></tr></thead>
+      <th data-ord="id">Título</th><th data-ord="data_vencimento">Vencimento</th><th data-ord="fornecedor_tiny">Fornecedor (Tiny)</th>
+      <th data-ord="categoria">Categoria</th><th data-ord="descricao">Histórico</th><th class="num" data-ord="valor">Valor</th><th data-ord="situacao">Situação / pagamento</th><th>Pendências</th></tr></thead>
       <tbody id="lista"><tr><td colspan="9" class="vazio">Carregando…</td></tr></tbody></table></div>`;
   ['fMot', 'fRev', 'fSit', 'fPer', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', () => { marcados.clear(); desenhar(); }));
   ligarBusca('fBusca', () => { marcados.clear(); desenhar(); });
   document.getElementById('todos').onchange = e => { visiveis().forEach(r => e.target.checked ? marcados.add(r.id) : marcados.delete(r.id)); desenhar(); };
-  document.querySelectorAll('th.ord').forEach(th => th.onclick = () => { ordem = { c: th.dataset.o, asc: ordem.c === th.dataset.o ? !ordem.asc : true }; desenhar(); });
   window.addEventListener('empresa', () => { marcados.clear(); desenhar(); });
   botoesRelatorio('rel', () => ({ arquivo: 'quarentena', colunas: ['Título', 'Empresa', 'ID Tiny', 'Vencimento', 'Fornecedor no Tiny', 'Categoria no Tiny', 'Categoria atual', 'Histórico', 'Valor', 'Situação', 'Pagamento', 'Conta do pagamento', 'Pendências'],
     linhas: visiveis().map(r => [r.id, nomeEmp(r.empresa_id), r.tiny_id, dt(r.data_vencimento), r.fornecedor_tiny, r.categoria_tiny, catNome(r.categoria_financeira_id), r.descricao, num2(r.valor), r.situacao, dt(r.data_pagamento), r.conta_pagamento, pendencias(r).join(', ')]) }));
@@ -101,12 +100,13 @@ function visiveis() {
     if (busca && !combinaBusca([r.fornecedor_tiny, r.categoria_tiny, r.descricao, r.documento, r.tiny_id, r.id, num2(r.valor), catNome(r.categoria_financeira_id)].join(' '), busca)) return false;
     return true;
   });
-  const k = ordem.c, s = ordem.asc ? 1 : -1;
-  return lista.sort((a, b) => (a[k] ?? '') > (b[k] ?? '') ? s : (a[k] ?? '') < (b[k] ?? '') ? -s : 0);
+  // Ordenação pelo cabeçalho (ui.js): valor em ordem numérica, categoria pelo nome
+  return ordenarLista(lista, ordem, { valor: r => Number(r.valor), categoria: r => catNome(r.categoria_financeira_id) || r.categoria_tiny });
 }
 
 function desenhar() {
   const vis = visiveis();
+  ligarOrdenacao(document.getElementById('lista').closest('table'), ordem, desenhar);
   [...marcados].forEach(id => { if (!vis.some(r => r.id === id)) marcados.delete(id); });
   const base = DADOS.filter(r => !CTX.empresa || r.empresa_id === CTX.empresa);
   document.getElementById('contagem').textContent = `${vis.length} título(s)`;
