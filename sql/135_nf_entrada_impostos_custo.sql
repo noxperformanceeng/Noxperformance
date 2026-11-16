@@ -1,5 +1,5 @@
 -- =====================================================================
--- 134 · NF de entrada: leitura de IPI, ICMS-ST, frete, seguro, desconto e outras despesas
+-- 135 · NF de entrada: leitura de IPI, ICMS-ST, frete, seguro, desconto e outras despesas
 -- O que muda:
 --  · Ao importar o XML (ou receber da SEFAZ), cada item da NF passa a guardar também o IPI, o ICMS-ST
 --    (com FCP-ST), o frete, o seguro, o desconto e as outras despesas do item, e o "custo do item"
