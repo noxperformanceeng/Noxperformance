@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162029">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162041">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162029"></script>
-<script src="../../assets/js/ui.js?v=202611162029"></script>
-<script src="../../assets/js/auth.js?v=202611162029"></script>
-<script src="../../assets/js/layout.js?v=202611162029"></script>
-<script src="../../assets/js/cadastro.js?v=202611162029"></script>
-<script src="../../assets/js/comprovante.js?v=202611162029"></script>
+<script src="../../assets/js/supabase.js?v=202611162041"></script>
+<script src="../../assets/js/ui.js?v=202611162041"></script>
+<script src="../../assets/js/auth.js?v=202611162041"></script>
+<script src="../../assets/js/layout.js?v=202611162041"></script>
+<script src="../../assets/js/cadastro.js?v=202611162041"></script>
+<script src="../../assets/js/comprovante.js?v=202611162041"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -240,6 +240,8 @@ const parcelaDe = r => { if (r.parcela && r.parcelas) return [r.parcela, r.parce
   return m && +m[1] >= 1 && +m[1] <= +m[2] ? [+m[1], +m[2]] : []; };
 // Título do RH: quem recebe é o colaborador (funcionario_id), não um fornecedor. O nome vem no fim da descrição ("Adiantamento salarial 10/2026 · NOME").
 const colaborador = r => r.origem === 'rh' && r.funcionario_id ? (r.descricao || '').split(' · ').pop().trim() : '';
+// Título do RH com o total (SQL 134): sem nome de colaborador; o detalhe fica só nas telas do RH
+const rhTotal = r => r.origem === 'rh' && !r.funcionario_id;
 const mesmoNomeTiny = r => LINHAS.filter(x => x.id !== r.id && !x.fornecedor_id && x.origem_ref?.fornecedor_tiny === r.origem_ref?.fornecedor_tiny && ['aberto', 'programado'].includes(x.situacao));
 
 /* ---------- Rastreio da compra até o pagamento ---------- */
@@ -559,11 +561,12 @@ const cfg = {
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true,
       opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     // Título do RH: no lugar do fornecedor aparece o colaborador (ver aoAbrir)
-    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN, oculto: r => !!colaborador(r),
+    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN, oculto: r => r.origem === 'rh',
       // sem cadastro: mostra o nome que veio do Tiny (ou o colaborador, nos títulos do RH); embaixo, a descrição
       listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n, d = r.descricao && r.descricao !== r.documento ? `<small class="sub2 texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</small>` : '';
         return (n ? `<span class="texto-curto" title="${esc(n)}">${esc(n)}</span>`
           : colaborador(r) ? `<span class="texto-curto" title="Colaborador (título gerado pelo RH)">${esc(colaborador(r))} <small class="tg neutro">colaborador</small></span>`
+          : rhTotal(r) ? `<span class="texto-curto" title="Total do RH, pago pela Diretoria. O valor por colaborador fica só no RH.">RH · Diretoria <small class="tg neutro">total</small></span>`
           : r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : '') + d; } },
     { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato',
       listaHtml: r => (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '')
@@ -663,6 +666,8 @@ const cfg = {
     // Título do RH: mostra o colaborador que recebe (no lugar do fornecedor, que não se aplica)
     if (colaborador(r)) m.querySelector('[data-campo="empresa_id"]')?.insertAdjacentHTML('afterend', `<div class="campo l2"><label>Favorecido (colaborador)</label>
       <input type="text" value="${esc(colaborador(r))}" disabled><p class="ajuda">Gerado pelo RH: quem recebe é o colaborador, por isso não tem fornecedor.</p></div>`);
+    else if (rhTotal(r)) m.querySelector('[data-campo="empresa_id"]')?.insertAdjacentHTML('afterend', `<div class="campo l2"><label>Favorecido</label>
+      <input type="text" value="RH · pagamento feito pela Diretoria" disabled><p class="ajuda">Total gerado pelo RH. O valor de cada colaborador fica só nas telas do RH.</p></div>`);
     // Veio do Tiny sem fornecedor cadastrado: explica e oferece usar o mesmo fornecedor nos outros títulos com esse nome
     const ft = r.origem_ref?.fornecedor_tiny, fForn = m.querySelector('#f_fornecedor_id');
     if (r.id && !r.fornecedor_id && ft && fForn) {
@@ -828,7 +833,7 @@ const cfg = {
         });
       } }
   ],
-  tituloRegistro: r => [FORN.find(f => f.v === r.fornecedor_id)?.n || colaborador(r), r.documento].filter(Boolean).join(' · ') || r.descricao || 'Título',
+  tituloRegistro: r => [FORN.find(f => f.v === r.fornecedor_id)?.n || colaborador(r) || (rhTotal(r) ? 'RH' : ''), r.documento].filter(Boolean).join(' · ') || r.descricao || 'Título',
   chaveHistorico: r => r.documento || r.id,
   msgDuplicado: 'Título duplicado'
 };
