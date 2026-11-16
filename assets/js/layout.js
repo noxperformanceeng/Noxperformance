@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611152307';
+const VERSAO_TELAS = '202611152320';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -579,9 +579,8 @@ function alertaPerguntasML(comSom) {
     faixa.innerHTML = `<span class="sino">🔔</span><b>${n} pergunta${n > 1 ? 's' : ''} no Mercado Livre esperando resposta</b>
       <span class="ult">“${esc(String(velha.texto).slice(0, 90))}${velha.texto.length > 90 ? '…' : ''}” · há ${minutos(velha.criada_em)}</span>
       <a class="btn" href="${RAIZ}pages/comercial/perguntas-ml.html">Responder agora</a>
-      ${window.Notification && Notification.permission === 'default' ? '<button type="button" class="btn discreto" data-notif>Ativar aviso no computador</button>' : ''}`;
+`;
     faixa.hidden = false; document.body.classList.add('com-alerta-perg');
-    faixa.querySelector('[data-notif]')?.addEventListener('click', () => Notification.requestPermission().then(conferir));
     // som e aviso do computador: na hora, a cada pergunta nova; e de novo a cada 2 min enquanto ninguém responder
     if (novas.length && !primeira) notificar(novas[novas.length - 1], n);
     if (comSom && (novas.length && !primeira || Date.now() - ultimoSom > 2 * 6e4)) tocar();
@@ -620,12 +619,6 @@ function alertaVendas() {
     const novas = (data.vendas || []).filter(v => !vistas.has(v.id));
     novas.forEach(v => { vistas.add(v.id); cartao(v); notificar(v); });
     if (novas.length) tocar();
-  }
-  if (window.Notification && Notification.permission === 'default') {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'venda-ativar';
-    b.textContent = '🔔 Ativar avisos de venda no computador (com som)';
-    b.onclick = () => Notification.requestPermission().then(() => b.remove());
-    caixa.appendChild(b);
   }
   conferir(); setInterval(conferir, 60000);
   if (typeof ouvirMudancas === 'function') ouvirMudancas(['pedidos_venda', 'pedidos_venda_itens'], conferir, { auxiliar: true, mesmoOculto: true });
