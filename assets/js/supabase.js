@@ -53,7 +53,8 @@ const tempoReal = (() => {
     expedicao_lista: ['clientes', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens', 'produtos'],
     fluxo_caixa: ['categorias_financeiras', 'contas_bancarias', 'extrato_lancamentos', 'pagamentos', 'recebimentos', 'titulos_pagar', 'titulos_pagar_rateio', 'titulos_receber', 'titulos_receber_rateio', 'transferencias_contas'],
     integracao_status: ['integracao_jobs'],
-    minhas_aprovacoes: ['categorias_financeiras', 'fornecedores', 'funcionarios', 'nfe_entrada', 'pagamentos', 'pedidos_compra', 'produtos', 'rh_vale_transporte', 'solicitacoes_compra', 'solicitacoes_compra_itens', 'titulos_anexos', 'titulos_pagar', 'aprovacoes_historico'],
+    cp_fila_nf_recebidas: ['pedidos_compra_recebimentos', 'nfe_entrada', 'pedidos_compra', 'fornecedores'],
+    minhas_aprovacoes: ['categorias_financeiras', 'fornecedores', 'funcionarios', 'nfe_entrada', 'pagamentos', 'pedidos_compra', 'pedidos_compra_recebimentos', 'produtos', 'rh_vale_transporte', 'solicitacoes_compra', 'solicitacoes_compra_itens', 'titulos_anexos', 'titulos_pagar', 'aprovacoes_historico'],
     ml_status: ['canais_venda', 'ml_contas'],
     painel_gestor: ['canais_venda', 'categorias_financeiras', 'estoque_movimentos', 'integracao_jobs', 'ml_contas', 'pedidos_venda', 'pedidos_venda_entregas', 'produtos', 'titulos_pagar', 'titulos_receber', 'pagamentos', 'recebimentos', 'extrato_lancamentos'],
     pc_pendencias: ['fornecedores', 'pedidos_compra', 'pedidos_compra_itens', 'produtos'],
@@ -67,7 +68,7 @@ const tempoReal = (() => {
     sc_pedidos: ['pedidos_compra', 'solicitacoes_compra', 'solicitacoes_compra_itens'],
     sc_cotacoes: ['solicitacoes_compra_itens', 'cotacoes_compra'],
     cotacao_analise: ['cotacoes_compra_precos', 'cotacoes_compra_fornecedores', 'cotacoes_compra_itens', 'pedidos_compra_recebimentos'],
-    menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra'],
+    menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'pedidos_compra_recebimentos', 'nfe_entrada'],
     sugestao_compra: ['estoque_movimentos', 'fornecedores', 'pedidos_compra', 'pedidos_compra_itens', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens', 'produto_fornecedores', 'produtos'],
     usuarios_nomes: []           // só nomes para exibir: não vale recarregar a tela por isso
   };
