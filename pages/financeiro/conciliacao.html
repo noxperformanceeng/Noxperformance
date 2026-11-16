@@ -366,6 +366,40 @@ async function lancarTitulo(linhas, pronto) {
   };
 }
 const guiaDe = r => GUIA_MP[r.tipo] || { o: 'Movimento ' + (r.tipo || ''), f: () => 'Classificar manualmente na categoria certa' };
+// Motivo da pendência: cada linha pendente cai em um único motivo, com o que fazer para resolver
+// (regra: venda do e-commerce → título no contas a receber → entrada no extrato)
+const RESERVAS = ['reserve_for_dispute', 'reserve_for_refund', 'reserve_for_bpp_shipping_return', 'reserve_for_payout', 'reserve_for_payment', 'mediation', 'mediation_cancel', 'refund'];
+const MOTIVOS = [
+  { id: 'm_reserva', nome: 'Reserva, reclamação ou devolução', cor: 'neutro', acao: 'Aguardar: quando a reclamação/devolução fecha, o movimento contrário compensa sozinho',
+    teste: r => RESERVAS.includes(r.tipo) },
+  { id: 'm_cancelada', nome: 'Venda cancelada com dinheiro recebido', cor: 'erro', acao: 'Conferir no Mercado Livre: se a venda valeu, reabrir o pedido (gera o título); se não, a devolução ao comprador ainda vai aparecer',
+    teste: r => !!r.pedido_venda_id && r.valor > 0 && r.tipo === 'payment' && PEDS[r.pedido_venda_id]?.situacao === 'cancelado' },
+  { id: 'm_venda_aberta', nome: 'Venda ligada, título não baixado', cor: 'erro', acao: 'Conferir o valor do título com o valor liberado (tarifas, frete, devolução parcial)',
+    teste: r => !!r.pedido_venda_id && r.tipo === 'payment' },
+  { id: 'm_saque', nome: 'Saque sem conta padrão', cor: 'alerta', acao: 'Cadastrar a conta de transferência padrão em Contas bancárias ou usar "Transferência entre contas"',
+    teste: r => r.tipo === 'payout' },
+  { id: 'm_venda_antiga', nome: 'Venda anterior a 2026', cor: 'neutro', acao: 'Venda feita antes de 01/01/2026, fora do sistema: classificar como recebimento de venda antiga',
+    teste: r => r.valor > 0 && r.tipo === 'payment' && unidade(r) === 'Mercado Libre' && aprovacao(r) < '2026-01-01' },
+  { id: 'm_venda_ml_falta', nome: 'Venda do ML não encontrada', cor: 'erro', acao: 'A busca diária das vendas (08:20) deve trazer a venda; se continuar no dia seguinte, avisar o suporte',
+    teste: r => r.valor > 0 && r.tipo === 'payment' && unidade(r) === 'Mercado Libre' },
+  { id: 'm_link_mp', nome: 'Pagamento por link/checkout MP', cor: 'alerta', acao: 'Venda fora do ML: usar "Lançar título" (contas a receber) com o cliente e a categoria de receita',
+    teste: r => r.valor > 0 && unidade(r) === 'Mercado Pago' },
+  { id: 'm_entrada_avulsa', nome: 'Entrada fora do ML', cor: 'alerta', acao: 'Financeiro identificar (transferência, aporte, pagamento avulso) e lançar como transferência ou título',
+    teste: r => r.valor > 0 && !unidade(r) && ['payment', 'money_transfer', 'credit_payment', ''].includes(r.tipo || '') },
+  { id: 'm_pago_saldo', nome: 'Pagamento feito com saldo do MP', cor: 'alerta', acao: 'Conta paga com o saldo do Mercado Pago (boleto, compra, PIX): achar a conta a pagar e baixar, ou "Lançar título"',
+    teste: r => r.valor < 0 && r.tipo === 'payment' },
+  { id: 'm_credito', nome: 'Parcela do Mercado Crédito', cor: 'alerta', acao: 'Pagamento de empréstimo: lançar no contas a pagar, categoria 10.03.001 (empréstimo Mercado Pago)',
+    teste: r => r.tipo === 'credit_payment' },
+  { id: 'm_divida', nome: 'Pagamento de dívida no MP', cor: 'alerta', acao: 'Lançar no contas a pagar, categoria 10.03.001 (empréstimo Mercado Pago)',
+    teste: r => r.tipo === 'reserve_for_debt_payment' },
+  { id: 'm_ressarcimento', nome: 'Ressarcimento do ML', cor: 'neutro', acao: 'Classificar em 1.02.001 Reembolsos de marketplace (ou 4.01.003 se for frete)',
+    teste: r => r.valor > 0 && ['cashback', 'shipping', 'fee_for_divergence_in_package_dimensions'].includes(r.tipo) },
+  { id: 'm_classificar', nome: 'Classificar manualmente', cor: 'neutro', acao: 'Escolher a categoria certa ("Classificar") ou lançar o título',
+    teste: () => true }
+];
+function unidade(r) { return (r.linha_original?.BUSINESS_UNIT || '').trim(); }
+function aprovacao(r) { return String(r.linha_original?.TRANSACTION_APPROVAL_DATE || r.data_hora || r.data || '').slice(0, 10); }
+const motivoDe = r => r.conciliacao !== 'pendente' ? null : (r._motivo ??= MOTIVOS.find(m => m.teste(r)));
 
 const cfg = {
   tabela: 'extrato_lancamentos', modulo: 'conciliacao', titulo: 'Extratos e conciliação', singular: 'lançamento', plural: 'lançamentos',
@@ -405,7 +439,7 @@ const cfg = {
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo, conta_transferencia_padrao').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').eq('situacao', 'ativo').order('codigo')),
       buscarTodos(() => db.from('canais_venda').select('id, nome, link_pedido, empresa_id').order('nome')),
-      buscarTodos(() => db.from('pedidos_venda').select('id, canal_id, empresa_id, numero_externo, pack_id, envio_id'))
+      buscarTodos(() => db.from('pedidos_venda').select('id, canal_id, empresa_id, numero_externo, pack_id, envio_id, situacao'))
     ]);
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
     CONTAS = cb; CATS = c; CANAIS = cn; PEDS = Object.fromEntries(pv.map(p => [p.id, p]));
@@ -416,18 +450,16 @@ const cfg = {
     { label: 'Venda', texto: r => PEDS[r.pedido_venda_id]?.numero_externo || '', html: r => { const p = PEDS[r.pedido_venda_id]; if (!p) return '';
         const l = linkVenda(p); return l ? `<a class="ext" href="${esc(l)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(p.numero_externo)}</a>` : esc(p.numero_externo || '#' + p.id); } },
     { label: 'Categoria', texto: r => cat(r.categoria_financeira_id)?.nome || '' },
-    { label: 'O que é / o que falta', texto: r => r.conciliacao === 'pendente' ? guiaDe(r).o + ' → ' + guiaDe(r).f(r) : '',
-      html: r => r.conciliacao !== 'pendente' ? '' : `<span class="texto-curto" style="max-width:280px" title="${esc(guiaDe(r).o + '\n→ ' + guiaDe(r).f(r))}"><b>${esc(guiaDe(r).o)}</b><br><small class="sub">${esc(guiaDe(r).f(r))}</small></span>` }
+    { label: 'Motivo da pendência / o que fazer', texto: r => { const m = motivoDe(r); return m ? m.nome + ' → ' + m.acao : ''; },
+      html: r => { const m = motivoDe(r); if (!m) return '';
+        return `<span class="texto-curto" style="max-width:300px" title="${esc(m.acao + '\n\n' + guiaDe(r).o)}"><span class="tg ${m.cor}">${esc(m.nome)}</span><br><small class="sub">${esc(m.acao)}</small></span>`; } }
   ],
   textoBuscaExtra: r => [r.pack_id, r.envio_id, r.referencia, cat(r.categoria_financeira_id)?.nome].filter(Boolean).join(' '),
   subtituloLinha: r => [r.pack_id && 'pacote ' + r.pack_id, r.envio_id && 'envio ' + r.envio_id].filter(Boolean).join(' · '),
   resumo: v => { const e = v.filter(r => r.valor > 0).reduce((s, r) => s + Number(r.valor), 0), s = v.filter(r => r.valor < 0).reduce((s, r) => s + Number(r.valor), 0);
     return `<span>Entradas <b>${reais(e)}</b> · Saídas <b class="valor-neg">${reais(s)}</b></span>`; },
-  pendencias: [
-    { id: 'sem_pedido', nome: 'Nº de venda sem pedido no sistema', cor: 'alerta', teste: r => r.conciliacao === 'pendente' && !r.pedido_venda_id && !!(r.pedido_externo || r.pack_id || r.envio_id) },
-    { id: 'sem_ref', nome: 'Sem nº de venda (classificar)', cor: 'neutro', teste: r => r.conciliacao === 'pendente' && !(r.pedido_externo || r.pack_id || r.envio_id) },
-    { id: 'ligado_aberto', nome: 'Ligado à venda e não baixado', cor: 'erro', teste: r => r.conciliacao === 'pendente' && !!r.pedido_venda_id }
-  ],
+  // um chip por motivo (com a contagem); clicar filtra as linhas daquele motivo
+  pendencias: MOTIVOS.map(m => ({ id: m.id, nome: m.nome, cor: m.cor, teste: r => motivoDe(r)?.id === m.id })),
   apagado: r => ['compensado', 'ignorado'].includes(r.conciliacao),
   aoAbrir(m, r) {
     m.querySelector('#btnLancarTit')?.addEventListener('click', () => lancarTitulo([r], () => cfg.recarregar ? cfg.recarregar() : location.reload()));
@@ -437,7 +469,7 @@ const cfg = {
     ${r.conciliacao === 'pendente' ? `<p style="margin:0 0 8px"><button type="button" class="btn primario" id="btnLancarTit">${r.valor < 0 ? 'Lançar no contas a pagar (fornecedor e categoria)…' : 'Lançar no contas a receber…'}</button>
       ${r.valor < 0 ? `<button type="button" class="btn${r.tipo === 'payout' ? ' primario' : ''}" id="btnTransf">Transferência entre contas…</button>` : ''}
       <span class="sub"> cria o título já ${r.valor < 0 ? 'pago' : 'recebido'} e concilia esta linha</span></p>` : ''}<div class="info">
-      <div style="background:#e8f0fe;border-radius:8px;padding:8px 10px;margin-bottom:6px"><b>O que é:</b> ${esc(guiaDe(r).o)}<br><b>${r.conciliacao === 'pendente' ? 'O que falta' : 'Destino'}:</b> ${esc(guiaDe(r).f(r))}</div>
+      <div style="background:#e8f0fe;border-radius:8px;padding:8px 10px;margin-bottom:6px">${motivoDe(r) ? `<b>Motivo da pendência:</b> ${esc(motivoDe(r).nome)}<br><b>O que fazer:</b> ${esc(motivoDe(r).acao)}<br>` : ''}<b>O que é:</b> ${esc(guiaDe(r).o)}<br><b>${r.conciliacao === 'pendente' ? 'Orientação' : 'Destino'}:</b> ${esc(guiaDe(r).f(r))}</div>
       <div>Situação: <b>${esc(r.conciliacao)}</b>${r.conciliado_em ? ' em ' + dataHoraBR(r.conciliado_em) : ''}</div>
       ${r.pedido_venda_id ? `<div>Venda: <b>${esc(PEDS[r.pedido_venda_id]?.numero_externo || '#' + r.pedido_venda_id)}</b> ${linkVenda(PEDS[r.pedido_venda_id]) ? `<a class="ext" href="${esc(linkVenda(PEDS[r.pedido_venda_id]))}" target="_blank" rel="noopener">abrir na plataforma</a>` : ''}</div>` : ''}
       ${r.titulo_receber_id ? `<div><a href="contas-receber.html?titulo=${r.titulo_receber_id}" style="color:var(--destaque)">Título a receber #${r.titulo_receber_id}</a> <button type="button" class="btn fino discreto" onclick="abrirRastreio('receber', ${r.titulo_receber_id})">Rastreio ›</button></div>` : ''}
