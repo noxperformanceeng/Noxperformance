@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161856">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611161604">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161856"></script>
-<script src="../../assets/js/ui.js?v=202611161856"></script>
-<script src="../../assets/js/auth.js?v=202611161856"></script>
-<script src="../../assets/js/layout.js?v=202611161856"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611161856"></script>
-<script src="../../assets/js/cadastro.js?v=202611161856"></script>
+<script src="../../assets/js/supabase.js?v=202611161604"></script>
+<script src="../../assets/js/ui.js?v=202611161604"></script>
+<script src="../../assets/js/auth.js?v=202611161604"></script>
+<script src="../../assets/js/layout.js?v=202611161604"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611161604"></script>
+<script src="../../assets/js/cadastro.js?v=202611161604"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -367,6 +367,24 @@ function aoEscolherProduto(tr) {
   recalcular();
 }
 
+// Pergunta o fornecedor da pintura quando ela está junto com as peças (devolve id, null = manter junto, undefined = cancelar)
+function escolherPintor(linhas) {
+  return new Promise(ok => {
+    const ultimo = (() => { try { return Number(localStorage.getItem('nox_pintor')) || null; } catch { return null; } })();
+    const sp = servPintura(), ini = ultimo && forn(ultimo) ? ultimo : sp?.fornecedor_id || '';
+    const fs = FORN.filter(f => f.situacao === 'ativo').sort((a, b) => (/PINT|COAT/i.test(nomeComFantasia(b)) - /PINT|COAT/i.test(nomeComFantasia(a))) || nomeComFantasia(a).localeCompare(nomeComFantasia(b)));
+    const m = abrirModal(`<h2>Pintura vai em outra OC</h2>
+      <p>Este pedido tem peças e pintura juntas. A pintura sai numa OC separada, no fornecedor da pintura; as peças ficam neste pedido.</p>
+      <p class="sub">${linhas.map(l => `${num(l.quantidade)} × ${esc(l.descricao || '')}`).join('<br>')}</p>
+      <div class="campo"><label>Fornecedor da pintura</label><select id="ppF">${fs.map(f => `<option value="${f.id}"${f.id === ini ? ' selected' : ''}>${esc(nomeComFantasia(f))}</option>`).join('')}</select></div>
+      <div class="acoes"><button class="btn" id="ppC">Cancelar</button><button class="btn" id="ppJ" title="Mesmo fornecedor faz peças e pintura">Manter tudo junto</button><button class="btn primario" id="ppS">Separar em outra OC</button></div>`);
+    const fim = v => { m.remove(); ok(v); };
+    m.querySelector('#ppC').onclick = () => fim(undefined);
+    m.querySelector('#ppJ').onclick = () => fim(null);
+    m.querySelector('#ppS').onclick = () => { const v = Number(m.querySelector('#ppF').value) || null; try { localStorage.setItem('nox_pintor', String(v)); } catch {} fim(v); };
+  });
+}
+
 /* ---------- Conjuntos (defletores e afins) ----------
    O comprador escolhe o conjunto pronto (ex.: DF-002) e quantos vai fazer: o sistema abre as peças da estrutura
    com saldo em estoque e em pedido, sugere quanto comprar e inclui as linhas. No modo pintura entra uma linha
@@ -377,7 +395,18 @@ const ehCorte = p => (p.arquivos || []).some(a => a.finalidade === 'corte_dxf' |
 const chipsArq = arqs => { const f = new Set(arqs.map(a => a.finalidade));
   return ['corte_dxf', 'corte_pdf', 'dobra_pdf'].map(k => `<span class="tg ${f.has(k) ? 'ok' : 'neutro'}" title="${esc(arqs.find(a => a.finalidade === k)?.nome || 'sem arquivo')}">${f.has(k) ? '✓' : '—'} ${FIN[k]}</span>`).join(' '); };
 const servPintura = () => SERVS.find(s => s.situacao === 'ativo' && /PINTURA/i.test(s.nome));
-function abrirConjunto() {
+// Escolheu um conjunto (ex.: DF-002) como item comum: o conjunto não se compra inteiro, compram-se as peças
+// (corte e dobra, com os desenhos) e a pintura em OC separada. A linha some e abre o "+ Conjunto" já preenchido.
+function trocarPorConjunto(tr) {
+  const pid = Number(tr.querySelector('[data-k=produto_id]').value), q = lerNumero(tr.querySelector('[data-k=quantidade]')?.value) || 1;
+  if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove();
+  const tb = tr.parentElement; tr.remove(); if (!tb.querySelector(':scope > tr:not(.hist-precos)')) tb.insertAdjacentHTML('beforeend', linhaProduto());
+  recalcular();
+  abrirConjunto({ produto: pid, quantidade: q });
+  aviso(`${prod(pid)?.codigo || 'Este item'} é um conjunto: escolha as peças e o fornecedor da pintura (sai em OC separada)`);
+}
+
+function abrirConjunto(pre = {}) {
   const lista = PRODS.filter(p => CONJ.has(p.id) && p.situacao === 'ativo').sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
   const sp = servPintura(), ultimo = (() => { try { return Number(localStorage.getItem('nox_pintor')) || null; } catch { return null; } })();
   const pintor0 = ultimo && forn(ultimo) ? ultimo : sp?.fornecedor_id || '';
@@ -431,6 +460,7 @@ function abrirConjunto() {
     D = data; desenhar();
   };
   m.querySelector('#cjP').onchange = carregar;
+  if (pre.produto) { m.querySelector('#cjP').value = pre.produto; m.querySelector('#cjQ').value = num(pre.quantidade || 1); carregar(); }
   m.querySelector('#cjQ').oninput = desenhar;
   m.querySelector('#cjF').onchange = desenhar;
   m.querySelector('#cjN').onclick = () => m.remove();
@@ -1027,9 +1057,9 @@ const cfg = {
     antes.parentNode.insertBefore(box, antes);
     if (editavel && podeEd) {
       m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaProduto()); };
-      m.querySelector('#addConj')?.addEventListener('click', abrirConjunto);
+      m.querySelector('#addConj')?.addEventListener('click', () => abrirConjunto());
       box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { const tr = e.target.closest('tr'); if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove(); tr.remove(); recalcular(); } });
-      box.addEventListener('change', e => { if (e.target.dataset.k === 'tipo_linha') { aoMudarTipo(e.target.closest('tr')); return recalcular(); } if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else aoEscolherProduto(tr); } recalcular(); });
+      box.addEventListener('change', e => { if (e.target.dataset.k === 'tipo_linha') { aoMudarTipo(e.target.closest('tr')); return recalcular(); } if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else if (CONJ.has(Number(e.target.value))) trocarPorConjunto(tr); else aoEscolherProduto(tr); } recalcular(); });
       box.addEventListener('input', recalcular);
       ['frete', 'outras_despesas', 'desconto'].forEach(id => m.querySelector('#f_' + id)?.addEventListener('input', recalcular));
       prazoLivre(m);
@@ -1060,12 +1090,31 @@ const cfg = {
     if (itens.some(i => i.linha === 'servico' && !i.servico_id)) return 'Escolha o serviço (ou cadastre em "+ cadastrar serviço")';
     if (itens.some(i => !i.produto_id && !i.descricao)) return 'Item sem cadastro precisa de descrição';
     if (itens.some(i => i.tipo_item === 'servico_usinagem' && !i.produto_id)) return 'Serviço de usinagem: escolha a peça que volta usinada';
+    const cj = itens.find(i => CONJ.has(i.produto_id));
+    if (cj) return `${prod(cj.produto_id)?.codigo || 'Item'} é um conjunto: tire esta linha e use "+ Conjunto (DF)" (entram as peças com os desenhos, e a pintura sai em outra OC)`;
     const c = CONTAS.find(x => x.id === d.conta_bancaria_id); if (c && c.empresa_id !== d.empresa_id) return 'A conta prevista é de outra empresa';
     return null;
   },
   async salvar(dados, r, m, novo) {
     const editavel = novo || EDITAVEL.includes(r.situacao);
-    const { data, error } = await db.rpc('pedido_compra_salvar', { p_pedido: { ...dados, id: novo ? null : r.id }, p_itens: editavel ? lerItens() : null });
+    let itens = editavel ? lerItens() : null;
+    // peças + pintura no mesmo pedido: a pintura vai para outra OC (outro fornecedor), as peças ficam neste
+    const ehPint = i => i.servico_id && /PINTURA/i.test(serv(i.servico_id)?.nome || '');
+    if (itens && itens.some(ehPint) && itens.some(i => !i.servico_id)) {
+      const fp = await escolherPintor(itens.filter(ehPint));
+      if (fp === undefined) throw new Error('Salvamento cancelado');
+      if (fp) {
+        const { data: idP, error: eP } = await db.rpc('pedido_compra_salvar', { p_pedido: { empresa_id: dados.empresa_id, fornecedor_id: fp,
+          observacoes_internas: `Pintura separada do pedido ${r.numero || 'novo'} (peças de corte e dobra ficam lá)` }, p_itens: itens.filter(ehPint) });
+        if (eP) throw eP;
+        itens = itens.filter(i => !ehPint(i));
+        modalAtual.querySelectorAll('#itens > table > tbody > tr:not(.hist-precos)').forEach(tr => { const s = Number(tr.querySelector('[data-k=servico_id]')?.value);
+          if (s && /PINTURA/i.test(serv(s)?.nome || '')) { if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove(); tr.remove(); } });
+        const { data: n } = await db.from('pedidos_compra').select('numero').eq('id', idP).maybeSingle();
+        setTimeout(() => aviso(`Pintura separada na ${n?.numero || 'nova OC'} (${nomeComFantasia(forn(fp))}), em rascunho`), 700);
+      }
+    }
+    const { data, error } = await db.rpc('pedido_compra_salvar', { p_pedido: { ...dados, id: novo ? null : r.id }, p_itens: itens });
     if (error) throw error;
     sujo = false;
     if (editavel && lerItens().some(i => !i.categoria_financeira_id)) setTimeout(() => aviso('Rascunho salvo com pendência: item sem categoria financeira (precisa antes de enviar para aprovação)', true), 600);
