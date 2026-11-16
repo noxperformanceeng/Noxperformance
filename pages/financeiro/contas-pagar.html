@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162047">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162054">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162047"></script>
-<script src="../../assets/js/ui.js?v=202611162047"></script>
-<script src="../../assets/js/auth.js?v=202611162047"></script>
-<script src="../../assets/js/layout.js?v=202611162047"></script>
-<script src="../../assets/js/cadastro.js?v=202611162047"></script>
-<script src="../../assets/js/comprovante.js?v=202611162047"></script>
+<script src="../../assets/js/supabase.js?v=202611162054"></script>
+<script src="../../assets/js/ui.js?v=202611162054"></script>
+<script src="../../assets/js/auth.js?v=202611162054"></script>
+<script src="../../assets/js/layout.js?v=202611162054"></script>
+<script src="../../assets/js/cadastro.js?v=202611162054"></script>
+<script src="../../assets/js/comprovante.js?v=202611162054"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -314,11 +314,17 @@ function htmlAnexos(r) {
   return `<div class="secao">Anexos${ls.length ? ' · ' + ls.length : ''}</div>
     ${ls.length ? `<table class="lista-mini"><tbody>${ls.map(a => `<tr><td><a href="#" data-anexo="${a.id}" style="color:var(--destaque)">${esc(a.nome)}</a></td>
       <td><span class="tg neutro">${esc(CAT_ANEXO[a.categoria] || a.categoria)}</span>${a.pagamento_id ? ' <small class="sub">do pagamento de ' + dataCurta((extraAtual.pagamentos[r.id] || []).find(p => p.id === a.pagamento_id)?.data_pagamento) + '</small>' : ''}</td>
-      <td class="sub">${dataHoraBR(a.criado_em)}</td>${podeExcluirAnexo(a) ? `<td><button type="button" class="btn discreto fino" data-anexo-rm="${a.id}">Excluir</button></td>` : '<td></td>'}</tr>`).join('')}</tbody></table>`
+      <td class="sub">${dataHoraBR(a.criado_em)}${a.conferencia?.substituido_por ? ' <span class="tg neutro">substituído</span>' : divergente(a) ? ' <span class="tg erro">divergente</span>' : ''}</td>${podeExcluirAnexo(a) ? `<td><button type="button" class="btn discreto fino" data-anexo-rm="${a.id}">Excluir</button></td>` : '<td></td>'}</tr>
+      ${divergente(a) ? `<tr><td colspan="4" style="background:#fdeceb;padding:6px 8px"><small><b>Não bateu:</b> ${(a.conferencia.itens || []).filter(i => !i.ok).map(i => esc(i.item + ': ' + i.detalhe)).join(' · ')}
+        ${a.conferencia.justificativa ? '<br><b>Justificativa:</b> ' + esc(a.conferencia.justificativa) : ''}<br>Se o comprovante estiver errado (trocado, de outro pagamento, sem o valor), troque pelo certo. Se estiver certo, o master dá ciente.</small>
+        ${podeAnexar ? `<label class="btn fino" style="cursor:pointer;margin-left:6px">Trocar comprovante<input type="file" data-trocar="${a.id}" accept="application/pdf,image/*" hidden></label>` : ''}</td></tr>` : ''}`).join('')}</tbody></table>`
       : '<p class="sub" style="margin:0 0 6px">Nenhum arquivo. Anexe o comprovante do pagamento, o boleto ou a nota.</p>'}
     ${podeAnexar ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">${selCatAnexo('anCat', ABERTOS.includes(r.situacao) ? 'boleto' : 'comprovante')}
       <label class="btn fino" style="cursor:pointer">+ Anexar arquivo<input type="file" id="anArq" multiple accept="application/pdf,image/*,.xml" hidden></label><small class="sub">PDF ou imagem, até 15 MB</small></div>` : ''}`;
 }
+let ultimoAnexoId = null;
+// Comprovante que não bateu e ainda está com o master (sem ciente e sem troca)
+const divergente = a => a.categoria === 'comprovante' && a.conferencia?.ok === false && !a.ciente_em;
 async function anexarArquivos(r, arquivos, categoria, pagamentoId, conferencia) {
   let n = 0;
   for (const f of arquivos) {
@@ -327,9 +333,9 @@ async function anexarArquivos(r, arquivos, categoria, pagamentoId, conferencia) 
     const caminho = `pagar/${r.empresa_id}/${r.id}/${Date.now()}_${limpo}`;
     const up = await db.storage.from('financeiro').upload(caminho, f, { contentType: f.type || undefined });
     if (up.error) { aviso(f.name + ': ' + up.error.message, true); continue; }
-    const { error } = await db.from('titulos_anexos').insert({ tipo: 'pagar', titulo_id: r.id, pagamento_id: pagamentoId || null, categoria, nome: f.name, caminho, mime: f.type || null, tamanho: f.size, conferencia: conferencia || null });
+    const { data: ins, error } = await db.from('titulos_anexos').insert({ tipo: 'pagar', titulo_id: r.id, pagamento_id: pagamentoId || null, categoria, nome: f.name, caminho, mime: f.type || null, tamanho: f.size, conferencia: conferencia || null }).select('id').single();
     if (error) { aviso(f.name + ': ' + error.message, true); continue; }
-    n++;
+    ultimoAnexoId = ins?.id; n++;
   }
   return n;
 }
@@ -349,6 +355,23 @@ function ligarAnexos(m, r) {
     if (error || !data?.length) return aviso('Não excluiu: ' + (error?.message || 'só quem enviou o arquivo (até 7 dias) ou o master pode excluir'), true);
     const st = await db.storage.from('financeiro').remove([x.caminho]);
     aviso(st.error ? 'Anexo tirado do título, mas o arquivo ficou no armazenamento: ' + st.error.message : 'Anexo excluído', !!st.error);
+    m.remove(); cfg.recarregar();
+  });
+  m.querySelectorAll('[data-trocar]').forEach(inpT => inpT.onchange = async () => {
+    const arq = inpT.files[0]; inpT.value = ''; if (!arq) return;
+    const x = (extraAtual.anexos[r.id] || []).find(y => y.id === Number(inpT.dataset.trocar));
+    const pg = (extraAtual.pagamentos[r.id] || []).find(p => p.id === x.pagamento_id);
+    if (!pg) return aviso('Não achei o pagamento deste comprovante', true);
+    const forn = FORN.find(f => f.v === r.fornecedor_id);
+    const conf = await conferirComTela(arq, { valor: Number(pg.valor) + Number(pg.juros || 0) - Number(pg.desconto || 0), data: pg.data_pagamento,
+      nome: forn?.nome || r.origem_ref?.fornecedor_tiny || colaborador(r) || '', fantasia: forn?.fantasia, doc: forn?.doc,
+      apelidos: apelidosDe(APELIDOS, r.fornecedor_id, r.origem_ref?.fornecedor_tiny) }, 'Trocar comprovante');
+    if (!conf) return;
+    ultimoAnexoId = null;
+    if (!await anexarArquivos(r, [arq], 'comprovante', pg.id, conf) || !ultimoAnexoId) return;
+    const { error } = await db.rpc('comprovante_trocar', { p_antigo: x.id, p_novo: ultimoAnexoId });
+    if (error) return aviso('O novo foi anexado, mas o antigo continua pendente: ' + error.message, true);
+    aviso(conf.ok ? 'Comprovante trocado: confere e saiu das pendências' : 'Comprovante trocado: o novo também diverge e foi para o master com a justificativa', !conf.ok);
     m.remove(); cfg.recarregar();
   });
   const inp = m.querySelector('#anArq');
@@ -392,7 +415,7 @@ async function registrarPagamento(r) {
 }
 
 // Lê o comprovante, mostra o que bateu e o que não bateu; divergência só segue com justificativa
-async function conferirComTela(arquivo, esperado) {
+async function conferirComTela(arquivo, esperado, rotulo) {
   const m = abrirModal(`<h2>Conferindo o comprovante…</h2><p class="sub" id="cfSt">Lendo ${esc(arquivo.name)} (pode levar alguns segundos em foto)</p>`);
   let itens, texto = '';
   try { texto = await lerComprovante(arquivo); itens = conferirComprovante(texto, esperado); }
@@ -405,7 +428,7 @@ async function conferirComTela(arquivo, esperado) {
       ${tudo ? '' : `<div class="campo"><label>Justificativa para registrar mesmo assim *</label><textarea id="cfJ" rows="2" placeholder="ex.: pago pelo app com o nome fantasia; valor com juros do banco"></textarea></div>
       ${itens.some(x => x.item === 'Fornecedor' && !x.ok) ? '<p class="sub" style="margin:4px 0 0">Se for o mesmo fornecedor com outro nome (razão social x nome fantasia), diga isso na justificativa: quando o gestor der ciente, o sistema aprende esse nome e não bloqueia de novo.</p>' : ''}`}
       ${texto ? `<details style="margin-top:6px"><summary class="sub">Texto lido do comprovante</summary><pre style="font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto">${esc(texto.slice(0, 3000))}</pre></details>` : ''}
-      <div class="acoes"><button class="btn" id="cfN">Voltar</button><button class="btn primario" id="cfS">${tudo ? 'Registrar pagamento' : 'Registrar com justificativa'}</button></div>`;
+      <div class="acoes"><button class="btn" id="cfN">Voltar</button><button class="btn primario" id="cfS">${tudo ? (rotulo || 'Registrar pagamento') : (rotulo ? rotulo + ' com justificativa' : 'Registrar com justificativa')}</button></div>`;
     m.querySelector('#cfN').onclick = () => { m.remove(); res(null); };
     m.querySelector('#cfS').onclick = () => {
       const j = m.querySelector('#cfJ')?.value.trim();
@@ -643,6 +666,7 @@ const cfg = {
     { id: 'produto_sem_pedido', nome: 'Compra de produto sem pedido', cor: 'alerta',
       teste: (r, e) => ['manual', 'recorrente'].includes(r.origem) && [r.categoria_financeira_id, ...(e.rateio[r.id] || []).map(x => x.categoria_financeira_id)].some(id => cat(id)?.aplica_produtos) },
     { id: 'sem_codigo', nome: 'Boleto sem código de barras', cor: 'neutro', teste: r => ABERTOS.includes(r.situacao) && forma(r.forma_pagamento_id)?.exige_codigo && !r.codigo_barras },
+    { id: 'comp_divergente', nome: 'Comprovante divergente', cor: 'erro', teste: (r, e) => (e.anexos[r.id] || []).some(divergente) },
     { id: 'sem_comprovante', nome: 'Pago sem comprovante', cor: 'neutro', teste: (r, e) => r.situacao === 'pago' && r.data_pagamento >= '2026-10-23' && !(e.anexos[r.id] || []).some(a => a.categoria === 'comprovante') },
     { id: 'nao_conc', nome: 'Pago e não conciliado', cor: 'neutro', teste: (r, e) => (e.pagamentos[r.id] || []).some(p => !p.estornado && !p.conciliado) }
   ],
