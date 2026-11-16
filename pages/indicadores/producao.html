@@ -6,8 +6,8 @@
 <title>Indicadores de produção · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161943">
-<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611161943">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611161949">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611161949">
 <style>
 .ip-filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
 .ip-filtros label { display: block; font-size: 12px; color: var(--texto-suave); margin-bottom: 3px; }
@@ -20,6 +20,15 @@
 .ip-card.amarelo { background: #fff6e0; border-color: #f2cf7a; } .ip-card.amarelo b { color: #9c5700; }
 .ip-card.vermelho { background: #fdecee; border-color: #f2a7b0; } .ip-card.vermelho b { color: #b42318; }
 .ip-card.situacao b { font-size: 18px; margin-top: 10px; }
+.ip-topo { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 14px; align-items: stretch; margin-bottom: 14px; }
+.ip-topo .ip-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; align-content: stretch; }
+.ip-topo .ip-card { display: flex; flex-direction: column; justify-content: center; }
+.ip-card.situacao { grid-column: span 2; } .ip-card.situacao b { font-size: 22px; margin-top: 6px; }
+@media (max-width: 640px) { .ip-topo .ip-cards { grid-template-columns: 1fr 1fr; } }
+.ip-velo { margin: 0; display: flex; flex-direction: column; justify-content: center; }
+.ip-velo svg { width: 100%; height: auto; display: block; }
+.ip-velo text { font-family: var(--fonte, Inter, sans-serif); }
+@media (max-width: 900px) { .ip-topo { grid-template-columns: 1fr; } }
 .ip-graf { width: 100%; height: auto; display: block; }
 .ip-graf text { font: 11px var(--fonte, Inter, sans-serif); fill: #6b7280; }
 .ip-leg { display: flex; gap: 14px; font-size: 12px; color: var(--texto-suave); margin-top: 4px; flex-wrap: wrap; }
@@ -42,12 +51,20 @@
       <div><label for="fMaq">Máquina</label><select id="fMaq"></select></div>
       <div><label for="fDe">De</label><input type="date" id="fDe"></div>
       <div><label for="fAte">Até</label><input type="date" id="fAte"></div>
+      <div><label for="fComp">Comparar com</label><select id="fComp"><option value="">Sem comparação</option><option value="anterior">Período anterior</option>
+        <option value="ano">Mesmo período do ano passado</option><option value="outro">Outro período…</option></select></div>
+      <div class="ip-outro" hidden><label for="cDe">Comparar de</label><input type="date" id="cDe"></div>
+      <div class="ip-outro" hidden><label for="cAte">até</label><input type="date" id="cAte"></div>
     </div></div>
   <div class="fb-abas" id="abas"></div>
 
   <!-- Painel: o que vai para a apresentação -->
   <section id="vPainel">
-    <div class="ip-cards" id="cards"></div>
+    <div class="ip-topo"><section class="fb-card ip-velo" id="velo"></section><div class="ip-cards" id="cards"></div></div>
+    <section class="fb-card" id="secComp" hidden><h2>Comparativo</h2><div id="tComp"></div></section>
+    <section class="fb-card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2>Evolução da ocupação</h2><select id="fEvo" style="width:auto"><option value="mes">últimos 12 meses</option><option value="semana">últimas 12 semanas</option></select></div>
+      <p class="sub" style="margin:2px 0 6px">Até a data final escolhida, contando a partir do primeiro registro da máquina. Usa a meta atual.</p><div id="gEvo"></div></section>
     <section class="fb-card"><h2>Ocupação por dia × meta</h2><div id="gOcup"></div>
       <div class="ip-leg"><span><i style="background:#2f9e5b"></i>na meta</span><span><i style="background:#e3a008"></i>atenção</span><span><i style="background:#cf3543"></i>abaixo</span><span><i style="background:none;border-top:2px dashed #157f3b;height:0;border-radius:0"></i>meta</span></div></section>
     <div class="ip-dupla">
@@ -110,10 +127,10 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161943"></script>
-<script src="../../assets/js/ui.js?v=202611161943"></script>
-<script src="../../assets/js/auth.js?v=202611161943"></script>
-<script src="../../assets/js/layout.js?v=202611161943"></script>
+<script src="../../assets/js/supabase.js?v=202611161949"></script>
+<script src="../../assets/js/ui.js?v=202611161949"></script>
+<script src="../../assets/js/auth.js?v=202611161949"></script>
+<script src="../../assets/js/layout.js?v=202611161949"></script>
 <script>
 /* Indicadores de produção · ocupação das máquinas (era a planilha da solda a laser).
    Disponível do dia = exceção do dia, ou horas do dia da semana da máquina. Trabalhado = soma (fim − início).
@@ -127,7 +144,7 @@ const pc = (v, c = 1) => v == null ? '—' : nf(v * 100, c) + '%';
 const hm = h => { const m = Math.round((h || 0) * 60); return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`; };
 const horas = r => { const [a, b] = [r.inicio, r.fim].map(t => { const [h, m] = t.split(':'); return +h + m / 60; }); return ((b - a) % 24 + 24) % 24; };
 const dsem = s => (new Date(s + 'T12:00').getDay() + 6) % 7;   // 0 = segunda
-let CTX = null, MAQS = [], MAQ = null, USOS = [], EXC = [], aba = 'painel';
+let CTX = null, MAQS = [], MAQ = null, TODOS = [], USOS = [], EXC = [], aba = 'painel';   // TODOS = histórico carregado; USOS = só o período
 
 const faixa = v => v == null || !MAQ ? '' : v >= MAQ.meta ? 'verde' : v >= MAQ.atencao ? 'amarelo' : 'vermelho';
 
@@ -139,21 +156,34 @@ async function carregar() {
   $('#fMaq').innerHTML = MAQS.map(x => `<option value="${x.id}">${esc(x.nome)}</option>`).join('') || '<option value="">Nenhuma máquina</option>';
   if (MAQS.some(x => String(x.id) === sel)) $('#fMaq').value = sel;
   MAQ = MAQS.find(x => String(x.id) === $('#fMaq').value) || null;
-  if (!MAQ) { USOS = []; EXC = []; return desenhar(); }
-  const de = $('#fDe').value, ate = $('#fAte').value;
+  if (!MAQ) { TODOS = USOS = []; EXC = []; return desenhar(); }
+  const de = $('#fDe').value, ate = $('#fAte').value, cp = periodoComp();
+  const ini = [de, cp?.[0], somaDias(ate, -400)].filter(Boolean).sort()[0], fim = [ate, cp?.[1]].filter(Boolean).sort().pop();
   const [u, e] = await Promise.all([
-    db.from('maquinas_uso').select('*').eq('maquina_id', MAQ.id).gte('data', de).lte('data', ate).order('data').order('inicio'),
+    db.from('maquinas_uso').select('*').eq('maquina_id', MAQ.id).gte('data', ini).lte('data', fim).order('data').order('inicio'),
     db.from('maquinas_excecoes').select('*').eq('maquina_id', MAQ.id).order('data', { ascending: false })]);
   if (u.error || e.error) return aviso('Não carregou: ' + (u.error || e.error).message, true);
-  USOS = u.data || []; EXC = e.data || [];
+  TODOS = u.data || []; EXC = e.data || [];
+  USOS = TODOS.filter(x => x.data >= de && x.data <= ate);
   desenhar();
 }
 
-function calcular() {
-  const de = $('#fDe').value, ate = $('#fAte').value, dias = [];
+const somaDias = (s, n) => { const d = new Date(s + 'T12:00'); d.setDate(d.getDate() + n); return iso(d); };
+const nDias = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T12:00')) / 864e5) + 1;
+function periodoComp() {
+  const de = $('#fDe').value, ate = $('#fAte').value, m = $('#fComp').value;
+  document.querySelectorAll('.ip-outro').forEach(e => e.hidden = m !== 'outro');
+  if (!m || !de || !ate || de > ate) return null;
+  if (m === 'anterior') return [somaDias(de, -nDias(de, ate)), somaDias(de, -1)];
+  if (m === 'ano') return [de, ate].map(s => (+s.slice(0, 4) - 1) + s.slice(4).replace('02-29', '02-28'));
+  const a = $('#cDe').value, b = $('#cAte').value; return a && b && a <= b ? [a, b] : null;
+}
+
+function calcular(de = $('#fDe').value, ate = $('#fAte').value) {
+  const dias = [];
   if (!MAQ || !de || !ate || de > ate) return { dias, disp: 0, trab: 0, pecas: 0, ocup: null };
   for (let d = new Date(de + 'T12:00'); iso(d) <= ate && dias.length < 400; d.setDate(d.getDate() + 1)) {
-    const s = iso(d), ex = EXC.find(x => x.data === s), us = USOS.filter(x => x.data === s);
+    const s = iso(d), ex = EXC.find(x => x.data === s), us = TODOS.filter(x => x.data === s);
     const disp = ex ? +ex.horas : +MAQ.horas_dia[dsem(s)], trab = us.reduce((t, x) => t + horas(x), 0);
     dias.push({ s, disp, trab, pecas: us.reduce((t, x) => t + +x.quantidade, 0), ocup: disp > 0 ? trab / disp : null, ex });
   }
@@ -177,10 +207,12 @@ function painel(r) {
   $('#cards').innerHTML = `
     <div class="ip-card"><small>Disponibilidade</small><b>${nf(r.disp)} h</b></div>
     <div class="ip-card"><small>Horas trabalhadas</small><b>${nf(r.trab, 2)} h</b><span>${hm(r.trab)}</span></div>
-    <div class="ip-card ${f}"><small>Ocupação</small><b>${pc(r.ocup, 2)}</b></div>
-    <div class="ip-card"><small>Meta</small><b>${pc(MAQ?.meta, 0)}</b><span>atenção a partir de ${pc(MAQ?.atencao, 0)}</span></div>
     <div class="ip-card"><small>Peças produzidas</small><b>${nf(r.pecas, 0)}</b></div>
+    <div class="ip-card"><small>Meta</small><b>${pc(MAQ?.meta, 0)}</b><span>atenção a partir de ${pc(MAQ?.atencao, 0)}</span></div>
     <div class="ip-card situacao ${f}"><small>Situação</small><b>${sit}</b></div>`;
+  const cp = periodoComp(), rc = cp ? calcular(cp[0], cp[1]) : null;
+  $('#velo').innerHTML = velocimetro(r.ocup, rc?.ocup);
+  comparativo(r, rc, cp); evolucao();
   const cor = v => ({ verde: '#2f9e5b', amarelo: '#e3a008', vermelho: '#cf3543' })[faixa(v)] || '#c9ced6';
   $('#gOcup').innerHTML = grafico(r.dias, [{ v: d => d.ocup, cor: d => cor(d.ocup) }], { pct: true, linha: MAQ?.meta });
   $('#gHoras').innerHTML = grafico(r.dias, [{ v: d => d.disp, cor: () => '#c9ced6' }, { v: d => d.trab, cor: () => '#1f2329' }], { W: 520 });
@@ -198,8 +230,61 @@ function painel(r) {
     : '<div class="fb-vazio">Escolha um período.</div>';
 }
 
+// Velocímetro (como na planilha): 0 a 100%, faixas vermelho / amarelo / verde conforme a meta configurada
+function velocimetro(v, antes) {
+  if (!MAQ) return '';
+  const cx = 200, cy = 190, R = 150, w = 26, ang = p => Math.PI * (1 - Math.min(Math.max(p, 0), 1));
+  const pt = (p, r) => [cx + r * Math.cos(ang(p)), cy - r * Math.sin(ang(p))].map(n => n.toFixed(1)).join(' ');
+  const arco = (a, b, c) => b > a ? `<path d="M ${pt(a, R)} A ${R} ${R} 0 0 1 ${pt(b, R)}" fill="none" stroke="${c}" stroke-width="${w}"/>` : '';
+  let s = arco(0, MAQ.atencao, '#cf3543') + arco(MAQ.atencao, MAQ.meta, '#e3a008') + arco(MAQ.meta, 1, '#2f9e5b');
+  for (let i = 0; i <= 10; i++) { const p = i / 10;
+    s += `<line x1="${pt(p, R - w / 2 - 2).split(' ')[0]}" y1="${pt(p, R - w / 2 - 2).split(' ')[1]}" x2="${pt(p, R - w / 2 - (i % 2 ? 8 : 14)).split(' ')[0]}" y2="${pt(p, R - w / 2 - (i % 2 ? 8 : 14)).split(' ')[1]}" stroke="#9aa1ab" stroke-width="${i % 2 ? 1 : 2}"/>`;
+    if (i % 2 === 0) { const [x, y] = pt(p, R + w / 2 + 14).split(' '); s += `<text x="${x}" y="${+y + 4}" text-anchor="middle" font-size="12" fill="#6b7280">${i * 10}%</text>`; } }
+  const [mx1, my1] = pt(MAQ.meta, R - w / 2 - 4).split(' '), [mx2, my2] = pt(MAQ.meta, R + w / 2 + 4).split(' ');
+  s += `<line x1="${mx1}" y1="${my1}" x2="${mx2}" y2="${my2}" stroke="#157f3b" stroke-width="3"><title>Meta ${pc(MAQ.meta, 0)}</title></line>`;
+  const [nx, ny] = pt(v || 0, R - 30).split(' ');
+  s += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="#1f2329" stroke-width="5" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="11" fill="#1f2329"/><circle cx="${cx}" cy="${cy}" r="4" fill="#fff"/>`;
+  const c = ({ verde: '#157f3b', amarelo: '#9c5700', vermelho: '#b42318' })[faixa(v)] || '#1f2329';
+  s += `<text x="${cx}" y="${cy + 46}" text-anchor="middle" font-size="38" font-weight="700" fill="${c}">${pc(v, 2)}</text>
+    <text x="${cx}" y="${cy + 68}" text-anchor="middle" font-size="12" fill="#6b7280" letter-spacing="1">OCUPAÇÃO DO EQUIPAMENTO</text>`;
+  if (antes !== undefined) { const dif = v != null && antes != null ? (v - antes) * 100 : null;
+    s += `<text x="${cx}" y="${cy + 88}" text-anchor="middle" font-size="13" fill="#6b7280">comparado: ${pc(antes, 2)}${dif == null ? '' : ` · <tspan fill="${dif >= 0 ? '#157f3b' : '#b42318'}" font-weight="600">${dif >= 0 ? '▲ +' : '▼ '}${nf(dif, 2)} p.p.</tspan>`}</text>`; }
+  return `<svg viewBox="0 0 400 ${antes !== undefined ? 290 : 270}" role="img" aria-label="Ocupação ${pc(v, 2)}">${s}</svg>`;
+}
+
+// Comparativo: período escolhido × período de comparação
+function comparativo(r, rc, cp) {
+  $('#secComp').hidden = !rc; if (!rc) return;
+  const br = s => s.split('-').reverse().join('/');
+  const lin = (rot, a, b, f, pp, neutro) => { const d = a != null && b != null ? a - b : null;
+    const dt = d == null ? '—' : pp ? `${d >= 0 ? '+' : ''}${nf(d * 100, 2)} p.p.` : `${d >= 0 ? '+' : ''}${f(d)}${b ? ` (${d >= 0 ? '+' : ''}${nf(d / b * 100, 0)}%)` : ''}`;
+    return `<tr><td>${rot}</td><td class="num">${a == null ? '—' : f(a)}</td><td class="num">${b == null ? '—' : f(b)}</td><td class="num ${neutro || d == null || d === 0 ? '' : d > 0 ? 'ok' : 'ruim'}">${dt}</td></tr>`; };
+  $('#tComp').innerHTML = `<table class="fb-tab"><thead><tr><th></th><th class="num">${br($('#fDe').value)} a ${br($('#fAte').value)}</th><th class="num">${br(cp[0])} a ${br(cp[1])}</th><th class="num">Diferença</th></tr></thead><tbody>
+    ${lin('Ocupação', r.ocup, rc.ocup, v => pc(v, 2), true)}${lin('Horas trabalhadas', r.trab, rc.trab, v => hm(Math.abs(v)).replace(/^/, v < 0 ? '−' : ''))}
+    ${lin('Horas disponíveis', r.disp, rc.disp, v => nf(v) + ' h', false, true)}${lin('Peças produzidas', r.pecas, rc.pecas, v => nf(v, 0))}
+    ${lin('Peças por hora trabalhada', r.trab ? r.pecas / r.trab : null, rc.trab ? rc.pecas / rc.trab : null, v => nf(v, 1))}</tbody></table>`;
+}
+
+// Evolução: ocupação por mês (12) ou semana (12) terminando na data final
+function evolucao() {
+  const ate = $('#fAte').value; if (!ate || !MAQ) return $('#gEvo').innerHTML = '';
+  const MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'], baldes = [];
+  if ($('#fEvo').value === 'semana') {
+    let fim = somaDias(ate, (6 - dsem(ate)));   // domingo da semana da data final
+    for (let i = 0; i < 12; i++) { const ini = somaDias(fim, -6); baldes.unshift({ ini, fim: fim > ate ? ate : fim, rot: ddmm(ini) }); fim = somaDias(ini, -1); }
+  } else {
+    let [a, m] = [+ate.slice(0, 4), +ate.slice(5, 7)];
+    for (let i = 0; i < 12; i++) { const ini = `${a}-${String(m).padStart(2, '0')}-01`, ult = iso(new Date(a, m, 0, 12));
+      baldes.unshift({ ini, fim: ult > ate ? ate : ult, rot: `${MES[m - 1]}/${String(a).slice(2)}` }); if (--m === 0) { m = 12; a--; } }
+  }
+  const prim = TODOS[0]?.data;   // começa a contar do 1º registro da máquina (antes disso não havia acompanhamento)
+  const pts = baldes.map(b => { const r = prim && b.fim >= prim ? calcular(b.ini < prim ? prim : b.ini, b.fim) : {}; return { s: b.ini, rot: b.rot, ocup: r.trab ? r.ocup : null }; });
+  const cor = d => ({ verde: '#2f9e5b', amarelo: '#e3a008', vermelho: '#cf3543' })[faixa(d.ocup)] || '#c9ced6';
+  $('#gEvo').innerHTML = grafico(pts, [{ v: d => d.ocup, cor }], { pct: true, linha: MAQ.meta, rotulos: true });
+}
+
 // Gráfico de barras em SVG (sem biblioteca): uma barra por série em cada dia; linha tracejada opcional (meta)
-function grafico(dias, series, { pct, linha, inteiro, W = 900 }) {
+function grafico(dias, series, { pct, linha, inteiro, W = 900, rotulos }) {
   if (!dias.length) return '<div class="fb-vazio">Sem dados.</div>';
   const H = W < 900 ? 260 : 230, E = 44, B = 26, T = 10, n = dias.length, larg = (W - E - 8) / n;
   let max = Math.max(...dias.flatMap(d => series.map(s => s.v(d) || 0)), linha || 0);
@@ -211,8 +296,9 @@ function grafico(dias, series, { pct, linha, inteiro, W = 900 }) {
   dias.forEach((d, i) => {
     series.forEach((se, j) => { const v = se.v(d); if (!v) return;
       const x = E + 4 + i * larg + larg * .15 + j * bl;
-      s += `<rect x="${x}" y="${y(v)}" width="${Math.max(bl - 1, 1)}" height="${H - B - y(v)}" rx="2" fill="${se.cor(d)}"><title>${ddmm(d.s)}: ${fmt(v)}</title></rect>`; });
-    if (i % passo === 0) s += `<text x="${E + 4 + i * larg + larg / 2}" y="${H - 8}" text-anchor="middle">${ddmm(d.s)}</text>`;
+      s += `<rect x="${x}" y="${y(v)}" width="${Math.max(bl - 1, 1)}" height="${H - B - y(v)}" rx="2" fill="${se.cor(d)}"><title>${d.rot || ddmm(d.s)}: ${fmt(v)}</title></rect>`;
+      if (rotulos) s += `<text x="${x + bl / 2}" y="${y(v) - 4}" text-anchor="middle" font-weight="600">${fmt(v)}</text>`; });
+    if (i % passo === 0) s += `<text x="${E + 4 + i * larg + larg / 2}" y="${H - 8}" text-anchor="middle">${d.rot || ddmm(d.s)}</text>`;
   });
   if (linha != null) s += `<line x1="${E}" x2="${W}" y1="${y(linha)}" y2="${y(linha)}" stroke="#157f3b" stroke-width="2" stroke-dasharray="6 4"/>`;
   return `<svg class="ip-graf" viewBox="0 0 ${W} ${H}" role="img">${s}</svg>`;
@@ -307,7 +393,7 @@ async function removerExc(id) {
   CTX = await iniciarTela(); if (!CTX) return;
   const h = new Date(); $('#fDe').value = iso(new Date(h.getFullYear(), h.getMonth(), 1)); $('#fAte').value = iso(h); $('#rData').value = iso(h);
   $('#fMaq').onchange = () => { try { localStorage.setItem('nox_ind_maq', $('#fMaq').value); } catch {} cfgDe = null; carregar(); };
-  $('#fDe').onchange = carregar; $('#fAte').onchange = carregar;
+  ['#fDe', '#fAte', '#fComp', '#cDe', '#cAte'].forEach(k => $(k).onchange = carregar); $('#fEvo').onchange = desenhar;
   $('#rSalvar').onclick = salvarUso; $('#cSalvar').onclick = salvarConfig; $('#cNova').onclick = novaMaquina; $('#eSalvar').onclick = salvarExc;
   await carregar();   // tempo real: a function carregar() global é chamada sozinha quando os dados mudam
 })();
