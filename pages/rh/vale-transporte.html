@@ -6,7 +6,7 @@
 <title>Vale-transporte · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611161717">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611162027">
 <style>
   .modal.largo { max-width: 980px; }
   .gerar-cab { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; margin: 8px 0 12px; align-items: end; }
@@ -19,12 +19,12 @@
 <body data-modulo="vale_transporte" data-titulo="Vale-transporte" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611161717"></script>
-<script src="../../assets/js/ui.js?v=202611161717"></script>
-<script src="../../assets/js/auth.js?v=202611161717"></script>
-<script src="../../assets/js/layout.js?v=202611161717"></script>
-<script src="../../assets/js/cadastro.js?v=202611161717"></script>
-<script src="../../assets/js/rh.js?v=202611161717"></script>
+<script src="../../assets/js/supabase.js?v=202611162027"></script>
+<script src="../../assets/js/ui.js?v=202611162027"></script>
+<script src="../../assets/js/auth.js?v=202611162027"></script>
+<script src="../../assets/js/layout.js?v=202611162027"></script>
+<script src="../../assets/js/cadastro.js?v=202611162027"></script>
+<script src="../../assets/js/rh.js?v=202611162027"></script>
 <script>
 /* =====================================================================
    Vale-transporte
@@ -76,7 +76,7 @@ const cfg = {
   secaoExtra: r => !r.id ? '' : `<div class="secao">Aprovação e financeiro</div>
     ${r.situacao === 'previsto' ? `<div class="aviso-vt">Este VT ainda <b>não está no contas a pagar</b>. Confira os valores e aprove para enviar ao financeiro (vencimento: ${dataCurta(r.data_pagamento || r.competencia)}).</div>
       ${CTX?.pode('vale_transporte', 'editar') ? `<button type="button" class="btn primario" onclick="aprovarVT([${r.id}])">Aprovar e enviar ao contas a pagar</button>` : ''}`
-    : r.situacao === 'confirmado' ? `<p class="sub" style="margin:0 0 6px">Aprovado: o valor de ${reais(r.valor_total)} está no contas a pagar (empresa do funcionário). O desconto foi para os Lançamentos.</p>
+    : r.situacao === 'confirmado' ? `<p class="sub" style="margin:0 0 6px">Aprovado: ${reais(r.valor_total)} está somado no título de VT do contas a pagar (empresa do funcionário). O desconto foi para os Lançamentos.</p>
       <button type="button" class="btn fino" onclick="abrirTituloVT(${r.id})">Ver no contas a pagar / rastreio</button>`
     : r.situacao === 'entregue' ? '<p class="sub" style="margin:0">Pago / recarregado.</p>' : '<p class="sub" style="margin:0">Cancelado.</p>'}`,
   acoesLote: [{ nome: 'Aprovar e enviar ao contas a pagar', dados: { situacao: 'confirmado' } }, { nome: 'Voltar para previsto', dados: { situacao: 'previsto' } }, { nome: 'Cancelar', dados: { situacao: 'cancelado' } }],
@@ -90,7 +90,7 @@ async function aprovarVT(ids, pai) {
   if (!ls.length) return aviso('Nenhum VT aguardando aprovação', true);
   const tot = ls.reduce((s, r) => s + Number(r.valor_total || 0), 0);
   const m = abrirModal(`<h2>Aprovar ${ls.length} VT(s)</h2>
-    <p class="sub" style="margin:0 0 8px">Ao aprovar, cada VT vira um título no <b>contas a pagar</b> da empresa do funcionário, e o desconto (6%, acerto e reembolso) vai para os Lançamentos.</p>
+    <p class="sub" style="margin:0 0 8px">Ao aprovar, os VTs entram somados em um título no <b>contas a pagar</b> (por empresa e vencimento, sem nomes), e o desconto (6%, acerto e reembolso) vai para os Lançamentos.</p>
     <table class="lista-mini"><thead><tr><th>Funcionário</th><th>Competência</th><th>Empresa</th><th class="num">VT</th><th class="num">Desconto</th></tr></thead><tbody>
     ${ls.map(r => `<tr><td>${esc(funcionario(r.funcionario_id)?.nome || '')}</td><td>${mesBR(r.competencia)}</td><td>${esc(CTX.empresas.find(e => e.id === r.empresa_id)?.nome || '')}</td>
       <td class="num">${reais(r.valor_total)}</td><td class="num">${reais(r.desconto)}</td></tr>`).join('')}</tbody></table>
