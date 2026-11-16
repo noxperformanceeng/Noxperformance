@@ -75,6 +75,8 @@ const falta = x => Math.max(0, Number(x.quantidade) - Number(x.quantidade_recebi
 const celRec = x => `<td class="num">${num(x.quantidade_recebida || 0)} / ${num(x.quantidade)}${falta(x) ? `<br><span class="tg alerta">falta ${num(falta(x))}</span>` : ''}${Number(x.quantidade_cancelada) ? `<br><span class="tg neutro">${num(x.quantidade_cancelada)} cancelado</span>` : ''}</td>`;
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+// IPI do item: (quantidade × unitário − desconto) × IPI %, arredondado em centavos (mesma conta do banco)
+const valorIpi = (base, pct) => Math.round(base * (Number(pct) || 0)) / 100;
 const hojeISO = () => new Date().toLocaleDateString('sv-SE');
 const somaDias = (iso, d) => { const x = new Date(iso + 'T12:00:00'); x.setDate(x.getDate() + d); return x.toLocaleDateString('sv-SE'); };
 let PAIS = [], SERVS = [], FORN = [], PRODS = [], CATS = [], CONDS = [], FORMAS = [], CONTAS = [], ALC = [], USU = [], EMPRESAS = [], PF = [], FICHAS = {}, ACOES = new Set(), CTX = null, modalAtual = null, ex = {}, sujo = false;
@@ -189,6 +191,7 @@ const linhaServ = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-tip
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
+  <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id)}</select></td>
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}
@@ -204,6 +207,7 @@ const linhaServico = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
+  <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id || CATS.find(c => c.codigo === CAT_USINAGEM)?.id)}</select></td>
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}
@@ -281,6 +285,7 @@ const linhaProduto = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
   <td style="width:76px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
+  <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id"${x.produto_id && !x.uso_consumo && prod(x.produto_id)?.categoria_financeira_id ? ' disabled title="Categoria do cadastro do produto"' : ''}>${optCats(x.categoria_financeira_id)}</select></td>
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}
@@ -300,31 +305,32 @@ function lerItens() {
     return { ...(srv ? { tipo_item: 'servico_usinagem', barra_mm: lerNumero(g('barra_mm').value) || null } : {}), linha: gen ? 'servico' : srv ? 'usinagem' : 'produto',
       produto_id: pid, servico_id: sid,
       descricao: srv ? g('descricao').value.trim() : gen ? [serv(sid)?.nome, det].filter(Boolean).join(' · ') : pid ? prod(pid)?.descricao : g('produto_id').value === 'avulso' ? g('descricao').value.trim() : '', unidade: g('unidade').value.trim() || null,
-      quantidade: lerNumero(g('quantidade').value) || 0, valor_unitario: lerNumero(g('valor_unitario').value) || 0, desconto: lerNumero(g('desconto').value) || 0,
+      quantidade: lerNumero(g('quantidade').value) || 0, valor_unitario: lerNumero(g('valor_unitario').value) || 0, desconto: lerNumero(g('desconto').value) || 0, ipi_pct: lerNumero(g('ipi_pct').value) || 0,
       categoria_financeira_id: Number(g('categoria_financeira_id').value) || null, uso_consumo: !srv && !gen && !!g('uso_consumo')?.checked,
       codigo_fornecedor: pid ? PF.find(x => x.produto_id === pid && x.fornecedor_id === Number(modalAtual.querySelector('#f_fornecedor_id')?.value))?.codigo_fornecedor || null : null };
   }).filter(x => x.produto_id || x.servico_id || (x.descricao && x.linha === 'produto') || x.valor_unitario);
 }
 function recalcular() {
   if (!modalAtual) return;
-  let t = 0;
+  let t = 0, ti = 0;
   modalAtual.querySelectorAll('#itens > table > tbody > tr:not(.hist-precos)').forEach(tr => {
     const q = lerNumero(tr.querySelector('[data-k=quantidade]').value) || 0, u = lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0, d = lerNumero(tr.querySelector('[data-k=desconto]').value) || 0;
-    const v = Math.round((q * u - d) * 100) / 100; t += v; tr.querySelector('[data-k=total]').textContent = reais(v);
+    const v = Math.round((q * u - d) * 100) / 100, vi = valorIpi(v, lerNumero(tr.querySelector('[data-k=ipi_pct]')?.value)); t += v; ti += vi;
+    tr.querySelector('[data-k=total]').innerHTML = reais(v) + (vi ? `<div class="ro">+ IPI ${reais(vi)}</div>` : '');
     if (tr.dataset.tipo === 'servico_usinagem') atualizarServico(tr);
     checarPreco(tr);
   });
   resumoMaterial();
   const v = id => lerNumero(modalAtual.querySelector('#f_' + id)?.value) || 0;
-  const total = t + v('frete') + v('outras_despesas') - v('desconto');
+  const total = t + ti + v('frete') + v('outras_despesas') - v('desconto');
   const fTot = modalAtual.querySelector('#f_valor_total'); if (fTot) fTot.value = total.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-  modalAtual.querySelector('#totPed').innerHTML = `<span>Itens <b>${reais(t)}</b></span><span>Frete + outras <b>${reais(v('frete') + v('outras_despesas'))}</b></span><span>Desconto <b>${reais(v('desconto'))}</b></span><span>Total do pedido <b>${reais(total)}</b></span>`;
+  modalAtual.querySelector('#totPed').innerHTML = `<span>Itens <b>${reais(t)}</b></span>${ti ? `<span>IPI <b>${reais(ti)}</b></span>` : ''}<span>Frete + outras <b>${reais(v('frete') + v('outras_despesas'))}</b></span><span>Desconto <b>${reais(v('desconto'))}</b></span><span>Total do pedido <b>${reais(total)}</b></span>`;
 }
 function trocarLinha(tr, html) {   // refaz a linha mantendo quantidade e preço digitados
-  const q = tr.querySelector('[data-k=quantidade]')?.value, u = tr.querySelector('[data-k=valor_unitario]')?.value;
+  const q = tr.querySelector('[data-k=quantidade]')?.value, u = tr.querySelector('[data-k=valor_unitario]')?.value, ip = tr.querySelector('[data-k=ipi_pct]')?.value;
   if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove();
   tr.insertAdjacentHTML('afterend', html); const n = tr.nextElementSibling; tr.remove();
-  if (q) n.querySelector('[data-k=quantidade]').value = q; if (u) n.querySelector('[data-k=valor_unitario]').value = u;
+  if (q) n.querySelector('[data-k=quantidade]').value = q; if (u) n.querySelector('[data-k=valor_unitario]').value = u; if (ip) n.querySelector('[data-k=ipi_pct]').value = ip;
   return n;
 }
 function aoMudarTipo(tr) {
@@ -354,6 +360,7 @@ function aoEscolherProduto(tr) {
   const pf = PF.find(x => x.produto_id === pid && x.fornecedor_id === fid), cf = pf?.codigo_fornecedor;
   // sem compra anterior: usa a cotação gravada no cadastro do produto (vínculo com este fornecedor)
   if (!up && pf?.preco != null && !lerNumero(vu.value)) vu.value = num(pf.preco);
+  const ip = tr.querySelector('[data-k=ipi_pct]'); if (ip && !ip.value && Number(pf?.ipi_pct)) ip.value = num(pf.ipi_pct);   // IPI da cotação deste fornecedor
   const cot = pf?.preco != null ? `cotação ${reais(pf.preco)}${pf.unidade_compra ? '/' + esc(pf.unidade_compra) : ''}${Number(pf.ipi_pct) ? ' + IPI ' + num(pf.ipi_pct) + '%' : ''}${pf.cotacao_data ? ' (' + dataCurta(pf.cotacao_data) + ')' : ''}` : '';
   info.innerHTML = [p.categoria_financeira_id ? '' : '<span class="tg alerta">produto sem categoria financeira no cadastro</span>', cf ? 'cód. fornecedor ' + esc(cf) : '', cot, up ? `último preço ${reais(up.v)} (${esc(up.n)} · ${dataCurta(up.d)}${up.f !== fid ? ' · outro fornecedor' : ''})` : ''].filter(Boolean).join(' · ');
   recalcular();
@@ -653,10 +660,13 @@ async function gerarPdf(r, baixar) {
   doc.setFont('helvetica', 'bold'); doc.text('Fornecedor', 14, 33); doc.setFont('helvetica', 'normal');
   doc.text([`${nomeComFantasia(f)}${f.cnpj ? ' · CNPJ ' + f.cnpj : ''}`, [r.contato_fornecedor || f.contato, r.email_fornecedor || f.email, r.whatsapp_fornecedor || f.telefone].filter(Boolean).join(' · '),
     [f.endereco, f.numero, f.bairro, f.cidade && (f.cidade + (f.uf ? '/' + f.uf : ''))].filter(Boolean).join(', ')].filter(Boolean), 14, 38);
-  doc.autoTable({ startY: 52, head: [['#', 'Código', 'Descrição', 'Un', 'Qtd', 'Unitário', 'Desconto', 'Total']],
-    body: itens.map((i, k) => [k + 1, i.codigo_fornecedor || prod(i.produto_id)?.codigo || '', i.descricao, i.unidade || '', num(i.quantidade), reais(i.valor_unitario), i.desconto ? reais(i.desconto) : '', reais(i.valor_total)]),
+  // IPI: colunas "IPI %" e "IPI" só quando algum item tem IPI; o total da linha fica sem IPI (o IPI soma no rodapé)
+  const comIpi = itens.some(i => Number(i.ipi_pct)), dir = { halign: 'right' };
+  doc.autoTable({ startY: 52, head: [['#', 'Código', 'Descrição', 'Un', 'Qtd', 'Unitário', 'Desconto', 'Total', ...(comIpi ? ['IPI %', 'IPI'] : [])]],
+    body: itens.map((i, k) => [k + 1, i.codigo_fornecedor || prod(i.produto_id)?.codigo || '', i.descricao, i.unidade || '', num(i.quantidade), reais(i.valor_unitario), i.desconto ? reais(i.desconto) : '', reais(i.valor_total),
+      ...(comIpi ? [Number(i.ipi_pct) ? num(i.ipi_pct) + '%' : '', Number(i.valor_ipi) ? reais(i.valor_ipi) : ''] : [])]),
     styles: { fontSize: 8, cellPadding: 1.5 }, headStyles: { fillColor: [40, 40, 40] },
-    columnStyles: { 0: { cellWidth: 7 }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } } });
+    columnStyles: { 0: { cellWidth: 7 }, 4: dir, 5: dir, 6: dir, 7: dir, 8: dir, 9: dir } });
   let y = doc.lastAutoTable.finalY + 6;
   const srv = itens.filter(i => i.tipo_item === 'servico_usinagem');
   if (srv.length) {
@@ -666,7 +676,7 @@ async function gerarPdf(r, baixar) {
       styles: { fontSize: 8, cellPadding: 1.5 }, headStyles: { fillColor: [90, 90, 90] }, columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } } });
     y = doc.lastAutoTable.finalY + 6;
   }
-  const tot = [['Itens', reais(r.valor_produtos)]]; if (Number(r.frete)) tot.push(['Frete', reais(r.frete)]); if (Number(r.outras_despesas)) tot.push(['Outras despesas', reais(r.outras_despesas)]);
+  const tot = [['Itens', reais(r.valor_produtos)]]; if (Number(r.valor_ipi)) tot.push(['IPI', reais(r.valor_ipi)]); if (Number(r.frete)) tot.push(['Frete', reais(r.frete)]); if (Number(r.outras_despesas)) tot.push(['Outras despesas', reais(r.outras_despesas)]);
   if (Number(r.desconto)) tot.push(['Desconto', '- ' + reais(r.desconto)]); tot.push(['TOTAL', reais(r.valor_total)]);
   doc.autoTable({ startY: y, body: tot, theme: 'plain', margin: { left: 130 }, styles: { fontSize: 9, cellPadding: 1 }, columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } } });
   y = doc.lastAutoTable.finalY + 6;
@@ -742,7 +752,8 @@ Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. 
 function abrirRecebimento(r, pai) {
   const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem' || i.servico_id), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
   const itens = (ex.itens[r.id] || []).map(i => ({ ...i, pend: Math.max(0, Number(i.quantidade) - Number(i.quantidade_recebida)) }));
-  const fatorExtra = Number(r.valor_produtos) ? (Number(r.frete) + Number(r.outras_despesas) - Number(r.desconto)) / Number(r.valor_produtos) : 0;
+  const baseItens = Number(r.valor_produtos) + Number(r.valor_ipi || 0), comIpi = itens.some(i => Number(i.valor_ipi));
+  const fatorExtra = baseItens ? (Number(r.frete) + Number(r.outras_despesas) - Number(r.desconto)) / baseItens : 0;
   const m = abrirModal(`<h2>${soServico ? 'Entrada do serviço' : 'Entrada da NF'} · ${esc(r.numero)}</h2>
     <p class="sub" style="margin:0 0 8px">Confira o que chegou e onde foi guardado. O estoque é atualizado agora; o contas a pagar fica para o financeiro conferir e lançar.</p>
     <div class="grade-campos">
@@ -752,9 +763,10 @@ function abrirRecebimento(r, pai) {
       <div class="campo"><label>Recebida em</label><input id="rRec" type="date" value="${hojeISO()}"></div>
       <div class="campo l4"><label>Chave de acesso</label><input id="rChave" placeholder="44 dígitos (opcional)"></div>
     </div>
-    <div class="sub-ed"><div class="secao">Itens recebidos${srvIds.size ? ' · peças usinadas que voltam entram no estoque (por enquanto só fica registrado no pedido; o serviço não é item de estoque)' : ''}</div><table><thead><tr><th>Item</th><th>Pedido</th><th>Já recebido</th><th>Nesta NF</th><th class="num">Valor</th></tr></thead><tbody>
-      ${itens.map(i => `<tr data-item="${i.id}" data-unit="${Number(i.valor_total) / Number(i.quantidade)}"><td>${esc(i.descricao)}</td><td>${num(i.quantidade)} ${esc(i.unidade || '')}</td><td>${num(i.quantidade_recebida)}</td>
-        <td style="width:90px"><input data-q inputmode="decimal" value="${num(i.pend)}"></td><td class="num" data-v></td></tr>`).join('')}</tbody></table></div>
+    <div class="sub-ed"><div class="secao">Itens recebidos${srvIds.size ? ' · peças usinadas que voltam entram no estoque (por enquanto só fica registrado no pedido; o serviço não é item de estoque)' : ''}</div><table><thead><tr><th>Item</th><th>Pedido</th><th>Já recebido</th><th>Nesta NF</th><th class="num" title="Quanto continua em aberto no pedido depois desta NF">Fica faltando</th><th class="num">Valor${comIpi ? ' (com IPI)' : ''}</th></tr></thead><tbody>
+      ${itens.map(i => `<tr data-item="${i.id}" data-pend="${i.pend}" data-unit="${(Number(i.valor_total) + Number(i.valor_ipi || 0)) / Number(i.quantidade)}"><td>${esc(i.descricao)}</td><td>${num(i.quantidade)} ${esc(i.unidade || '')}</td><td>${num(i.quantidade_recebida)}</td>
+        <td style="width:90px"><input data-q inputmode="decimal" value="${num(i.pend)}"></td><td class="num" data-f></td><td class="num" data-v></td></tr>`).join('')}</tbody></table>
+      <div id="rSaldo" style="margin-top:6px"></div></div>
     <div id="rDest"></div>
     <div class="grade-campos" style="margin-top:6px">
       <div class="campo"><label>Valor ${soServico ? 'do serviço' : 'da NF'} (R$) <span class="obrig">*</span></label><input id="rValor" inputmode="decimal"></div>
@@ -763,7 +775,22 @@ function abrirRecebimento(r, pai) {
     <div class="acoes"><button class="btn" id="rN">Voltar</button><button class="btn primario" id="rS">Dar entrada</button></div>`);
   const q = s => m.querySelector(s);
   let valorEditado = false;
-  const somaItens = () => { let t = 0; m.querySelectorAll('[data-item]').forEach(tr => { const v = Math.round((lerNumero(tr.querySelector('[data-q]').value) || 0) * Number(tr.dataset.unit) * 100) / 100; tr.querySelector('[data-v]').textContent = reais(v); t += v; }); return t; };
+  const somaItens = () => { let t = 0; m.querySelectorAll('[data-item]').forEach(tr => { const v = Math.round((lerNumero(tr.querySelector('[data-q]').value) || 0) * Number(tr.dataset.unit) * 100) / 100; tr.querySelector('[data-v]').textContent = reais(v); t += v; }); simularSaldo(); return t; };
+  // Simulação: com as quantidades digitadas, o pedido fecha (recebido) ou fica com saldo (entregue parcial)?
+  const simularSaldo = () => {
+    const box = q('#rSaldo'), fl = [];
+    m.querySelectorAll('[data-item]').forEach(tr => { const i = itens.find(x => x.id === Number(tr.dataset.item)), f = Math.max(0, Number(tr.dataset.pend) - (lerNumero(tr.querySelector('[data-q]').value) || 0));
+      tr.querySelector('[data-f]').innerHTML = f ? `<span class="tg alerta">${num(f)}</span>` : '<span class="tg ok">0</span>';
+      if (f) fl.push({ i, f, v: Math.round(f * Number(tr.dataset.unit) * 100) / 100 }); });
+    if (!fl.length) { box.innerHTML = '<div class="aviso-box" style="background:#e8f5ec;color:var(--ok)">✓ Com estas quantidades o pedido fica <b>Recebido</b> (completo), sem saldo.</div>'; return; }
+    const marcado = box.querySelector('#rBaixa')?.checked, motivo = box.querySelector('#rBaixaMot')?.value || '';
+    const lista = fl.map(x => `${num(x.f)} ${esc(x.i.unidade || 'un')} ${esc(x.i.descricao)}`).join('; '), valor = fl.reduce((a, x) => a + x.v, 0);
+    box.innerHTML = `<div class="aviso-box"><b>Este pedido vai ficar com saldo</b> (Entregue parcial): falta ${lista} · ${reais(valor)} em itens${fatorExtra ? ' (+ frete/despesas proporcionais)' : ''}.
+      O saldo segue em aberto, no contas a pagar como previsão, até a próxima NF.
+      ${!CTX.pode('compras', 'alterar') ? '' : `<label class="chk" style="margin-top:6px"><input type="checkbox" id="rBaixa"${marcado ? ' checked' : ''}> <span>O fornecedor <b>não vai entregar</b> o que faltou: baixar o saldo deste pedido</span></label>
+      <input id="rBaixaMot" placeholder="Motivo (ex.: fornecedor sem estoque, item descontinuado)" value="${esc(motivo)}" style="margin-top:4px;${marcado ? '' : 'display:none'}">`}</div>`;
+    const bx = box.querySelector('#rBaixa'); if (bx) bx.onchange = e => { const mt = box.querySelector('#rBaixaMot'); mt.style.display = e.target.checked ? '' : 'none'; if (e.target.checked) mt.focus(); };
+  };
   const atualizar = () => { const it = somaItens(), sug = Math.round(it * (1 + fatorExtra) * 100) / 100;
     q('#rSug').textContent = `Itens desta NF ${reais(it)}${fatorExtra ? ` · com frete/despesas/desconto proporcionais ${reais(sug)}` : ''} · saldo do pedido ${reais(Number(r.valor_total) - Number(r.valor_recebido))}`;
     if (!valorEditado) q('#rValor').value = num(sug); };
@@ -790,11 +817,17 @@ function abrirRecebimento(r, pai) {
     if (!nf.numero && !its.every(x => srvIds.has(x.item_id))) return aviso('Informe o número da NF', true);
     const recebidos = new Set(its.map(x => itens.find(i => i.id === x.item_id)?.produto_id));
     const dest = lerDestinos(); if (!dest) return;
+    const baixa = q('#rBaixa')?.checked ? (q('#rBaixaMot').value || '').trim() : null;
+    if (baixa === '') return aviso('Informe o motivo de baixar o saldo (o fornecedor não vai entregar)', true);
     q('#rS').disabled = true;
     const { error } = await db.rpc('pedido_compra_receber_destinos', { p_id: r.id, p_nf: nf, p_itens: its, p_parcelas: [], p_destinos: dest.filter(d => recebidos.has(d.produto_id)) });
     if (error) { q('#rS').disabled = false; return aviso('Não registrou: ' + error.message, true); }
     const fora = dest.filter(d => recebidos.has(d.produto_id) && ['terceiro', 'devolucao'].includes(d.tipo)).length;
-    aviso(`Entrada ${nf.numero ? 'da NF ' + nf.numero : 'do serviço'} dada · estoque atualizado · foi para o financeiro lançar${fora ? ` · ${fora} item(ns) fora do estoque (aviso ao almoxarifado)` : ''}`); m.remove(); pai.remove(); cfg.recarregar();
+    // baixa do saldo marcada: encerra o que faltou logo depois do recebimento (se falhar, o saldo fica aberto e dá para usar "Encerrar saldo…")
+    let txtBaixa = '';
+    if (baixa) { const { error: eb } = await db.rpc('pedido_compra_encerrar', { p_id: r.id, p_motivo: baixa });
+      txtBaixa = eb ? ` · saldo NÃO foi baixado (${eb.message}); use "Encerrar saldo…"` : ' · saldo baixado (não será entregue)'; }
+    aviso(`Entrada ${nf.numero ? 'da NF ' + nf.numero : 'do serviço'} dada · estoque atualizado · foi para o financeiro lançar${fora ? ` · ${fora} item(ns) fora do estoque (aviso ao almoxarifado)` : ''}${txtBaixa}`, txtBaixa.includes('NÃO')); m.remove(); pai.remove(); cfg.recarregar();
   };
 }
 
@@ -1024,7 +1057,7 @@ const cfg = {
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
     const box = document.createElement('div');
-    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
+    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th title="IPI % do item">IPI %</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
         ${editavel && podeEd ? `<div class="itens-acoes"><button type="button" class="btn fino" id="addItem">+ Item</button>${CONJ.size ? '<button type="button" class="btn fino" id="addConj" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}<span class="itens-links">${CTX.pode('produtos', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${linkServ()}</span></div>` : ''}
         <div id="matBox" style="margin-top:8px"></div>
