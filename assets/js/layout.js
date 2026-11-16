@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611152248';
+const VERSAO_TELAS = '202611152307';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -257,6 +257,7 @@ async function iniciarTela() {
   // Perguntas do Mercado Livre sem resposta: alerta forte em qualquer tela (faixa vermelha piscando, som,
   // aviso do computador e título da aba piscando). Some quando todas forem respondidas.
   // Som só para quem atende o ML (perfil Comercial: Caio e Kleyton); os demais veem só o aviso visual.
+  if (!window.frameElement) atualizacaoAutomatica();
   if (ctx.pode('perguntas_ml', 'alterar')) alertaPerguntasML(ctx.usuario?.perfil_id === 'comercial');
   // Venda nova: cartão verde + som para Comercial e Expedição
   if (['comercial', 'expedicao'].includes(ctx.usuario?.perfil_id)) alertaVendas();
@@ -372,6 +373,7 @@ function montarBarraTelas(ctx, app) {
   function criarPainel(a) {
     const p = document.createElement('div'); p.className = 'tela-painel'; p.dataset.caminho = a.caminho; p.hidden = true;
     const f = document.createElement('iframe'); f.src = urlTela(a.caminho); f.title = a.titulo;
+    f.addEventListener('load', () => SOM.ouvir(f.contentWindow));
     p.appendChild(f); telas.appendChild(p);
   }
   function ativar(c) {
@@ -548,15 +550,7 @@ function alertaPerguntasML(comSom) {
   const tituloOrig = document.title;
   const faixa = document.createElement('div'); faixa.id = 'alertaPerg'; faixa.className = 'alerta-perg nao-imprimir'; faixa.hidden = true;
   document.body.appendChild(faixa);
-  const tocar = () => {   // três bipes fortes (não precisa de arquivo de som)
-    try {
-      const ac = new (window.AudioContext || window.webkitAudioContext)();
-      [0, .28, .56].forEach(t => { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = 880;
-        g.gain.setValueAtTime(.25, ac.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + t + .22);
-        o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + .23); });
-    } catch {}
-    ultimoSom = Date.now();
-  };
+  const tocar = () => { SOM.tocar([[880, 0], [880, .28], [880, .56]], 'square', .25, .22); ultimoSom = Date.now(); };   // três bipes fortes
   const notificar = (q, n) => {
     try { if (window.Notification && Notification.permission === 'granted') {
       const nt = new Notification(`Pergunta nova no Mercado Livre${n > 1 ? ` (${n} esperando)` : ''}`, { body: q.texto, tag: 'nox-perguntas', requireInteraction: true });
@@ -602,15 +596,11 @@ function alertaVendas() {
   const vistas = new Set(); let desde = null;
   const caixa = document.createElement('div'); caixa.id = 'alertaVendas'; caixa.className = 'alerta-vendas nao-imprimir';
   document.body.appendChild(caixa);
-  const tocar = () => {   // "plim" de caixa registradora (diferente do bipe das perguntas)
-    try {
-      const ac = new (window.AudioContext || window.webkitAudioContext)();
-      [[1047, 0], [1319, .12], [1568, .24], [2093, .36]].forEach(([f, t]) => { const o = ac.createOscillator(), g = ac.createGain();
-        o.type = 'triangle'; o.frequency.value = f; g.gain.setValueAtTime(.3, ac.currentTime + t);
-        g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + t + .45);
-        o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + .5); });
-    } catch {}
-  };
+  const tocar = () => SOM.tocar([[1047, 0], [1319, .12], [1568, .24], [2093, .36]], 'triangle', .3, .45);   // "plim" de caixa registradora
+  const notificar = v => { try { if (window.Notification && Notification.permission === 'granted') {
+    const nt = new Notification(`Venda nova · ${v.canal || ''}`, { body: (v.itens || []).map(i => `${Number(i.quantidade) || 1}× ${i.descricao}`).join('\n'), tag: 'nox-venda-' + v.id });
+    nt.onclick = () => { window.focus(); nt.close(); };
+  } } catch {} };
   const cartao = v => {
     const el = document.createElement('div'); el.className = 'venda';
     const itens = (v.itens || []).map(i => `<li><b>${Number(i.quantidade) || 1}×</b> ${esc(i.descricao || '')}</li>`).join('');
@@ -628,9 +618,57 @@ function alertaVendas() {
     if (error || !data) return;
     if (!desde) { desde = data.agora; return; }   // começa a contar a partir de agora
     const novas = (data.vendas || []).filter(v => !vistas.has(v.id));
-    novas.forEach(v => { vistas.add(v.id); cartao(v); });
+    novas.forEach(v => { vistas.add(v.id); cartao(v); notificar(v); });
     if (novas.length) tocar();
+  }
+  if (window.Notification && Notification.permission === 'default') {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'venda-ativar';
+    b.textContent = '🔔 Ativar avisos de venda no computador (com som)';
+    b.onclick = () => Notification.requestPermission().then(() => b.remove());
+    caixa.appendChild(b);
   }
   conferir(); setInterval(conferir, 60000);
   if (typeof ouvirMudancas === 'function') ouvirMudancas(['pedidos_venda', 'pedidos_venda_itens'], conferir, { auxiliar: true, mesmoOculto: true });
+}
+
+/* ---------- Som dos avisos ----------
+   Um só "alto-falante" para a janela. O navegador só libera som depois do primeiro clique ou tecla na página;
+   qualquer clique/tecla em qualquer tela (inclusive dentro das abas) já libera para o resto do dia. */
+const SOM = (() => {
+  let ac = null;
+  const ctx = () => { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); } catch {} return ac; };
+  const desbloquear = () => { const a = ctx(); if (a && a.state === 'suspended') a.resume().catch(() => {}); };
+  const ouvir = w => { try { ['pointerdown', 'keydown', 'touchstart'].forEach(ev => w.addEventListener(ev, desbloquear, true)); } catch {} };
+  ouvir(window);
+  const tocar = (notas, tipo, vol, dur) => {
+    const a = ctx(); if (!a) return;
+    if (a.state === 'suspended') a.resume().catch(() => {});
+    try { notas.forEach(([f, t]) => { const o = a.createOscillator(), g = a.createGain(); o.type = tipo; o.frequency.value = f;
+      g.gain.setValueAtTime(vol, a.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + t + dur);
+      o.connect(g).connect(a.destination); o.start(a.currentTime + t); o.stop(a.currentTime + t + dur + .05); }); } catch {}
+  };
+  return { tocar, ouvir, desbloquear };
+})();
+
+/* ---------- Atualização automática ----------
+   A cada 2 min confere se saiu versão nova do sistema (arquivo versao.txt). Se saiu, recarrega sozinho assim que a
+   pessoa ficar 1 min sem mexer (as abas abertas voltam; nada digitado se perde no meio). */
+function atualizacaoAutomatica() {
+  let ultimoUso = Date.now(), nova = false;
+  const usou = () => { ultimoUso = Date.now(); };
+  const marcar = w => { try { ['pointerdown', 'keydown', 'input'].forEach(ev => w.addEventListener(ev, usou, true)); } catch {} };
+  marcar(window);
+  document.addEventListener('load', e => { if (e.target.tagName === 'IFRAME') marcar(e.target.contentWindow); }, true);
+  const digitando = () => [document, ...[...document.querySelectorAll('iframe')].map(f => { try { return f.contentDocument; } catch { return null; } })]
+    .some(d => { const el = d?.activeElement; return el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && el.value; });
+  setInterval(async () => {
+    if (!nova) {
+      try {
+        const r = await fetch(RAIZ + 'versao.txt?t=' + Date.now(), { cache: 'no-store' });
+        const v = r.ok ? (await r.text()).trim() : '';
+        if (/^\d{12}$/.test(v) && v > VERSAO_TELAS) nova = true;
+      } catch {}
+    }
+    if (nova && Date.now() - ultimoUso > 60000 && !digitando()) location.reload();
+  }, 120000);
 }

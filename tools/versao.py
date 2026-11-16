@@ -14,4 +14,5 @@ for p in list(raiz.glob('*.html')) + list(raiz.glob('pages/*/*.html')):
 js = raiz / 'assets/js/layout.js'
 t = js.read_text(encoding='utf-8'); novo = re.sub(r"const VERSAO_TELAS = '\w*';", f"const VERSAO_TELAS = '{v}';", t)
 if novo != t: js.write_text(novo, encoding='utf-8')
+(raiz / 'versao.txt').write_text(v + '\n', encoding='utf-8')   # lido pelas telas abertas para se atualizarem sozinhas
 print(f'versão {v} em {n} página(s)')
