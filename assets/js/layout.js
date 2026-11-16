@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611161925';
+const VERSAO_TELAS = '202611161943';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -32,7 +32,6 @@ const MENU = [
     { id: 'ordens',        nome: 'Ordens de produção', arquivo: 'pages/fabricacao/ordens.html' },
     { id: 'etapas',        nome: 'Etapas',             arquivo: null },
     { id: 'apontamento',   nome: 'Apontamento',        arquivo: 'pages/fabricacao/apontamento.html' },
-    { id: 'ocupacao_maquinas', nome: 'Ocupação das máquinas', arquivo: null },
     { id: 'embalagem',     nome: 'Embalagem',          arquivo: null },
     { id: 'desenvolvimento', nome: 'Desenvolvimento', arquivo: null },
     { id: 'desenhos',        nome: 'Desenho técnico', arquivo: null },
@@ -63,7 +62,7 @@ const MENU = [
   // Indicadores da empresa toda (painéis por área)
   { grupo: 'Indicadores', icone: 'grafico', itens: [
     { id: 'ind_financeiro', nome: 'Financeiro', arquivo: null },
-    { id: 'ind_producao',   nome: 'Produção',   arquivo: null },
+    { id: 'ind_producao',   nome: 'Produção',   arquivo: 'pages/indicadores/producao.html' },
     { id: 'ind_marketing',  nome: 'Marketing',  arquivo: null }
   ]},
   { grupo: 'Cadastros', icone: 'cadastros', gerenciar: true, itens: [
