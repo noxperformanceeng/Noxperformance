@@ -65,6 +65,71 @@ function linkCadastro(cad, ctx, campoId) {
 }
 
 /* ---------- Motor ---------- */
+/* ---------- Mesma empresa como cliente e fornecedor ----------
+   Nas telas de Clientes e de Fornecedores o formulário mostra se a empresa (mesmo CPF/CNPJ, ou mesmo nome se não
+   tiver documento) já está no outro cadastro. Se não estiver, o botão "Cadastrar também como …" cria lá com os dados
+   em comum; no cadastro novo, a caixa "Também é …" faz o mesmo ao salvar. Cada cadastro continua independente. */
+const _endereco = r => Object.fromEntries(['email', 'cep', 'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'condicao_pagamento'].map(k => [k, r[k] || null]));
+const OUTRO_CADASTRO = {
+  clientes: { tabela: 'fornecedores', modulo: 'fornecedores', nome: 'fornecedor', tela: 'pages/cadastros/fornecedores.html', doc: 'cnpj', meuDoc: 'cpf_cnpj',
+    dados: r => ({ ..._endereco(r), nome: r.nome, nome_fantasia: r.nome_fantasia || null, tipo_pessoa: r.tipo_pessoa === 'F' ? 'PF' : 'PJ',
+      cnpj: soDigitos(r.cpf_cnpj) || null, ie: r.rg_ie || null, telefone: r.celular || r.telefone || null,
+      contato: (r.contatos || [])[0]?.nome || null, situacao: 'ativo', observacoes: 'Criado a partir do cadastro de cliente' }) },
+  fornecedores: { tabela: 'clientes', modulo: 'clientes', nome: 'cliente', tela: 'pages/cadastros/clientes.html', doc: 'cpf_cnpj', meuDoc: 'cnpj',
+    dados: r => ({ ..._endereco(r), nome: r.nome, nome_fantasia: r.nome_fantasia || null, tipo_pessoa: r.tipo_pessoa === 'PF' ? 'F' : 'J',
+      cpf_cnpj: soDigitos(r.cnpj) || null, rg_ie: r.ie || null, telefone: r.telefone || null,
+      tipo_cliente: 'outro', situacao: 'ativo', observacoes: 'Criado a partir do cadastro de fornecedor' }) }
+};
+async function acharNoOutro(o, r) {
+  const d = soDigitos(r[o.meuDoc]);
+  if (!d && !r.nome) return null;
+  const q = db.from(o.tabela).select('id, nome').limit(1);
+  const { data } = await (d ? q.or(`${o.doc}.eq.${d},${o.doc}.eq.${fmtDoc(d)}`) : q.eq('nome', r.nome));
+  return data?.[0] || null;
+}
+async function criarNoOutro(o, r) {
+  const achado = await acharNoOutro(o, r);
+  if (achado) return { id: achado.id, jaExistia: true };
+  const { data, error } = await db.from(o.tabela).insert(o.dados(r)).select('id').single();
+  if (error) throw error.code === '23505' ? new Error(`já existe ${o.nome} com este CPF/CNPJ`) : error;
+  return { id: data.id };
+}
+async function ligarOutroCadastro(cfg, m, r, ctx) {
+  const o = OUTRO_CADASTRO[cfg.tabela];
+  if (!o) return;
+  const raiz = typeof RAIZ !== 'undefined' ? RAIZ : '../../', pode = ctx.pode(o.modulo, 'criar');
+  const box = document.createElement('div');
+  box.className = 'info nao-imprimir'; box.style.marginTop = '12px';
+  m.querySelector('.acoes').before(box);
+  const link = id => `<a href="${raiz}${o.tela}?abrir=${id}" target="_blank" style="color:var(--destaque)">abrir o cadastro de ${o.nome} →</a>`;
+  if (!r) {   // cadastro novo: caixa marcada aqui, criação no depoisSalvar
+    if (pode) box.innerHTML = `<label class="chk"><input type="checkbox" id="cOutroChk"> Também é ${o.nome} (cria o mesmo cadastro em ${o.tabela === 'clientes' ? 'Clientes' : 'Fornecedores'})</label>`;
+    else box.remove();
+    return;
+  }
+  const desenhar = async () => {
+    const achado = await acharNoOutro(o, r);
+    if (!box.isConnected) return;
+    if (achado) box.innerHTML = `Também é ${o.nome}: ${link(achado.id)}`;
+    else if (pode) {
+      box.innerHTML = `<button type="button" class="btn" id="cOutroBtn">Cadastrar também como ${o.nome}</button> <span class="sub">usa os dados já salvos deste cadastro</span>`;
+      box.querySelector('#cOutroBtn').onclick = async e => {
+        e.target.disabled = true;
+        try { const x = await criarNoOutro(o, r); aviso(x.jaExistia ? `Já era ${o.nome}` : `Cadastrado também como ${o.nome}`); desenhar(); }
+        catch (err) { e.target.disabled = false; aviso(`Não cadastrou como ${o.nome}: ` + (err.message || err), true); }
+      };
+    } else box.remove();
+  };
+  box.textContent = `Conferindo se também é ${o.nome}…`;
+  desenhar();
+}
+async function outroCadastroAoSalvar(cfg, m, dados) {
+  const o = OUTRO_CADASTRO[cfg.tabela];
+  if (!o || !m.querySelector('#cOutroChk')?.checked) return;
+  try { const x = await criarNoOutro(o, dados); aviso(x.jaExistia ? `Já era ${o.nome}` : `Cadastrado também como ${o.nome}`); }
+  catch (err) { aviso(`Salvo, mas não cadastrou como ${o.nome}: ` + (err.message || err), true); }
+}
+
 async function montarCadastro(cfg) {
   const ctx = await iniciarTela();
   if (!ctx) return;
@@ -494,6 +559,7 @@ async function montarCadastro(cfg) {
       e.target.style.borderColor = ok ? '' : 'var(--erro)';
     }));
     cfg.aoAbrir?.(m, r, ctx);
+    ligarOutroCadastro(cfg, m, novo ? null : r, ctx);
 
     const salvar = async revisar => {
       const dados = {};
@@ -542,6 +608,7 @@ async function montarCadastro(cfg) {
           if (error) throw error;
         }
         if (cfg.depoisSalvar) await cfg.depoisSalvar(id, dados, r, m);
+        if (novo) await outroCadastroAoSalvar(cfg, m, dados);
         if (revisar) { const { error } = await db.rpc('marcar_revisado', { p_tabela: cfg.tabela, p_ids: [id] }); if (error) throw error; }
         m.remove(); aviso(revisar ? 'Salvo e revisado' : 'Salvo');
         await atualizarUm(id); carregar();   // mostra a linha na hora; o resto (pagamentos, rateio...) atualiza em segundo plano
