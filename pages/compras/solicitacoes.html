@@ -6,7 +6,7 @@
 <title>Solicitações de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611171951">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611171956">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .sub-ed th { text-align: left; font-size: 11px; color: var(--texto-suave); font-weight: 500; padding: 0 3px 3px; white-space: nowrap; }
@@ -34,11 +34,11 @@
 <body data-modulo="solicitacoes_compra" data-titulo="Solicitações de compra">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611171951"></script>
-<script src="../../assets/js/ui.js?v=202611171951"></script>
-<script src="../../assets/js/auth.js?v=202611171951"></script>
-<script src="../../assets/js/layout.js?v=202611171951"></script>
-<script src="../../assets/js/cadastro.js?v=202611171951"></script>
+<script src="../../assets/js/supabase.js?v=202611171956"></script>
+<script src="../../assets/js/ui.js?v=202611171956"></script>
+<script src="../../assets/js/auth.js?v=202611171956"></script>
+<script src="../../assets/js/layout.js?v=202611171956"></script>
+<script src="../../assets/js/cadastro.js?v=202611171956"></script>
 <script>
 /* =====================================================================
    Solicitações de compra (antes do pedido)
@@ -83,7 +83,8 @@ function etapa(r) {
 
 /* ---------- Itens (sempre do cadastro de produtos ou de serviços) ---------- */
 // Regras para pedir certo: peça usinada (NX) = SERVIÇO de usinagem com a peça que volta; produto pronto = PRODUTO.
-const ehUsinada = c => c && c.tipo === 'produto' && /^NX\d/i.test(c.codigo || '');
+let USI = new Set();   // peças marcadas no cadastro como "feito por usinagem terceirizada"
+const ehUsinada = c => c && c.tipo === 'produto' && USI.has(c.id);
 const ehServUsi = c => c && c.tipo === 'servico' && /USINAGEM/i.test(c.descricao || '');
 const ehServPeca = c => c && c.tipo === 'servico' && /PINTURA|POLIMENTO/i.test(c.descricao || '');
 const optPecas = sel => '<option value="">— peça que volta usinada —</option>' + CAT.filter(ehUsinada)
@@ -92,14 +93,14 @@ const LEGENDA = `<div class="sc-legenda">
   <b>Como pedir certo</b>
   <div><span class="tg ok">Produto</span> o que se compra <b>pronto</b> e entra no estoque como veio: matéria-prima (tubo, chapa, barra), insumo, ferramenta, peça comprada pronta, peça de <b>corte a laser</b> (família 200).</div>
   <div><span class="tg alerta">Serviço</span> quando a NOX <b>manda o material</b> para alguém trabalhar e <b>paga o serviço</b>:
-    <b>USINAGEM</b> (peças NX: escolha também a <b>peça que volta usinada</b> — é ela que entra no estoque), <b>PINTURA / POLIMENTO</b> (diga no detalhe o que vai ser pintado/polido), <b>DESENHO TÉCNICO</b>.</div>
-  <div class="sub">Ex.: repor NX27 → Tipo <b>Serviço</b> › <b>USINAGEM</b> › peça <b>NX27</b>. Repor tubo inox → Tipo <b>Produto</b> › o tubo.</div>
+    <b>USINAGEM</b> (peças que a NOX manda usinar: escolha também a <b>peça que volta usinada</b> — é ela que entra no estoque), <b>PINTURA / POLIMENTO</b> (diga no detalhe o que vai ser pintado/polido), <b>DESENHO TÉCNICO</b>.</div>
+  <div class="sub">Ex.: repor NX27 (usinada a mando da NOX) → Tipo <b>Serviço</b> › <b>USINAGEM</b> › peça <b>NX27</b>. NX42 prolongador de sonda (comprado pronto) ou tubo inox → Tipo <b>Produto</b>. Se escolher errado, o sistema avisa na hora.</div>
 </div>`;
 // Confere a linha na hora e explica o erro (sem esperar salvar)
 function conferirLinha(tr) {
   const g = k => tr.querySelector(`[data-k=${k}]`), t = g('tipo').value, c = itemCat(t, Number(g('item').value));
   let msg = '', acao = '';
-  if (ehUsinada(c)) { msg = `${c.codigo} é peça <b>usinada</b>: não se compra pronta. A NOX manda a matéria-prima e paga o <b>serviço de usinagem</b>; a peça volta pronta e entra no estoque.`; acao = `<button type="button" class="btn fino" data-trocar>Trocar para Serviço › Usinagem › ${esc(c.codigo)}</button>`; }
+  if (ehUsinada(c)) { msg = `${c.codigo} é feita por <b>usinagem terceirizada</b> (marcado no cadastro do produto): não se compra pronta. A NOX manda a matéria-prima e paga o <b>serviço de usinagem</b>; a peça volta pronta e entra no estoque.`; acao = `<button type="button" class="btn fino" data-trocar>Trocar para Serviço › Usinagem › ${esc(c.codigo)}</button>`; }
   else if (ehServUsi(c) && !g('peca')?.value) msg = 'Usinagem: escolha a <b>peça que volta usinada</b> (é ela que entra no estoque).';
   else if (ehServPeca(c) && !g('observacao').value.trim() && !g('peca')?.value) msg = `${esc(c.descricao)}: diga no detalhe <b>o que</b> vai ser feito (ex.: defletor DF-002, 10 conjuntos).`;
   else if (t === 'servico' && c && !ehServUsi(c)) {
@@ -224,6 +225,7 @@ const cfg = {
       buscarTodos(() => db.from('solicitacoes_compra_itens').select('*').order('id')),
       buscarTodos(() => db.rpc('sc_catalogo').order('tipo', { ascending: false }).order('id')).then(data => ({ data })), db.rpc('sc_pedidos'), db.rpc('usuarios_nomes'), db.rpc('minhas_acoes'), db.rpc('sc_cotacoes')
     ]);
+    try { USI = new Set(((await db.rpc('sc_pecas_usinagem')).data || []).map(Number)); } catch (e) { USI = new Set(); }
     CAT = (cat.data || []).sort((a, b) => String(a.descricao).localeCompare(String(b.descricao), 'pt-BR'));
     PEDS = Object.fromEntries((pe.data || []).map(p => [p.id, p])); USU = us.data || []; ACOES = new Set(ac.data || []); COTS = Object.fromEntries((co.data || []).map(c => [c.id, c]));
     const itens = {}; it.forEach(x => (itens[x.solicitacao_id] ||= []).push(x));
