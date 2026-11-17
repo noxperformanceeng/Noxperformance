@@ -455,3 +455,12 @@ document.addEventListener('focusout', e => { if (ehCampoMoeda(e.target)) formata
 // valores que a tela preenche sozinha (edição, sugestão de preço): formata quando o campo não está em uso
 setInterval(() => document.querySelectorAll('input[inputmode="decimal"], input[data-moeda]').forEach(el => {
   if (el !== document.activeElement && ehCampoMoeda(el)) formatarCampoMoeda(el); }), 700);
+
+// Sem sugestões do navegador (preenchimento automático) nos campos das telas: elas misturam o que foi digitado em
+// outros campos (ex.: um código de produto oferecido no código do local). O login (sem data-modulo) continua com elas.
+document.addEventListener('focusin', e => {
+  const el = e.target;
+  if (!document.body?.dataset.modulo || !/^(INPUT|TEXTAREA)$/.test(el.tagName) || el.type === 'password' || el.dataset.autoOk) return;
+  el.setAttribute('autocomplete', 'off'); el.setAttribute('autocorrect', 'off');
+  if (el.form) el.form.setAttribute('autocomplete', 'off');
+}, true);
