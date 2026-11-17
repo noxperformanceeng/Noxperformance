@@ -6,7 +6,7 @@
 <title>Cotações de fornecedores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611171446">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611171923">
 <style>
   .mapa { overflow: auto; max-height: 64vh; border: 1px solid var(--linha); border-radius: 10px; }
   .mapa table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 100%; }
@@ -39,11 +39,11 @@
 <body data-modulo="cotacoes_compra" data-titulo="Cotações de fornecedores">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611171446"></script>
-<script src="../../assets/js/ui.js?v=202611171446"></script>
-<script src="../../assets/js/auth.js?v=202611171446"></script>
-<script src="../../assets/js/layout.js?v=202611171446"></script>
-<script src="../../assets/js/cadastro.js?v=202611171446"></script>
+<script src="../../assets/js/supabase.js?v=202611171923"></script>
+<script src="../../assets/js/ui.js?v=202611171923"></script>
+<script src="../../assets/js/auth.js?v=202611171923"></script>
+<script src="../../assets/js/layout.js?v=202611171923"></script>
+<script src="../../assets/js/cadastro.js?v=202611171923"></script>
 <script>
 /* =====================================================================
    Cotações de fornecedores (entre a solicitação aprovada e o pedido de compra)
@@ -255,7 +255,8 @@ const cfg = {
       db.rpc('usuarios_nomes'),
       buscarTodos(() => db.from('solicitacoes_compra_itens').select('id, urgencia, solicitacao_id, solicitacoes_compra(numero)').not('cotacao_id', 'is', null))
     ]);
-    const cat = await db.rpc('sc_catalogo');
+    // o catálogo passa de 1.000 itens: busca em páginas (senão os serviços, que vêm no fim, ficavam de fora)
+    const cat = { data: await buscarTodos(() => db.rpc('sc_catalogo').order('tipo', { ascending: false }).order('id')) };
     FORN = fo; CONDS = co; FORMAS = fm; USU = us.data || [];
     PRODS = Object.fromEntries((cat.data || []).filter(c => c.tipo === 'produto').map(c => [c.id, c]));
     const scPorItem = Object.fromEntries(sci.map(x => [x.id, x]));
