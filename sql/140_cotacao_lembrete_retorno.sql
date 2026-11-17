@@ -12,7 +12,7 @@
 -- ---------- Coluna do lembrete ----------
 alter table public.cotacoes_compra add column if not exists lembrete_em timestamptz;
 alter table public.cotacoes_compra alter column lembrete_em set default (now() + interval '24 hours');
-update public.cotacoes_compra set lembrete_em = coalesce(criado_em, now()) + interval '24 hours' where lembrete_em is null;
+update public.cotacoes_compra set lembrete_em = coalesce(criado_em, now()) + interval '24 hours' where lembrete_em is null and situacao = 'aberta';
 
 -- ---------- "Já conferi": adia o lembrete (por padrão 24 horas) ----------
 create or replace function public.cotacao_lembrar(p_id bigint, p_horas int default 24)
@@ -38,7 +38,7 @@ begin
     select count(*) into r from public.cotacoes_compra where situacao = 'aberta' and lembrete_em <= now();$x$);
     d := replace(d, $x$jsonb_build_object('cotacoes_compra', jsonb_build_object('amarelo', a, 'vermelho', 0))$x$,
       $x$jsonb_build_object('cotacoes_compra', jsonb_build_object('amarelo', a, 'vermelho', r))$x$);
-    if position('lembrete_em' in d) = 0 then raise exception 'menu_contadores: trecho das cotações não encontrado'; end if;
+    if position('lembrete_em' in d) = 0 or position($x$'vermelho', r))$x$ in d) = 0 then raise exception 'menu_contadores: trecho das cotações não encontrado'; end if;
     execute d;
   end if;
 end $$;
