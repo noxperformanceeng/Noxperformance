@@ -70,6 +70,8 @@ const ehPeca = it => !!it.produto_id && /^2/.test(PRODS[it.produto_id]?.codigo |
 const chipsArq = it => { if (!it.produto_id) return ''; const as = arqsDe(it.produto_id); if (!as.length && !ehPeca(it)) return '';
   return '<div class="chips-arq">' + Object.keys(FIN).map(k => { const a = as.find(x => x.finalidade === k);
     return `<span class="tg ${a ? 'ok' : 'neutro'}" title="${esc(a?.nome || 'sem arquivo')}">${a ? '✓' : '—'} ${FIN[k]}</span>`; }).join(' ') + '</div>'; };
+// lembrete de 24h: cotação aberta cujo prazo de conferir o retorno dos fornecedores já passou
+const cobrarRetorno = r => r.situacao === 'aberta' && !!r.lembrete_em && Date.parse(r.lembrete_em) <= Date.now();
 const editavel = r => r.situacao === 'aberta' && CTX.pode('cotacoes_compra', 'alterar');
 
 /* ---------- Mapa de cotação: linhas = itens, colunas = fornecedores ---------- */
@@ -112,7 +114,8 @@ function linhaItem(r, it, ed) {
 function htmlMapa(r) {
   const ed = editavel(r), fs = fornsDe(r), its = itensDe(r);
   const tot = f => its.reduce((s, it) => { const p = preco(f.id, it.id); return s + (p ? Number(p.valor_unitario) * (1 + Number(p.ipi_pct || 0) / 100) * Number(it.quantidade) : 0); }, 0) + Number(f.frete || 0);
-  return `<div class="secao">Mapa da cotação</div>
+  return `${cobrarRetorno(r) && CTX.pode('cotacoes_compra', 'alterar') ? `<div class="aviso-box" id="cotLembreteBox" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>⏰ <b>Conferir retorno:</b> passaram 24h desta cotação. Veja se os fornecedores responderam e lance os preços.</span><button type="button" class="btn fino" id="cotLembrar">Já conferi · lembrar em 24h</button></div>` : ''}
+    <div class="secao">Mapa da cotação</div>
     <div class="cot-leg">Lance o preço de cada fornecedor (unitário e IPI). A <b>nota</b> pesa preço com IPI e frete rateado (50%), prazo de pagamento (20%), prazo de entrega (15%) e histórico de entregas no prazo com o fornecedor (15%). Fundo verde = indicado; contorno = vencedor escolhido. Preço em itálico = último preço do cadastro, ainda não confirmado (digite para confirmar). No pedido, o frete vai proporcional aos itens que o fornecedor venceu.</div>
     <div class="cot-acoes"><button type="button" class="btn" data-pdf="">Baixar PDF da cotação</button><button type="button" class="btn" id="cotZip">Baixar desenhos (ZIP com DXF e PDF)</button>
       <span class="sub">O PDF leva a lista dos itens com campos para o fornecedor preencher (preço, IPI, prazo…) e, no final, os desenhos de corte e dobra. Os DXF vão no ZIP.</span></div>
@@ -234,7 +237,7 @@ const cfg = {
   campos: [
     { id: 'numero', label: 'Nº', somenteLeitura: true, lista: true },
     { id: 'data_cotacao', label: 'Data', tipo: 'data', somenteLeitura: true, lista: true },
-    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, listaHtml: r => `<span class="tg ${sit(r.situacao).cor}">${esc(sit(r.situacao).n)}</span>` },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, listaHtml: r => `<span class="tg ${sit(r.situacao).cor}">${esc(sit(r.situacao).n)}</span>${cobrarRetorno(r) ? ' <span class="tg erro pisca" title="Passaram 24h: veja se os fornecedores responderam">⏰ conferir retorno</span>' : ''}` },
     { id: 'empresa_id', label: 'Empresa (CNPJ dos pedidos)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })) },
     { id: 'data_limite', label: 'Respostas até', tipo: 'data', lista: true },
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 2 },
@@ -294,6 +297,9 @@ const cfg = {
     if (!ed) { m.querySelectorAll('.campo input, .campo select, .campo textarea').forEach(i => i.disabled = true); m.querySelector('#mSalvar')?.remove(); }
     box.addEventListener('click', async e => {
       const t = e.target;
+      if (t.id === 'cotLembrar') { t.disabled = true; const { error } = await db.rpc('cotacao_lembrar', { p_id: r.id, p_horas: 24 });
+        if (error) { t.disabled = false; return aviso('Não adiou o lembrete: ' + error.message, true); }
+        m.querySelector('#cotLembreteBox')?.remove(); aviso('Ok · o lembrete volta em 24h'); window.top.dispatchEvent(new Event('nox:aprovacoes')); cfg.recarregar(); return; }
       if (t.closest('[data-pdf]')) { const b = t.closest('[data-pdf]'); b.disabled = true; try { await pdfCotacao(r, m, Number(b.dataset.pdf) || null); } catch (er) { aviso('Não gerou o PDF: ' + (er.message || er), true); } b.disabled = false; return; }
       if (t.id === 'cotZip') { t.disabled = true; try { await zipDesenhos(r, m); } catch (er) { aviso('Não gerou o ZIP: ' + (er.message || er), true); } t.disabled = false; return; }
       if (t.closest('[data-copiar]')) { const th = t.closest('th'); const fid = Number(th.querySelector('[data-k=fornecedor_id]').value);
