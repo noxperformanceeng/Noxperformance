@@ -1,5 +1,5 @@
 // ERP NOX · tiny-sync — leitura do Tiny (API v2, token por empresa) para a área de conferência (tiny_brutos)
-// Não grava em contas a pagar/receber: só lê o Tiny. A carga para o sistema é feita depois, conferida com o extrato.
+// Depois da leitura, a carga leva para o sistema: contas a pagar, pedidos de venda direta/distribuidores e os títulos a receber desses pedidos.
 // Lotes longos: a função trabalha ~110 s e se chama de novo para continuar (o lote fica em integracao_jobs).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -94,6 +94,11 @@ async function rodar(jobId: number, chave: string) {
       const { error } = await db.rpc('tiny_pedidos_pular_ecommerce', { p_empresa: job.empresa_id });
       if (error) throw new Error('pular e-commerce: ' + error.message);
     }
+    // contas a receber: só as de pedidos de venda direta/distribuidores (as do Mercado Livre e as que não são de pedido são puladas)
+    if (job.recurso === 'contas_receber' && p.so_sem_ecommerce) {
+      const { error } = await db.rpc('tiny_cr_pular_ecommerce', { p_empresa: job.empresa_id });
+      if (error) throw new Error('pular contas sem pedido: ' + error.message);
+    }
     if (def.obter && p.detalhar !== false) {
       while (true) {
         const { data: pend } = await db.from('tiny_brutos').select('id, tiny_id').eq('empresa_id', job.empresa_id).eq('recurso', job.recurso).is('detalhe', null).order('id').limit(25);
@@ -121,6 +126,11 @@ async function rodar(jobId: number, chave: string) {
     // pedidos de distribuidores/venda direta (sem e-commerce): cria clientes e pedidos de venda no sistema
     if (job.recurso === 'pedidos' && p.so_sem_ecommerce && p.carregar !== false) {
       const { data: r, error } = await db.rpc('tiny_carregar_pedidos_venda', { p_empresa: job.empresa_id });
+      await salvar({ mensagem: `Concluído: ${lidos} lidos, ${detalhados} detalhados, ${falhas} falhas · carga: ${error ? error.message : JSON.stringify(r)}`.slice(0, 1000) });
+    }
+    // contas a receber dos pedidos do Tiny: cria/atualiza os títulos e registra as baixas para conferir com o extrato
+    if (job.recurso === 'contas_receber' && p.so_sem_ecommerce && p.carregar !== false) {
+      const { data: r, error } = await db.rpc('tiny_carregar_contas_receber', { p_empresa: job.empresa_id });
       await salvar({ mensagem: `Concluído: ${lidos} lidos, ${detalhados} detalhados, ${falhas} falhas · carga: ${error ? error.message : JSON.stringify(r)}`.slice(0, 1000) });
     }
     if (job.recurso === 'contas_pagar' && p.carregar !== false) {
