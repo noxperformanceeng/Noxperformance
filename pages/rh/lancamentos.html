@@ -6,7 +6,7 @@
 <title>Lançamentos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181345">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181346">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -24,12 +24,12 @@
 <body data-modulo="lancamentos" data-titulo="Lançamentos" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181345"></script>
-<script src="../../assets/js/ui.js?v=202611181345"></script>
-<script src="../../assets/js/auth.js?v=202611181345"></script>
-<script src="../../assets/js/layout.js?v=202611181345"></script>
-<script src="../../assets/js/cadastro.js?v=202611181345"></script>
-<script src="../../assets/js/rh.js?v=202611181345"></script>
+<script src="../../assets/js/supabase.js?v=202611181346"></script>
+<script src="../../assets/js/ui.js?v=202611181346"></script>
+<script src="../../assets/js/auth.js?v=202611181346"></script>
+<script src="../../assets/js/layout.js?v=202611181346"></script>
+<script src="../../assets/js/cadastro.js?v=202611181346"></script>
+<script src="../../assets/js/rh.js?v=202611181346"></script>
 <script>
 /* =====================================================================
    Lançamentos do mês (competência)
@@ -40,7 +40,7 @@
      e os eventos marcados como fixos (ex.: empréstimo consignado) copiados do mês anterior.
    - Competência fechada: tudo travado (fechar/reabrir é ação liberada em Usuários e acessos).
    ===================================================================== */
-let CTX, LANC = [], COMP = lerCompetencia(), FECHADAS = [], ACOES = new Set(), visao = 'func', PODE = false;
+let CTX, LANC = [], COMP = lerCompetencia(), FECHADAS = [], ACOES = new Set(), visao = 'func', PODE = false, ordemF = { campo: 'nome', asc: true }, ordemE = { campo: '', asc: true };
 const MULT_HORA = { '150': 1.5, '9161': 2, '8069': 1, 'N002': 1.5 };   // horas → valor (salário/hora × fator)
 
 (async () => {
@@ -124,11 +124,16 @@ function desenhar() {
   const head = document.getElementById('head'), lista = document.getElementById('lista'), tf = document.getElementById('totais');
 
   if (visao === 'func') {
-    head.innerHTML = '<th>Funcionário</th><th class="num">Proventos</th><th class="num">Descontos</th><th class="num">Líquido contábil</th><th class="num">Não contábil (líquido)</th><th class="num">Lançamentos</th>';
+    head.innerHTML = '<th data-ord="nome">Funcionário</th><th class="num" data-ord="pc">Proventos</th><th class="num" data-ord="dc">Descontos</th><th class="num" data-ord="liq">Líquido contábil</th><th class="num" data-ord="nc">Não contábil (líquido)</th><th class="num" data-ord="n">Lançamentos</th>';
     const linhas = [...ids].map(funcionario).filter(Boolean)
       .filter(f => !busca || combinaBusca(`${f.nome} ${f.matricula} ${f.cargo}`, busca) || vis.some(l => l.funcionario_id === f.id))
       .sort((a, b) => a.nome.localeCompare(b.nome))
       .map(f => ({ f, ls: LANC.filter(l => l.funcionario_id === f.id) }));
+    // Ordenação pelo cabeçalho (ui.js)
+    const tt = new Map(linhas.map(x => [x, totais(x.ls)]));
+    ordenarLista(linhas, ordemF, { nome: x => x.f.nome, pc: x => tt.get(x).pc, dc: x => tt.get(x).dc, liq: x => tt.get(x).pc - tt.get(x).dc,
+      nc: x => { const t = tt.get(x); return t.pn || t.dn ? t.pn - t.dn : null; }, n: x => x.ls.length });
+    ligarOrdenacao(head, ordemF, desenhar);
     lista.innerHTML = linhas.length ? linhas.map(({ f, ls }) => { const t = totais(ls);
       const nConf = ls.filter(l => l.conferido === false).length;
       return `<tr data-f="${f.id}" style="cursor:pointer" class="${f.situacao === 'desligado' ? 'apagado' : ''}"><td class="forte">${esc(f.nome)}${nConf ? ` <span class="tg alerta">${nConf} a conferir</span>` : ''}<small class="sub2">${esc([f.matricula && 'Matr. ' + f.matricula, f.cargo, f.situacao === 'afastado' && 'afastado'].filter(Boolean).join(' · '))}</small></td>
@@ -140,10 +145,13 @@ function desenhar() {
     document.getElementById('contagem').textContent = `${linhas.length} funcionário(s) · ${mesExtenso(COMP)}`;
     lista.querySelectorAll('tr[data-f]').forEach(tr => tr.onclick = () => abrirFuncionario(+tr.dataset.f));
   } else {
-    head.innerHTML = '<th>Código</th><th>Evento</th><th>Natureza</th><th class="num">Pessoas</th><th class="num">Referência</th><th class="num">Proventos</th><th class="num">Descontos</th>';
+    head.innerHTML = '<th data-ord="codigo">Código</th><th data-ord="evento">Evento</th><th data-ord="natureza">Natureza</th><th class="num" data-ord="pessoas">Pessoas</th><th class="num" data-ord="ref">Referência</th><th class="num" data-ord="prov">Proventos</th><th class="num" data-ord="desc">Descontos</th>';
     const grupos = {};
     vis.forEach(l => { const g = grupos[l.evento_id] ||= { ev: evento(l.evento_id), pessoas: new Set(), ref: 0, valor: 0 }; g.pessoas.add(l.funcionario_id); g.ref += Number(l.referencia || 0); g.valor += Number(l.valor); });
     const gs = Object.values(grupos).sort((a, b) => (a.ev.natureza > b.ev.natureza ? 1 : a.ev.natureza < b.ev.natureza ? -1 : a.ev.ordem - b.ev.ordem));
+    ordenarLista(gs, ordemE, { codigo: g => g.ev.codigo, evento: g => g.ev.descricao, natureza: g => g.ev.natureza, pessoas: g => g.pessoas.size, ref: g => g.ref || null,
+      prov: g => g.ev.tipo === 'provento' ? g.valor : null, desc: g => g.ev.tipo === 'desconto' ? g.valor : null });
+    ligarOrdenacao(head, ordemE, desenhar);
     lista.innerHTML = gs.length ? gs.map(g => `<tr><td class="forte">${esc(g.ev.codigo)}</td><td>${esc(g.ev.descricao)}${g.ev.tela_exclusiva ? `<small class="sub2">🔒 ${esc(TELAS_RH[g.ev.tela_exclusiva])}</small>` : ''}</td>
       <td>${g.ev.natureza === 'contabil' ? 'Contábil' : '<span class="tg alerta">Não contábil</span>'}</td><td class="num">${g.pessoas.size}</td><td class="num">${refBR(g.ev, g.ref)}</td>
       <td class="num">${g.ev.tipo === 'provento' ? num2(g.valor) : ''}</td><td class="num">${g.ev.tipo === 'desconto' ? num2(g.valor) : ''}</td></tr>`).join('')

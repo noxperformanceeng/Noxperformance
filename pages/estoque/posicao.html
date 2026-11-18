@@ -6,8 +6,8 @@
 <title>Posição de estoque · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181345">
-<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611181345">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181346">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611181346">
 <style>
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .neg { color: #b42318; font-weight: 600; }
@@ -48,7 +48,7 @@
     <table>
       <thead><tr>
         <th style="width:28px" class="nao-imprimir"><input type="checkbox" id="selTodos" title="Selecionar todos os listados"></th>
-        <th>Código</th><th>Descrição</th><th>Local</th><th>Un</th><th class="num">Físico</th><th class="num" title="Pedidos de venda confirmados ainda não expedidos">Reservado</th><th class="num" title="Físico menos reservado">Disponível</th><th class="num">Mínimo</th><th>Última contagem</th><th>Último movimento</th>
+        <th data-ord="codigo">Código</th><th data-ord="descricao">Descrição</th><th data-ord="local">Local</th><th data-ord="unidade">Un</th><th class="num" data-ord="fisico">Físico</th><th class="num" data-ord="reservado" title="Pedidos de venda confirmados ainda não expedidos">Reservado</th><th class="num" data-ord="disponivel" title="Físico menos reservado">Disponível</th><th class="num" data-ord="minimo">Mínimo</th><th data-ord="contagem">Última contagem</th><th data-ord="movimento">Último movimento</th>
       </tr></thead>
       <tbody id="lista"><tr><td colspan="11" class="vazio">Carregando…</td></tr></tbody>
     </table>
@@ -56,10 +56,10 @@
   <p class="sub" id="rodape" style="margin-top:10px"></p>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181345"></script>
-<script src="../../assets/js/ui.js?v=202611181345"></script>
-<script src="../../assets/js/auth.js?v=202611181345"></script>
-<script src="../../assets/js/layout.js?v=202611181345"></script>
+<script src="../../assets/js/supabase.js?v=202611181346"></script>
+<script src="../../assets/js/ui.js?v=202611181346"></script>
+<script src="../../assets/js/auth.js?v=202611181346"></script>
+<script src="../../assets/js/layout.js?v=202611181346"></script>
 <script>
 /* Saldo = soma dos movimentos (compras, produção, consumo, vendas, contagens, avulsos). Só produtos ativos que
    controlam estoque. Contagem e local também em lote na tela Inventário. */
@@ -70,7 +70,7 @@ const ORIG = [{ id: '', nome: 'Todos' }, { id: 'materia_prima', nome: 'Matéria-
   { id: 'insumo', nome: 'Insumo' }, { id: 'semiacabado', nome: 'Semiacabado' }, { id: 'acabado', nome: 'Produto pronto' }, { id: 'kit', nome: 'Kit' }, { id: 'ferramenta', nome: 'Ferramenta' }];
 const TIPOS_MOV = { entrada_compra: 'Compra', saida: 'Venda / expedição', ajuste: 'Avulso', inventario: 'Contagem', envio_terceiro: 'Envio a terceiro',
   retorno_terceiro: 'Retorno de terceiro', producao: 'Produção', consumo: 'Consumo na produção', perda: 'Perda' };
-let CTX = null, PRODUTOS = [], SALDOS = new Map(), RESERVAS = new Map(), LOCAIS = [], aba = '', selecionados = new Set();
+let CTX = null, ordem = { campo: 'codigo', asc: true }, PRODUTOS = [], SALDOS = new Map(), RESERVAS = new Map(), LOCAIS = [], aba = '', selecionados = new Set();
 
 async function carregar() {
   const [p, s, l] = await Promise.all([
@@ -122,6 +122,10 @@ function desenhar() {
   $('#abas').querySelectorAll('[data-v]').forEach(b => b.onclick = () => { aba = b.dataset.v; selecionados.clear(); desenhar(); });
   contarFiltros(document);
   const ls = filtrados(), MAX = 600;
+  // Ordenação pelo cabeçalho (ui.js): sobre todos os filtrados, antes de cortar nos 600
+  ordenarLista(ls, ordem, { local: p => nomeLocal(local(p.local_id)), fisico: saldo, reservado: p => reservado(p) || null, disponivel,
+    minimo: p => Number(p.estoque_minimo) || null, contagem: p => SALDOS.get(p.id)?.ultima_contagem, movimento: p => SALDOS.get(p.id)?.ultimo_mov });
+  ligarOrdenacao($('#lista').closest('table'), ordem, desenhar);
   $('#contagem').textContent = `${ls.length} produto(s)` + (ls.length ? ` · ${ls.filter(p => saldo(p) > 0).length} com saldo` : '') + (ls.some(p => reservado(p) > 0) ? ` · ${ls.filter(p => reservado(p) > 0).length} com reserva` : '');
   $('#lista').innerHTML = ls.length ? ls.slice(0, MAX).map(p => { const s = saldo(p), i = SALDOS.get(p.id), l = local(p.local_id);
     return `<tr class="clic" data-id="${p.id}"><td class="nao-imprimir"><input type="checkbox" data-sel="${p.id}"${selecionados.has(p.id) ? ' checked' : ''}></td>

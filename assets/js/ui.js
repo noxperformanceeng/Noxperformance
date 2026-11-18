@@ -464,3 +464,41 @@ document.addEventListener('focusin', e => {
   el.setAttribute('autocomplete', 'off'); el.setAttribute('autocorrect', 'off');
   if (el.form) el.form.setAttribute('autocomplete', 'off');
 }, true);
+
+/* ---------- Ordenação clicando no cabeçalho da coluna ----------
+   Ordena os DADOS antes de a tela cortar o que mostra (400/600 primeiros), então vale para todos os registros
+   carregados, não só os que aparecem. 1º clique: do menor para o maior (A→Z, data mais antiga); 2º: o contrário.
+   Vazios ficam sempre no fim. Números em ordem numérica; textos sem diferença de acento/maiúscula e com os
+   números de dentro em ordem natural ("NF 20" antes de "NF 100").
+   Uso: ordem = { campo: 'codigo', asc: true };  no desenhar(): ordenarLista(lista, ordem, CHAVES) e
+   ligarOrdenacao(thead, ordem, desenhar) — cada <th data-ord="campo"> vira clicável e mostra a seta. */
+const _colOrd = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' });
+const _vazioOrd = v => v === null || v === undefined || v === '' || (typeof v === 'number' && isNaN(v));
+function compararOrdem(x, y, asc = true, cru = false) {
+  const vx = _vazioOrd(x), vy = _vazioOrd(y);
+  if (vx || vy) return vx === vy ? 0 : vx ? 1 : -1;               // vazio no fim, nos dois sentidos
+  const r = typeof x === 'number' && typeof y === 'number' ? x - y
+    : cru ? (x > y ? 1 : x < y ? -1 : 0) : _colOrd.compare(String(x), String(y));
+  return asc ? r : -r;
+}
+// chaves: { campo: linha => valor } — sem chave própria, usa linha[campo]. Ordena no lugar e devolve a lista.
+function ordenarLista(lista, ordem, chaves = {}) {
+  if (!ordem?.campo) return lista;
+  const f = chaves[ordem.campo] || (r => r[ordem.campo]);
+  const ch = new Map(lista.map(r => [r, f(r)]));                  // chave calculada uma vez por linha
+  return lista.sort((a, b) => compararOrdem(ch.get(a), ch.get(b), ordem.asc));
+}
+// Liga os <th data-ord> de raiz (thead/tabela/tela) à ordem e mostra a seta da coluna ativa.
+// Pode ser chamada a cada desenho (não duplica nada).
+function ligarOrdenacao(raiz, ordem, redesenhar) {
+  raiz.querySelectorAll('th[data-ord]').forEach(th => {
+    th.classList.add('ord');
+    th.classList.toggle('ord-asc', ordem.campo === th.dataset.ord && ordem.asc);
+    th.classList.toggle('ord-desc', ordem.campo === th.dataset.ord && !ordem.asc);
+    th.title ||= 'Clique para ordenar (de novo para inverter)';
+    th.onclick = e => {
+      if (e.target.closest('input, button, select, a')) return;
+      ordem.asc = ordem.campo === th.dataset.ord ? !ordem.asc : true; ordem.campo = th.dataset.ord; redesenhar();
+    };
+  });
+}
