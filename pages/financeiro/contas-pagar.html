@@ -450,6 +450,34 @@ function janela(titulo, corpo, botao, aoConfirmar) {
 /* ---------- Fila "NF recebidas para lançar" (SQL 132) ----------
    O almoxarifado deu entrada da NF (estoque atualizado); o financeiro confere e lança (vira título real) ou devolve com o motivo.
    Entra também a NF sem pedido aprovada pelo master, depois da entrada no estoque. */
+/* Órgão de imposto (cadastro de fornecedores, categoria "Impostos e guias", SQL 151):
+   escolheu o órgão → a categoria vem do tipo de imposto dele (um só: já preenche; vários: ficam no topo da lista);
+   escolheu a categoria de um imposto sem fornecedor → o órgão desse imposto entra sozinho (se houver só um). */
+function ligarImposto(m) {
+  const fF = m.querySelector('#f_fornecedor_id'), fC = m.querySelector('#f_categoria_financeira_id');
+  if (!fF || !fC) return;
+  const dica = () => {
+    m.querySelector('#dicaImposto')?.remove();
+    const f = FORN.find(x => x.v === Number(fF.value)); if (!f?.impostos.length) return;
+    const nomes = f.impostos.map(id => CATS.find(c => c.id === id)?.nome).filter(Boolean);
+    fC.closest('.campo').insertAdjacentHTML('beforeend', `<p class="ajuda" id="dicaImposto">Órgão de imposto: ${esc(nomes.join(', '))}</p>`);
+  };
+  fF.addEventListener('change', () => {
+    const f = FORN.find(x => x.v === Number(fF.value)), lst = f?.impostos || [];
+    if (lst.length && !lst.includes(Number(fC.value))) {
+      const ops = [...fC.options], topo = lst.map(id => ops.find(o => Number(o.value) === id)).filter(Boolean);
+      topo.reverse().forEach(o => fC.insertBefore(o, fC.options[1] || null));   // tipos do órgão no topo
+      if (lst.length === 1 && topo.length) { fC.value = String(lst[0]); fC.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
+    dica();
+  });
+  fC.addEventListener('change', () => {
+    if (fF.value) return;
+    const cat = Number(fC.value), donos = FORN.filter(x => x.ativo && x.impostos.includes(cat));
+    if (donos.length === 1) { fF.value = String(donos[0].v); fF.dispatchEvent(new Event('change', { bubbles: true })); aviso(`Fornecedor preenchido: ${donos[0].n} (órgão deste imposto)`); }
+  });
+  dica();
+}
 let FILA = [], PC_ABERTOS = [], abrirFilaAoCarregar = new URLSearchParams(location.search).has('fila');
 function desenharFila() {
   let box = document.getElementById('filaNF');
@@ -624,7 +652,7 @@ const cfg = {
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx; LINHAS = linhas;
     const [f, c, cb, fp, pg, ra, an, ap] = await Promise.all([
-      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao, cnpj').order('nome')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao, cnpj, categoria, impostos').order('nome')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, aplica_produtos, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, exige_codigo, situacao').order('nome')),
@@ -638,7 +666,8 @@ const cfg = {
       ctx.pode('compras') ? db.from('pedidos_compra').select('id, numero, fornecedor_id').in('situacao', ['aprovado', 'enviado', 'recebido_parcial']) : { data: [] }]);
     FILA = fl.data || []; PC_ABERTOS = pa.data || [];
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
-    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x), nome: x.nome, fantasia: x.nome_fantasia, doc: x.cnpj }));
+    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x), nome: x.nome, fantasia: x.nome_fantasia, doc: x.cnpj, ativo: x.situacao === 'ativo',
+      impostos: x.categoria === 'Impostos e guias' ? x.impostos || [] : [] }));
     CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' }));
     CONTAS = cb; FORMAS = fp.filter(x => x.situacao === 'ativo');
     const pagamentos = {}, rateio = {};
@@ -687,6 +716,7 @@ const cfg = {
       };
       fEmp.addEventListener('change', filtrarContas); filtrarContas();
     }
+    if (pode) ligarImposto(m);
     // Título do RH: mostra o colaborador que recebe (no lugar do fornecedor, que não se aplica)
     if (colaborador(r)) m.querySelector('[data-campo="empresa_id"]')?.insertAdjacentHTML('afterend', `<div class="campo l2"><label>Favorecido (colaborador)</label>
       <input type="text" value="${esc(colaborador(r))}" disabled><p class="ajuda">Gerado pelo RH: quem recebe é o colaborador, por isso não tem fornecedor.</p></div>`);
