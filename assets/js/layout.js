@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611182044';
+const VERSAO_TELAS = '202611182053';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -398,7 +398,7 @@ function montarBarraTelas(ctx, app) {
       if (on) { const g = i.closest('.grupo'); if (g?.classList.contains('fechado')) { g.classList.remove('fechado'); g.querySelector('.grupo-titulo')?.setAttribute('aria-expanded', 'true'); } }
     });
     const nomeEmp = ctx.empresa ? (ctx.empresas.find(e => e.id === ctx.empresa)?.nome || '') : 'Consolidado';
-    const bi = document.getElementById('barraInfo'); if (bi) bi.innerHTML = `<b>${esc(c ? abas.find(a => a.caminho === c).titulo : 'Visão geral')}</b><span>NOX Peças · ${esc(nomeEmp)}</span>`;
+    const bi = document.getElementById('barraInfo'); if (bi) bi.innerHTML = `<b>${esc(c ? abas.find(a => a.caminho === c).titulo : 'Visão geral')}</b><span>Nox Performance Engineering · ${esc(nomeEmp)}</span>`;
     const usa = !!(c && info[c]?.empresa);
     const me = document.getElementById('menuEmpresa'); if (me) me.hidden = !usa;
     marcarNeutra();
