@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611180942">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611180942"></script>
-<script src="../../assets/js/ui.js?v=202611180942"></script>
-<script src="../../assets/js/auth.js?v=202611180942"></script>
-<script src="../../assets/js/layout.js?v=202611180942"></script>
-<script src="../../assets/js/cadastro.js?v=202611180942"></script>
-<script src="../../assets/js/comprovante.js?v=202611180942"></script>
+<script src="../../assets/js/supabase.js?v=202611181321"></script>
+<script src="../../assets/js/ui.js?v=202611181321"></script>
+<script src="../../assets/js/auth.js?v=202611181321"></script>
+<script src="../../assets/js/layout.js?v=202611181321"></script>
+<script src="../../assets/js/cadastro.js?v=202611181321"></script>
+<script src="../../assets/js/comprovante.js?v=202611181321"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -242,6 +242,21 @@ const parcelaDe = r => { if (r.parcela && r.parcelas) return [r.parcela, r.parce
 const colaborador = r => r.origem === 'rh' && r.funcionario_id ? (r.descricao || '').split(' · ').pop().trim() : '';
 // Título do RH com o total (SQL 134): sem nome de colaborador; o detalhe fica só nas telas do RH
 const rhTotal = r => r.origem === 'rh' && !r.funcionario_id;
+// Mesmo boleto para vários títulos do fornecedor (ex.: pedidos separados por categoria no Tiny): combinações com os títulos
+// do mesmo fornecedor que vencem no mesmo dia ou foram pagos na mesma data — o comprovante vale se mostrar uma dessas somas
+function gruposDoBoleto(r, valor, data) {
+  const mesmoForn = x => r.fornecedor_id ? x.fornecedor_id === r.fornecedor_id : !x.fornecedor_id && !!r.origem_ref?.fornecedor_tiny && x.origem_ref?.fornecedor_tiny === r.origem_ref.fornecedor_tiny;
+  const irmaos = LINHAS.filter(x => x.id !== r.id && x.situacao !== 'cancelado' && !x.projecao && mesmoForn(x)).map(x => {
+    const pg = (extraAtual.pagamentos?.[x.id] || []).filter(p => !p.estornado && p.data_pagamento === data).reduce((s, p) => s + Number(p.valor) + Number(p.juros || 0) - Number(p.desconto || 0), 0);
+    const v = pg > 0 ? pg : x.data_vencimento === r.data_vencimento && Number(x.saldo) > 0 ? Number(x.saldo) : 0;
+    return v > 0 && { v, nome: x.documento || x.descricao?.slice(0, 40) || '#' + x.id };
+  }).filter(Boolean).slice(0, 8), out = [];
+  for (let m = 1; m < 1 << irmaos.length; m++) {
+    const sel = irmaos.filter((_, i) => m & 1 << i);
+    out.push({ soma: Math.round((valor + sel.reduce((s, x) => s + x.v, 0)) * 100) / 100, junto: sel.map(x => `${x.nome} (${reais(x.v)})`).join(', ') });
+  }
+  return out;
+}
 const mesmoNomeTiny = r => LINHAS.filter(x => x.id !== r.id && !x.fornecedor_id && x.origem_ref?.fornecedor_tiny === r.origem_ref?.fornecedor_tiny && ['aberto', 'programado'].includes(x.situacao));
 
 /* ---------- Rastreio da compra até o pagamento ---------- */
@@ -404,7 +419,7 @@ async function registrarPagamento(r) {
   if (!comp.length) return aviso('Anexe o comprovante do pagamento (obrigatório)', true);
   const forn = FORN.find(f => f.v === r.fornecedor_id);
   const conf = await conferirComTela(comp[0], { valor: p.valor + p.juros - p.desconto, data: p.data_pagamento, nome: forn?.nome || r.origem_ref?.fornecedor_tiny || colaborador(r) || '', fantasia: forn?.fantasia, doc: forn?.doc,
-    apelidos: apelidosDe(APELIDOS, r.fornecedor_id, r.origem_ref?.fornecedor_tiny) });
+    apelidos: apelidosDe(APELIDOS, r.fornecedor_id, r.origem_ref?.fornecedor_tiny), grupos: gruposDoBoleto(r, p.valor + p.juros - p.desconto, p.data_pagamento) });
   if (!conf) return;
   if (conf.justificativa) p.observacoes = 'Comprovante com divergência: ' + conf.justificativa;
   const { data: pg, error } = await db.from('pagamentos').insert(p).select('id').single();
