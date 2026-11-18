@@ -6,8 +6,9 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181346">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181402">
 <style>
+  .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
   .sub-ed td { padding: 3px 4px; border: 0; }
@@ -52,12 +53,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181346"></script>
-<script src="../../assets/js/ui.js?v=202611181346"></script>
-<script src="../../assets/js/auth.js?v=202611181346"></script>
-<script src="../../assets/js/layout.js?v=202611181346"></script>
-<script src="../../assets/js/cadastro.js?v=202611181346"></script>
-<script src="../../assets/js/comprovante.js?v=202611181346"></script>
+<script src="../../assets/js/supabase.js?v=202611181402"></script>
+<script src="../../assets/js/ui.js?v=202611181402"></script>
+<script src="../../assets/js/auth.js?v=202611181402"></script>
+<script src="../../assets/js/layout.js?v=202611181402"></script>
+<script src="../../assets/js/cadastro.js?v=202611181402"></script>
+<script src="../../assets/js/comprovante.js?v=202611181402"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -506,11 +507,17 @@ function desenharFila() {
   box.querySelector('#btnFila').onclick = abrirFila;
   if (document.getElementById('mFila')) abrirFila();   // fila aberta: redesenha com o que mudou (tempo real)
 }
+/* Títulos que já vieram do Tiny para esta NF (mesmo fornecedor/empresa, vencimento e valor de uma parcela) — evita lançar 2x */
+function jaNoTiny(x) {
+  const parc = (x.parcelas || []).length ? x.parcelas : [{ vencimento: x.emissao, valor: x.valor }], dia = v => String(v || '').slice(0, 10);
+  return LINHAS.filter(t => t.origem_ref?.sistema === 'tiny' && t.situacao !== 'cancelado' && t.fornecedor_id === x.fornecedor_id && t.empresa_id === x.empresa_id
+    && parc.some(p => dia(p.vencimento) === dia(t.data_vencimento) && Math.abs(Number(p.valor) - Number(t.valor)) <= 0.05));
+}
 function abrirFila() {
   const linha = x => `<tr><td>${x.situacao === 'devolvido' ? '<span class="tg erro">devolvida</span>' : '<span class="tg alerta">aguardando</span>'}</td>
     <td>NF ${esc(x.nf)}${x.serie ? '-' + esc(x.serie) : ''}<br><small class="sub2">emissão ${dataCurta(x.emissao)}</small></td><td>${esc(x.fornecedor || '')}</td>
     <td>${x.pedido_id ? `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${x.pedido_id}" style="color:var(--destaque)">${esc(x.pedido)}</a>` : '<span class="tg neutro">sem pedido (master)</span>'}</td>
-    <td>${esc(x.quem || '')}<br><small class="sub2">${dataCurta(x.recebida_em)}</small></td><td class="num">${reais(x.valor)}</td>
+    <td>${esc(x.quem || '')}<br><small class="sub2">${dataCurta(x.recebida_em)}</small></td><td class="num">${reais(x.valor)}${jaNoTiny(x).length ? '<br><span class="tg alerta" title="Já existe título vindo do Tiny com o mesmo vencimento e valor">já veio do Tiny</span>' : ''}</td>
     <td>${x.situacao === 'devolvido' ? `<small>${esc(x.devolvido_motivo || '')}</small>` : `<button type="button" class="btn fino primario" data-lancar="${x.tipo}:${x.id}">Conferir e lançar…</button>`}</td></tr>`;
   const html = `<h2>NF recebidas para lançar no contas a pagar</h2>
     <p class="sub" style="margin:0 0 8px">O almoxarifado já deu entrada (estoque atualizado). Confira valor, vencimentos e categoria e lance; se algo não bater, devolva com o motivo.</p>
@@ -537,6 +544,7 @@ async function abrirConferencia(x) {
   const m = abrirModal(`<h2>Conferir e lançar · NF ${esc(x.nf)} · ${esc(x.fornecedor || '')}</h2>
     <p class="sub" style="margin:0 0 8px">${sp ? `Sem pedido, aprovada pelo master${x.motivo_sem_pedido ? ' (' + esc(x.motivo_sem_pedido) + ')' : ''}.` : `Pedido <b>${esc(x.pedido)}</b> · valor do pedido ${reais(x.valor_pedido)} · já recebido ${reais(x.valor_recebido_pedido)}.`}
       Entrada dada por ${esc(x.quem || '—')} em ${dataCurta(x.recebida_em)}.</p>
+    ${(t => t.length ? `<div class="aviso-box">Atenção: a conta desta NF já veio do Tiny — ${t.map(y => `título nº ${y.id}, venc. ${dataCurta(y.data_vencimento)}, ${reais(y.valor)}${y.situacao === 'pago' ? ' (pago)' : ''}`).join('; ')}. Lançar aqui duplica a conta: ${sp ? 'devolva a NF ou peça para marcá-la como já lançada no Tiny' : 'devolva com o motivo "já lançada no Tiny"'}.</div>` : '')(jaNoTiny(x))}
     <div class="sub-ed"><div class="secao">O que chegou</div><table><thead><tr><th>Item</th>${sp ? '' : '<th>Pedido</th>'}<th>Nesta NF</th><th class="num">Valor</th></tr></thead><tbody>
       ${recebidos.map(i => `<tr><td>${esc(i.descricao || '')}</td>${sp ? '' : `<td>${num2(i.pedido)} ${esc(i.unidade || '')}</td>`}<td>${num2(i.nesta)} ${esc(i.unidade || '')}</td><td class="num">${reais(i.valor)}</td></tr>`).join('')}</tbody></table>
       <p class="sub" style="margin:4px 0 0">Itens ${reais(somaItens)} · valor da NF <b>${reais(x.valor)}</b>${Math.abs(somaItens - Number(x.valor)) > 0.05 ? ' <span class="tg alerta">diferença de ' + reais(Number(x.valor) - somaItens) + ' (frete, impostos ou desconto?)</span>' : ' <span class="tg ok">confere</span>'}</p></div>

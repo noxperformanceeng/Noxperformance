@@ -6,8 +6,9 @@
 <title>Notas fiscais · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181346">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181402">
 <style>
+  .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
   .nf-cnpjs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 12px; }
   .nf-cnpj { background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
   .nf-cnpj h3 { margin: 0 0 2px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
@@ -30,12 +31,12 @@
 <body data-modulo="notas" data-titulo="Notas fiscais" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181346"></script>
-<script src="../../assets/js/ui.js?v=202611181346"></script>
-<script src="../../assets/js/auth.js?v=202611181346"></script>
-<script src="../../assets/js/layout.js?v=202611181346"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611181346"></script>
-<script src="../../assets/js/cadastro.js?v=202611181346"></script>
+<script src="../../assets/js/supabase.js?v=202611181402"></script>
+<script src="../../assets/js/ui.js?v=202611181402"></script>
+<script src="../../assets/js/auth.js?v=202611181402"></script>
+<script src="../../assets/js/layout.js?v=202611181402"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611181402"></script>
+<script src="../../assets/js/cadastro.js?v=202611181402"></script>
 <script>
 /* =====================================================================
    Notas fiscais de entrada (NF-e emitidas contra a NOX), separadas por CNPJ
@@ -73,7 +74,7 @@ function checagens(r) {
       : [Math.abs(dif) > saldo * 0.05 ? 'erro' : 'alerta', `Valor da NF ${dif > 0 ? 'acima' : 'abaixo'} do saldo do pedido em ${reais(Math.abs(dif))} (saldo ${reais(saldo)})`]);
     if (!['aprovado', 'enviado', 'recebido_parcial'].includes(p.situacao)) c.push(['erro', `Pedido ${p.numero} não está aprovado (${p.situacao})`]);
   } else c.push(['erro', 'Sem pedido de compra vinculado']);
-  if (NO_TINY[r.id]) c.push(['alerta', `Esta NF já está no Tiny (${NO_TINY[r.id].situacao_tiny || 'registrada'}): o contas a pagar dela vem da leitura do Tiny — não lançar de novo`]);
+  if (NO_TINY[r.id]) c.push(['alerta', `Esta NF já está no Tiny (${NO_TINY[r.id].situacao_tiny || 'registrada'}): o contas a pagar dela vem da leitura do Tiny — não lançar de novo. Use "Ordem de compra do Tiny…" com "já lançada no Tiny" marcada.`]);
   if (r.documento === 'resumo') c.push(['alerta', 'Só o resumo da SEFAZ: importe o XML para ver itens e duplicatas']);
   return c;
 }
@@ -130,7 +131,7 @@ function abrirOcTiny(r, mNF) {
     <p class="sub" style="margin:0 0 8px">Para compras feitas pelo Tiny, antes do sistema novo. O pedido fica com a etiqueta <b>TINY</b>, separado dos pedidos do sistema.</p>
     <div class="campo" style="max-width:260px"><label>Nº da ordem de compra no Tiny *</label><input id="ocN" inputmode="numeric"></div>
     <label class="chk" style="margin:8px 0"><input type="checkbox" id="ocL" ${noTiny ? 'checked' : ''}> A NF já foi lançada no Tiny (não gerar contas a pagar aqui)</label>
-    ${noTiny ? '<div class="aviso-box">Encontrei esta NF nas notas de entrada do Tiny: o título dela já vem da leitura do Tiny.</div>' : '<p class="sub">Desmarcado: a NF segue o caminho normal (conferir → recebimento no pedido → contas a pagar e estoque).</p>'}
+    ${noTiny ? `<div class="aviso-box">Já está no Tiny (${esc(NO_TINY[r.id].situacao_tiny || 'nota de entrada')}): o título dela já vem da leitura do Tiny. Deixe a caixa marcada para não lançar de novo.</div>` : '<p class="sub">Desmarcado: a NF segue o caminho normal (conferir → recebimento no pedido → contas a pagar e estoque).</p>'}
     <div class="acoes"><button class="btn" id="ocX">Voltar</button><button class="btn primario" id="ocS">Vincular</button></div>`);
   m.querySelector('#ocN').focus();
   m.querySelector('#ocX').onclick = () => m.remove();
@@ -179,6 +180,7 @@ function abrirLancar(r, pai) {
   const dups = (r.duplicatas || []).length ? r.duplicatas : [{ vencimento: String(r.data_emissao).slice(0, 10), valor: r.valor_total }];
   const m = abrirModal(`<h2>Lançar NF ${esc(r.numero)} no contas a pagar</h2>
     <p class="sub" style="margin:0 0 8px">NF sem pedido aprovada pelo master, com entrada no estoque já dada pelo almoxarifado. Gera ${dups.length} título(s) pelas duplicatas.</p>
+    ${NO_TINY[r.id] ? `<div class="aviso-box">Atenção: esta NF já está no Tiny (${esc(NO_TINY[r.id].situacao_tiny || 'nota de entrada')}). Lançar aqui duplica a conta.</div>` : ''}
     <div class="grade-campos">
       <div class="campo l2"><label>Categoria financeira <span class="obrig">*</span></label><select id="lCat"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}">${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></div>
       <div class="campo l2"><label>Conta prevista</label><select id="lConta"><option value="">—</option>${CONTAS.filter(c => c.empresa_id === r.empresa_id).map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>

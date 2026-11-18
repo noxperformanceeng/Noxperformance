@@ -57,6 +57,7 @@ const tempoReal = (() => {
     fluxo_caixa: ['categorias_financeiras', 'contas_bancarias', 'extrato_lancamentos', 'pagamentos', 'recebimentos', 'titulos_pagar', 'titulos_pagar_rateio', 'titulos_receber', 'titulos_receber_rateio', 'transferencias_contas'],
     integracao_status: ['integracao_jobs'],
     cp_fila_nf_recebidas: ['pedidos_compra_recebimentos', 'nfe_entrada', 'pedidos_compra', 'fornecedores'],
+    nfe_no_tiny: ['nfe_entrada', 'tiny_brutos', 'titulos_pagar'],
     minhas_aprovacoes: ['categorias_financeiras', 'fornecedores', 'funcionarios', 'nfe_entrada', 'pagamentos', 'pedidos_compra', 'pedidos_compra_recebimentos', 'produtos', 'rh_vale_transporte', 'solicitacoes_compra', 'solicitacoes_compra_itens', 'titulos_anexos', 'titulos_pagar', 'aprovacoes_historico', 'despesas_diretas'],
     ml_status: ['canais_venda', 'ml_contas'],
     painel_gestor: ['canais_venda', 'categorias_financeiras', 'estoque_movimentos', 'integracao_jobs', 'ml_contas', 'pedidos_venda', 'pedidos_venda_entregas', 'produtos', 'titulos_pagar', 'titulos_receber', 'pagamentos', 'recebimentos', 'extrato_lancamentos'],
