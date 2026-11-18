@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611172036">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611172100">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611172036"></script>
-<script src="../../assets/js/ui.js?v=202611172036"></script>
-<script src="../../assets/js/auth.js?v=202611172036"></script>
-<script src="../../assets/js/layout.js?v=202611172036"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611172036"></script>
-<script src="../../assets/js/cadastro.js?v=202611172036"></script>
+<script src="../../assets/js/supabase.js?v=202611172100"></script>
+<script src="../../assets/js/ui.js?v=202611172100"></script>
+<script src="../../assets/js/auth.js?v=202611172100"></script>
+<script src="../../assets/js/layout.js?v=202611172100"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611172100"></script>
+<script src="../../assets/js/cadastro.js?v=202611172100"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -139,7 +139,8 @@ function checarPreco(tr) {
   const { pid, sid } = chaveLinha(tr), h = historico(pid, sid), u = h[0], vu = lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0;
   const todos = historico(pid, sid, true);
   const link = todos.length ? ` <button type="button" data-hist title="Ver as compras anteriores deste item" style="background:none;border:0;padding:0;color:var(--destaque-texto);cursor:pointer;font:inherit;text-decoration:underline">histórico de preços (${todos.length})</button>` : '';
-  if (!u) { el.innerHTML = (pid || sid) ? `<span class="sub">sem compra anterior aprovada</span>${link}` : ''; return; }
+  const pr = !sid && pid ? prod(pid) : null, refTab = pr?.custo_referencia ? ` <span class="sub" title="Preço de referência cadastrado (tabela antiga, só parâmetro)">· referência ${reais(pr.custo_referencia)}/${esc(pr.unidade || 'un')}${pr.custo_referencia_em ? ' (' + dataCurta(pr.custo_referencia_em) + ')' : ''}</span>` : '';
+  if (!u) { el.innerHTML = (pid || sid) ? `<span class="sub">sem compra anterior aprovada</span>${refTab}${link}` : ''; return; }
   const ult = Number(u.valor_unitario), pct = vu && ult ? (vu / ult - 1) * 100 : 0, ref = `última ${reais(ult)} · ${esc(u.p.numero)} · ${dataCurta(u.p.data_pedido)} · ${esc(nomeComFantasia(forn(u.p.fornecedor_id)) || '')}`;
   el.innerHTML = (vu && pct > 0.05 ? `<span class="tg erro" title="${ref}">▲ ${pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% acima da última compra</span> `
     : vu && pct < -0.05 ? `<span class="tg ok" title="${ref}">▼ ${Math.abs(pct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% abaixo da última</span> ` : '')
@@ -1096,7 +1097,7 @@ const cfg = {
     CTX = ctx;
     const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi, sv, es] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
-      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao').order('descricao')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao, custo_referencia, custo_referencia_em').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao, aceita_lancamento').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
