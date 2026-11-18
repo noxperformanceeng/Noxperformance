@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611172100">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611172104">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611172100"></script>
-<script src="../../assets/js/ui.js?v=202611172100"></script>
-<script src="../../assets/js/auth.js?v=202611172100"></script>
-<script src="../../assets/js/layout.js?v=202611172100"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611172100"></script>
-<script src="../../assets/js/cadastro.js?v=202611172100"></script>
+<script src="../../assets/js/supabase.js?v=202611172104"></script>
+<script src="../../assets/js/ui.js?v=202611172104"></script>
+<script src="../../assets/js/auth.js?v=202611172104"></script>
+<script src="../../assets/js/layout.js?v=202611172104"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611172104"></script>
+<script src="../../assets/js/cadastro.js?v=202611172104"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -866,12 +866,13 @@ function abrirRecebimento(r, pai) {
   const m = abrirModal(`<h2>${soServico ? 'Entrada do serviço' : 'Entrada da NF'} · ${esc(r.numero)}</h2>
     <p class="sub" style="margin:0 0 8px">Confira o que chegou e onde foi guardado. O estoque é atualizado agora; o contas a pagar fica para o financeiro conferir e lançar.</p>
     <div class="grade-campos">
-      <div class="campo"><label>NF nº ${soServico ? '<span class="sub">(pode ficar vazio: serviço sem nota)</span>' : '<span class="obrig">*</span>'}</label><input id="rNf"></div>
+      <div class="campo"><label>NF nº <span class="sub">(vazio = compra sem nota)</span></label><input id="rNf"></div>
       <div class="campo"><label>Série</label><input id="rSerie"></div>
       <div class="campo"><label>Emissão da NF <span class="obrig">*</span></label><input id="rEm" type="date" value="${hojeISO()}"></div>
       <div class="campo"><label>Recebida em</label><input id="rRec" type="date" value="${hojeISO()}"></div>
       <div class="campo l4"><label>Chave de acesso</label><input id="rChave" placeholder="44 dígitos (opcional)"></div>
     </div>
+    ${soServico ? '' : '<label class="chk" id="rSemNfBox" style="margin:2px 0 6px"><input type="checkbox" id="rSemNf"> <span>Esta compra <b>não tem nota fiscal</b> (entra no estoque e vai para o financeiro como "SEM NF")</span></label>'}
     <div class="sub-ed"><div class="secao">Itens recebidos${srvIds.size ? ' · peças usinadas que voltam entram no estoque (por enquanto só fica registrado no pedido; o serviço não é item de estoque)' : ''}</div><table><thead><tr><th>Item</th><th>Pedido</th><th>Já recebido</th><th>Nesta NF</th><th class="num" title="Quanto continua em aberto no pedido depois desta NF">Fica faltando</th><th class="num">Valor${comIpi ? ' (com IPI)' : ''}</th></tr></thead><tbody>
       ${itens.map(i => `<tr data-item="${i.id}" data-pend="${i.pend}" data-unit="${(Number(i.valor_total) + Number(i.valor_ipi || 0)) / Number(i.quantidade)}"><td>${esc(i.descricao)}</td><td>${num(i.quantidade)} ${esc(i.unidade || '')}</td><td>${num(i.quantidade_recebida)}</td>
         <td style="width:90px"><input data-q inputmode="decimal" value="${num(i.pend)}"></td><td class="num" data-f></td><td class="num" data-v></td></tr>`).join('')}</tbody></table>
@@ -923,7 +924,8 @@ function abrirRecebimento(r, pai) {
     const nf = { numero: q('#rNf').value.trim(), serie: q('#rSerie').value.trim(), data_emissao: q('#rEm').value, data_recebimento: q('#rRec').value, chave: q('#rChave').value.replace(/\D/g, ''), valor: lerNumero(q('#rValor').value) };
     const its = [...m.querySelectorAll('[data-item]')].map(tr => ({ item_id: Number(tr.dataset.item), quantidade: lerNumero(tr.querySelector('[data-q]').value) || 0 })).filter(x => x.quantidade > 0);
     if (!its.length) return aviso('Informe a quantidade recebida de pelo menos um item', true);
-    if (!nf.numero && !its.every(x => srvIds.has(x.item_id))) return aviso('Informe o número da NF', true);
+    if (!nf.numero && !its.every(x => srvIds.has(x.item_id)) && !q('#rSemNf')?.checked) return aviso('Informe o número da NF ou marque "Esta compra não tem nota fiscal"', true);
+    if (nf.numero && q('#rSemNf')?.checked) return aviso('Marcou "sem nota fiscal" mas informou o número da NF: desmarque ou apague o número', true);
     const recebidos = new Set(its.map(x => itens.find(i => i.id === x.item_id)?.produto_id));
     const dest = lerDestinos(); if (!dest) return;
     const baixa = q('#rBaixa')?.checked ? (q('#rBaixaMot').value || '').trim() : null;
