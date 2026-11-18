@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611172104">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611180821">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611172104"></script>
-<script src="../../assets/js/ui.js?v=202611172104"></script>
-<script src="../../assets/js/auth.js?v=202611172104"></script>
-<script src="../../assets/js/layout.js?v=202611172104"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611172104"></script>
-<script src="../../assets/js/cadastro.js?v=202611172104"></script>
+<script src="../../assets/js/supabase.js?v=202611180821"></script>
+<script src="../../assets/js/ui.js?v=202611180821"></script>
+<script src="../../assets/js/auth.js?v=202611180821"></script>
+<script src="../../assets/js/layout.js?v=202611180821"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611180821"></script>
+<script src="../../assets/js/cadastro.js?v=202611180821"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -601,6 +601,7 @@ function secaoPedido(r) {
   return `<div class="secao">Andamento</div>
     <div class="fluxo-pc">${etapas.join('<i>›</i>')}</div><div id="pcPend"></div>${avisos.join('')}
     <div class="acoes-pc">${acoes.join('')}</div>
+    ${r.origem !== 'tiny' ? '<div class="secao">Solicitação de compra</div><div id="pcSol"><p class="sub" style="margin:0">Carregando…</p></div>' : ''}
     ${temUsi ? '<div class="secao">Material na usinagem</div><div id="pcMat"><p class="sub" style="margin:0">Carregando…</p></div>' : ''}
     <div class="secao">Contas a pagar</div>
     ${tits.length ? `<table class="lista-mini"><thead><tr><th>Documento</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Situação</th></tr></thead><tbody>
@@ -761,6 +762,54 @@ Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. 
       aviso('Envio registrado · confira a mensagem no ' + (via.value === 'whatsapp' ? 'WhatsApp' : 'e-mail') + ' e envie'); m.remove(); pai.remove(); cfg.recarregar();
     }
   };
+}
+
+/* ---------- Solicitação de compra vinculada (sem ela o pedido não vai para aprovação) ---------- */
+async function mostrarSolicitacoes(m, r) {
+  const box = m.querySelector('#pcSol'); if (!box) return;
+  const { data, error } = await db.rpc('pc_solicitacoes', { p_pedido: r.id });
+  if (error) { box.innerHTML = `<p class="sub erro" style="margin:0">Não carregou: ${esc(error.message)}</p>`; return; }
+  const sols = data?.solicitacoes || [], vinc = sols.filter(x => x.vinculada), pode = EDITAVEL.includes(r.situacao) && CTX.pode('compras', 'criar');
+  const itens = x => (x.itens || []).map(i => `<li>${num(i.quantidade)} ${esc(i.unidade || '')} ${esc(i.descricao)}${i.deste ? ' <span class="tg ok">neste pedido</span>' : i.pedido ? ` <span class="tg">${esc(i.pedido)}</span>` : i.em_cotacao ? ` <span class="tg">cotação ${esc(i.em_cotacao)}</span>` : ''}</li>`).join('');
+  box.innerHTML = (vinc.length ? vinc.map(x => `<div class="aviso-box ok" style="margin:0 0 6px">
+      <b>${esc(x.numero)}</b> · ${esc(x.solicitante)} · ${dataCurta(x.data)}${x.justificativa ? ' · ' + esc(x.justificativa) : ''}
+      ${pode ? ` <button type="button" class="btn fino discreto" data-desv="${x.id}">Desvincular</button>` : ''}
+      <ul style="margin:4px 0 0 18px;padding:0">${itens(x)}</ul></div>`).join('')
+    : `<div class="aviso-box ${EDITAVEL.includes(r.situacao) ? 'erro' : ''}" style="margin:0 0 6px">Nenhuma solicitação vinculada.${EDITAVEL.includes(r.situacao) ? ' <b>Sem a solicitação de compra aprovada, o pedido não vai para aprovação.</b>' : ''}</div>`)
+    + (pode ? '<div class="acoes-pc"><button type="button" class="btn' + (vinc.length ? '' : ' primario') + '" id="pcSolVinc">Vincular solicitação…</button></div>' : '');
+  box.querySelector('#pcSolVinc')?.addEventListener('click', () => abrirVincular(r, m, sols.filter(x => !x.vinculada)));
+  box.querySelectorAll('[data-desv]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const { error } = await db.rpc('pedido_compra_desvincular_solicitacao', { p_pedido: r.id, p_solicitacao: Number(b.dataset.desv) });
+    if (error) { b.disabled = false; return aviso('Não desvinculou: ' + error.message, true); }
+    aviso('Solicitação desvinculada'); mostrarSolicitacoes(m, r); mostrarPendencias(m, r);
+  });
+}
+function abrirVincular(r, pai, sols) {
+  const livre = i => !i.pedido && !i.em_cotacao && !i.deste;
+  const m = abrirModal(`<h2>Vincular solicitação de compra · ${esc(r.numero)}</h2>
+    <p class="sub" style="margin:0 0 8px">Escolha a solicitação <b>aprovada</b> que originou este pedido e marque os itens que ele atende (eles saem da fila "sem pedido" da solicitação). Itens que já estão em outro pedido aparecem só para consulta — ex.: a pintura de um conjunto cujas peças estão em outro pedido.</p>
+    <div class="campo"><input id="vBusca" placeholder="Buscar por número, solicitante ou item"></div>
+    <div id="vLista" style="max-height:52vh;overflow:auto"></div>
+    <div class="acoes"><button class="btn" id="vN">Voltar</button></div>`);
+  const q = s => m.querySelector(s);
+  const desenhar = () => {
+    const t = normMat(q('#vBusca').value);
+    const ls = sols.filter(x => !t || normMat([x.numero, x.solicitante, x.justificativa, ...(x.itens || []).map(i => i.descricao)].join(' ')).includes(t));
+    q('#vLista').innerHTML = ls.length ? ls.map(x => `<div class="aviso-box" style="margin:0 0 8px">
+        <b>${esc(x.numero)}</b> · ${esc(x.solicitante)} · ${dataCurta(x.data)}${x.necessidade ? ' · precisa até ' + dataCurta(x.necessidade) : ''}${x.justificativa ? '<br><span class="sub">' + esc(x.justificativa) + '</span>' : ''}
+        <div style="margin:4px 0">${(x.itens || []).map(i => `<label class="chk" style="display:block"><input type="checkbox" data-it="${i.id}" ${livre(i) ? 'checked' : 'disabled'}> ${num(i.quantidade)} ${esc(i.unidade || '')} ${esc(i.descricao)}${i.pedido ? ` <span class="tg">já no ${esc(i.pedido)}</span>` : i.em_cotacao ? ` <span class="tg">em cotação ${esc(i.em_cotacao)}</span>` : ''}</label>`).join('')}</div>
+        <button type="button" class="btn primario fino" data-vinc="${x.id}">Vincular ${esc(x.numero)}</button></div>`).join('')
+      : '<p class="sub">Nenhuma solicitação aprovada encontrada (últimos 180 dias). A solicitação precisa ser feita e aprovada antes.</p>';
+    q('#vLista').querySelectorAll('[data-vinc]').forEach(b => b.onclick = async () => {
+      const its = [...b.parentElement.querySelectorAll('[data-it]:checked:not(:disabled)')].map(c => Number(c.dataset.it));
+      b.disabled = true;
+      const { error } = await db.rpc('pedido_compra_vincular_solicitacao', { p_pedido: r.id, p_solicitacao: Number(b.dataset.vinc), p_itens: its });
+      if (error) { b.disabled = false; return aviso('Não vinculou: ' + error.message, true); }
+      aviso('Solicitação vinculada'); m.remove(); mostrarSolicitacoes(pai, r); mostrarPendencias(pai, r);
+    });
+  };
+  q('#vBusca').oninput = desenhar; q('#vN').onclick = () => m.remove(); desenhar();
 }
 
 /* ---------- Usinagem: material enviado ao prestador (sai do estoque, fica "em poder de terceiro") ---------- */
@@ -1167,6 +1216,7 @@ const cfg = {
     modalAtual = m; sujo = false; PED_ATUAL = r.id || null;
     if (r.id && r.origem !== 'tiny') mostrarPendencias(m, r);
     if (r.id) mostrarMaterial(m, r);
+    if (r.id && r.origem !== 'tiny') mostrarSolicitacoes(m, r);
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
     const box = document.createElement('div');
