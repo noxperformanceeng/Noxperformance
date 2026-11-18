@@ -6,7 +6,7 @@
 <title>Categorias financeiras · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181343">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181346">
 <style>
   .arvore { white-space: nowrap; }
   .arvore.n1 { font-weight: 700; }
@@ -18,11 +18,11 @@
 <body data-modulo="categorias_fin" data-titulo="Categorias financeiras">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181343"></script>
-<script src="../../assets/js/ui.js?v=202611181343"></script>
-<script src="../../assets/js/auth.js?v=202611181343"></script>
-<script src="../../assets/js/layout.js?v=202611181343"></script>
-<script src="../../assets/js/cadastro.js?v=202611181343"></script>
+<script src="../../assets/js/supabase.js?v=202611181346"></script>
+<script src="../../assets/js/ui.js?v=202611181346"></script>
+<script src="../../assets/js/auth.js?v=202611181346"></script>
+<script src="../../assets/js/layout.js?v=202611181346"></script>
+<script src="../../assets/js/cadastro.js?v=202611181346"></script>
 <script>
 const TIPOS = [{ v: 'receita', n: 'Receita' }, { v: 'deducao', n: 'Dedução da receita (impostos, taxas de marketplace, devoluções)' },
   { v: 'custo', n: 'Custo de produção / mercadoria' }, { v: 'despesa', n: 'Despesa operacional' }, { v: 'investimento', n: 'Investimento (máquinas, obras)' },
@@ -53,6 +53,8 @@ montarCadastro({
     { id: 'aceita_lancamento', label: 'Recebe lançamento', tipo: 'bool', padrao: true, textoBool: 'Sim (último nível)', filtro: true,
       ajuda: 'Desmarque para grupos que só somam as categorias de baixo.' },
     { id: 'aplica_produtos', label: 'Usar no cadastro de produtos', tipo: 'bool', padrao: false, textoBool: 'Aparece para escolher no produto', filtro: true },
+    { id: 'despesa_direta', label: 'Despesa sem pedido', tipo: 'bool', padrao: false, textoBool: 'Aparece na tela Despesas sem pedido', filtro: true,
+      ajuda: 'Gasto que não é estoque nem produção (combustível, copa, contas de consumo…): pode ser lançado sem pedido de compra, com a foto do cupom e aprovação.' },
     { id: 'id_tiny', label: 'ID no Tiny', ajuda: 'Usado pela integração para não duplicar.' },
     { id: 'descricao', label: 'O que entra / o que não entra', tipo: 'textarea', col: 4, secao: 'Orientação para quem lança',
       placeholder: 'ex.: tubos, curvas e chapas inox usados na produção. Não entra: ferramentas e abrasivos (2.04).' }
@@ -73,7 +75,7 @@ montarCadastro({
   textoBuscaExtra: r => `${r.nome} ${paiDe(r)?.nome || ''}`,
   antesSalvar: d => {
     if (d.pai_id) d.pai_id = Number(d.pai_id);
-    if (!d.aceita_lancamento) d.aplica_produtos = false;
+    if (!d.aceita_lancamento) { d.aplica_produtos = false; d.despesa_direta = false; }
   },
   validar: (d, r) => {
     const pai = TODAS.find(x => x.id === d.pai_id);
