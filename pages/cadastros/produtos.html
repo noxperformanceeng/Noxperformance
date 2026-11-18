@@ -6,7 +6,7 @@
 <title>Produtos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611180821">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611180852">
 <style>
   td.foto { width: 64px; padding: 4px 8px; }
   td.foto img { display: block; width: 52px; height: 52px; object-fit: contain; background: #fff; border: 1px solid var(--linha); border-radius: 6px; cursor: zoom-in; }
@@ -97,11 +97,11 @@
 <datalist id="dlForn"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611180821"></script>
-<script src="../../assets/js/ui.js?v=202611180821"></script>
-<script src="../../assets/js/padrao-descricao.js?v=202611180821"></script>
-<script src="../../assets/js/auth.js?v=202611180821"></script>
-<script src="../../assets/js/layout.js?v=202611180821"></script>
+<script src="../../assets/js/supabase.js?v=202611180852"></script>
+<script src="../../assets/js/ui.js?v=202611180852"></script>
+<script src="../../assets/js/padrao-descricao.js?v=202611180852"></script>
+<script src="../../assets/js/auth.js?v=202611180852"></script>
+<script src="../../assets/js/layout.js?v=202611180852"></script>
 <script>
 /* ===================== CONFIGURAÇÃO ===================== */
 /* "Origem" = como a peça chega na NOX (quem cadastra sabe olhando a peça, o desenho ou a nota de compra).
@@ -109,8 +109,12 @@
 const TIPOS = [   // abas da lista
   { id: 'materia_prima', nome: 'Matéria-prima' }, { id: 'componente', nome: 'Adquirido pronto' },
   { id: 'semiacabado', nome: 'Semiacabado' }, { id: 'acabado', nome: 'Produto pronto' }, { id: 'kit', nome: 'Kit' },
-  { id: 'insumo', nome: 'Insumo' }, { id: 'ferramenta', nome: 'Ferramenta' }
+  { id: 'insumo', nome: 'Insumo' }, { id: 'ferramenta', nome: 'Ferramenta' }, { id: 'pd', nome: 'Desenvolvimento (P&D)' }
 ];
+// Desenvolvimento (P&D): peça comprada para desenvolver produto (amostra, peça de referência). Tipo interno = adquirido pronto,
+// mas fica em aba, origem e código (PD001…) próprios, sem misturar com o que entra nos produtos.
+const GRUPO_PD = 'Desenvolvimento (P&D)';
+const abaDe = p => p.grupo === GRUPO_PD ? 'pd' : p.tipo;
 const NOME_TIPO = Object.fromEntries(TIPOS.map(t => [t.id, t.nome]));
 // Opções do campo Origem: cada uma define o tipo e, algumas, o grupo (que decide o código: usinagem → NX)
 const ORIGENS = [
@@ -124,7 +128,8 @@ const ORIGENS = [
   { id: 'insumo', tipo: 'insumo', nome: 'Insumo' },
   { id: 'ferramenta', tipo: 'ferramenta', nome: 'Ferramenta' },
   { id: 'dispositivo', tipo: 'ferramenta', grupo: 'Dispositivos', nome: 'Dispositivo' },
-  { id: 'gabarito', tipo: 'ferramenta', grupo: 'Gabaritos', nome: 'Gabarito' }
+  { id: 'gabarito', tipo: 'ferramenta', grupo: 'Gabaritos', nome: 'Gabarito' },
+  { id: 'pd', tipo: 'componente', grupo: GRUPO_PD, nome: 'Desenvolvimento (P&D)' }
 ];
 const AJUDA_ORIGEM = 'Matéria-prima: comprada para ser transformada na NOX (tubo, chapa, barra, rolo de mangueira).\n' +
   'Produto adquirido pronto: usado como vem (mangote, abraçadeira, filtro).\n' +
@@ -132,6 +137,7 @@ const AJUDA_ORIGEM = 'Matéria-prima: comprada para ser transformada na NOX (tub
   'Produto pronto: fabricado pela NOX. Kit completo: todos os itens de um kit NOX.\n' +
   'Insumo: consumido na produção sem virar peça (polimento, disco de corte, gases). Broca, macho e serra também — grupo Ferramentas de corte.\n' +
   'Ferramenta: uso durável (chave, retificadeira, curvador). Dispositivo: serve para fabricar várias peças. Gabarito: feito para uma peça só.\n' +
+  'Desenvolvimento (P&D): comprado para desenvolver produto (amostra, peça original do carro para medir e testar encaixe). Código PD.\n' +
   'Se o produto é vendido, o sistema descobre sozinho pelos anúncios e pedidos de venda.';
 const origemDe = p => ORIGENS.find(o => o.tipo === p.tipo && o.grupo && o.grupo === p.grupo)
   || ORIGENS.find(o => o.tipo === p.tipo && !o.grupo) || null;
@@ -326,7 +332,7 @@ function opcoesGrupo(atual) {
 }
 
 function preencherFiltros() {
-  const base = produtos.filter(p => !tipoAtual || p.tipo === tipoAtual);
+  const base = produtos.filter(p => !tipoAtual || abaDe(p) === tipoAtual);
   const opc = (id, valores, fixas) => {
     const el = document.getElementById(id), atual = el.value;
     el.innerHTML = fixas + valores.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
@@ -353,7 +359,7 @@ function filtrar(ignorarPend) {
   const v = id => document.getElementById(id).value;
   const busca = v('fBusca'), de = v('fDe'), ate = v('fAte');
   return produtos.filter(p => {
-    if (tipoAtual && p.tipo !== tipoAtual) return false;
+    if (tipoAtual && abaDe(p) !== tipoAtual) return false;
     if (v('fSit') && p.situacao !== v('fSit')) return false;
     if (v('fGrupo') && p.grupo !== v('fGrupo')) return false;
     if (v('fCat') && (v('fCat') === '-' ? p.categoria_financeira_id : String(p.categoria_financeira_id) !== v('fCat'))) return false;
@@ -382,7 +388,7 @@ function filtrar(ignorarPend) {
 function desenhar() {
   // Abas por tipo
   const sit = document.getElementById('fSit').value;
-  const contaTipo = t => produtos.filter(p => (!t || p.tipo === t) && (!sit || p.situacao === sit)).length;
+  const contaTipo = t => produtos.filter(p => (!t || abaDe(p) === t) && (!sit || p.situacao === sit)).length;
   document.getElementById('abasTipo').innerHTML = [{ id: '', nome: 'Todos' }, ...TIPOS].map(t =>
     `<button class="aba${t.id === tipoAtual ? ' ativa' : ''}" data-tipo="${t.id}">${t.nome}<span class="n">${contaTipo(t.id)}</span></button>`).join('');
   document.querySelectorAll('#abasTipo .aba').forEach(b => b.onclick = () => {
@@ -493,7 +499,7 @@ function desenharLote() {
 /* ===================== CADASTRO / EDIÇÃO ===================== */
 function abrirProduto(p) {
   const novo = !p;
-  p = p || { tipo: tipoAtual || 'materia_prima', situacao: 'ativo', controla_estoque: true };
+  p = p || (tipoAtual === 'pd' ? { tipo: 'componente', grupo: GRUPO_PD, situacao: 'ativo', controla_estoque: true } : { tipo: tipoAtual || 'materia_prima', situacao: 'ativo', controla_estoque: true });
   const ro = podeEditar ? '' : 'disabled';
   let vinc = novo ? [] : fornDe(p.id).map(v => ({ ...v }));
   const removidos = [];
@@ -512,7 +518,7 @@ function abrirProduto(p) {
     <div class="grade-campos">
       <div class="campo"><label>Origem <span class="dica" tabindex="0" title="${esc(AJUDA_ORIGEM)}">?</span></label><select id="pTipo" data-simples ${ro}>${ORIGENS.map(o => `<option value="${o.id}"${o === origemDe(p) ? ' selected' : ''}>${o.nome}</option>`).join('')}${p.tipo && !origemDe(p) ? `<option value="" selected>${esc(p.tipo)}</option>` : ''}</select>
         ${p.id ? `<div style="margin-top:4px">${tgVendido(p.id, true)}</div>` : '<div class="sub" style="margin-top:4px">Vendido ou não: o sistema marca sozinho quando o produto tiver anúncio ou pedido de venda.</div>'}</div>
-      <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre pela origem: matéria-prima, adquirido pronto e insumo 4000xxx; semiacabado – usinagem NX; outros semiacabados (corte a laser, fabricado na NOX) 2000xxx; ferramenta, dispositivo e gabarito F.">Gerar</button>' : ''}</div></div>
+      <div class="campo"><label>Código</label><div class="linha-cod"><input id="pCodigo" value="${esc(p.codigo || '')}" ${ro}>${podeEditar ? '<button class="btn" type="button" id="pGerar" title="Sugere o próximo código livre pela origem: matéria-prima, adquirido pronto e insumo 4000xxx; semiacabado – usinagem NX; outros semiacabados (corte a laser, fabricado na NOX) 2000xxx; ferramenta, dispositivo e gabarito F; desenvolvimento (P&amp;D) PD.">Gerar</button>' : ''}</div></div>
       <div class="campo"><label>Situação</label><select id="pSit" ${ro}><option value="ativo"${p.situacao === 'ativo' ? ' selected' : ''}>Ativo</option><option value="inativo"${p.situacao === 'inativo' ? ' selected' : ''}>Inativo</option></select></div>
       <div class="campo"><label>Unid. de estoque / uso</label><select id="pUn" ${ro}><option value="">— escolher —</option>${unidades.map(u => `<option${u === p.unidade ? ' selected' : ''}>${u}</option>`).join('')}</select></div>
       <div class="campo l4"><label>Descrição <span class="dica" tabindex="0" title="Padrão: tudo em maiúscula, medida colada na unidade e o material no final depois de ' - '. Ex.: ABRAÇADEIRA ROSCA SEM FIM 19-27MM FITA 9MM - AÇO CARBONO. O sistema corrige sozinho ao sair do campo.">?</span></label><input id="pDesc" value="${esc(p.descricao || '')}" ${ro}><div id="descPadrao" class="desc-padrao"></div></div>
