@@ -163,6 +163,7 @@ begin
   return v_id;
 end $$;
 revoke execute on function public.processar_pedido_shopee(text) from public, anon, authenticated;
+grant execute on function public.processar_pedido_shopee(text) to service_role;  -- só o servidor (shopee-sync)
 
 -- Busca automática: a cada 30 min, as vendas alteradas nos últimos 2 dias (só roda depois que a loja for autorizada)
 do $$ begin
