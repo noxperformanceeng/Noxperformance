@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guias de montagem · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181101">
+<style>
+  .gm { display: grid; grid-template-columns: minmax(240px, 330px) 1fr; gap: 14px; align-items: start; }
+  .gm-lista { max-height: calc(100vh - 210px); overflow: auto; padding: 6px; }
+  .gm-lista .cat { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--texto-suave); margin: 10px 6px 4px; }
+  .gm-lista button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; }
+  .gm-lista button:hover { background: var(--fundo); }
+  .gm-lista button.sel { background: var(--destaque-fundo, #fdecec); color: var(--destaque-texto, inherit); font-weight: 600; }
+  .gm-lista button small { color: var(--texto-suave); font-weight: 400; }
+  .gm-lista button.inativo { opacity: .5; }
+  .gm-ver { padding: 14px; min-height: 300px; }
+  .gm-ver h2 { margin: 0 0 4px; font-size: 18px; }
+  .gm-ver .meta { font-size: 12px; color: var(--texto-suave); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .gm-ver .img { width: 100%; border: 1px solid var(--borda); border-radius: 8px; background: #fff; cursor: zoom-in; display: block; }
+  .gm-ver .sem-img { border: 1px dashed var(--borda); border-radius: 8px; padding: 40px; text-align: center; color: var(--texto-suave); }
+  .gm-ver .txt { white-space: pre-wrap; font-size: 13.5px; line-height: 1.5; margin-top: 12px; background: var(--fundo); border-radius: 8px; padding: 10px 12px; }
+  .gm-ver .prods { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .gm-ver .nav { display: flex; gap: 6px; margin-left: auto; }
+  .zoom { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 1000; overflow: auto; cursor: zoom-out; }
+  .zoom img { width: 160%; max-width: none; display: block; margin: 0 auto; background: #fff; }
+  @media (max-width: 860px) { .gm { grid-template-columns: 1fr; } .gm-lista { max-height: 260px; } .zoom img { width: 250%; } }
+</style>
+</head>
+<body data-modulo="guias_montagem" data-titulo="Guias de montagem">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Guias de montagem</h1>
+    <p class="sub">O catálogo interno de montagem dos kits (intakes, downpipes, pressurizações, suportes…). Busque pelo carro, kit, peça ou SKU. Quando alguém altera uma página, todo mundo vê na hora.</p></div>
+    <div><button class="btn primario" type="button" id="btnNova" hidden>+ Nova página</button></div>
+  </div>
+  <div class="barra-ferr">
+    <div class="abas" id="abas"></div>
+    <div class="ferr"><input id="fBusca" class="busca" type="search" placeholder="Buscar: carro, kit, peça, SKU…" title="Palavras em qualquer ordem"></div>
+  </div>
+  <div class="gm">
+    <div class="cartao gm-lista" id="lista"><div class="vazio">Carregando…</div></div>
+    <div class="cartao gm-ver" id="ver"></div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611181101"></script>
+<script src="../../assets/js/ui.js?v=202611181101"></script>
+<script src="../../assets/js/auth.js?v=202611181101"></script>
+<script src="../../assets/js/layout.js?v=202611181101"></script>
+<script>
+/* =====================================================================
+   Guias de montagem
+   · Cada página do catálogo: imagem (bucket privado "guias"), título, categoria, texto (itens e instruções),
+     produtos ligados e vídeo (link do Drive). Lista à esquerda por categoria; página aberta à direita.
+   · ?produto=<id> abre a primeira página ligada ao produto (para abrir da ordem de produção / expedição).
+   · Tempo real: carregar() relê e redesenha mantendo a página aberta, a aba e a busca.
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+let CTX, GUIAS = [], PRODS = new Map(), USU = new Map(), ABA = '', SEL = null, URLS = {};
+const CATS = ['Observações gerais', 'Parafusos e peças', 'Intakes', 'Downpipes', 'Pressurização', 'Inlet e charge pipe', "Tubos d'água", 'Gargalos',
+  'Suportes de intake', 'Suportes de defletor', 'Flauta EA888'];
+const podeEditar = () => CTX.pode('guias_montagem', 'editar');
+const ordemCat = c => { const i = CATS.indexOf(c); return i < 0 ? 99 : i; };
+const prod = id => PRODS.get(id);
+
+async function urlImagem(caminho) {
+  if (!caminho) return null;
+  const u = URLS[caminho]; if (u && u.ate > Date.now()) return u.url;
+  const { data } = await db.storage.from('guias').createSignedUrl(caminho, 3600);
+  if (data?.signedUrl) URLS[caminho] = { url: data.signedUrl, ate: Date.now() + 3300e3 };
+  return data?.signedUrl || null;
+}
+
+function filtrados() {
+  const t = $('#fBusca').value.trim();
+  return GUIAS.filter(g => (podeEditar() || g.situacao === 'ativo') && (!ABA || g.categoria === ABA)
+    && (!t || combinaBusca([g.titulo, g.categoria, g.texto, ...(g.produto_ids || []).flatMap(id => [prod(id)?.codigo, prod(id)?.descricao])].join(' '), t)))
+    .sort((a, b) => ordemCat(a.categoria) - ordemCat(b.categoria) || a.ordem - b.ordem || a.id - b.id);
+}
+
+function desenhar() {
+  const cats = [...new Set(GUIAS.filter(g => g.situacao === 'ativo' || podeEditar()).map(g => g.categoria))].sort((a, b) => ordemCat(a) - ordemCat(b));
+  $('#abas').innerHTML = [['', 'Todas'], ...cats.map(c => [c, c])].map(([v, n]) =>
+    `<button class="aba${v === ABA ? ' ativa' : ''}" data-aba="${esc(v)}">${esc(n)}<span class="n">${GUIAS.filter(g => (!v || g.categoria === v) && (g.situacao === 'ativo' || podeEditar())).length}</span></button>`).join('');
+  document.querySelectorAll('#abas .aba').forEach(b => b.onclick = () => { ABA = b.dataset.aba; desenhar(); });
+  const ls = filtrados();
+  if (!ls.some(g => g.id === SEL)) SEL = ls[0]?.id ?? null;
+  let ult = null;
+  $('#lista').innerHTML = ls.length ? ls.map(g => { const cab = g.categoria !== ult ? `<div class="cat">${esc(g.categoria)}</div>` : ''; ult = g.categoria;
+    return cab + `<button type="button" data-id="${g.id}" class="${g.id === SEL ? 'sel' : ''} ${g.situacao !== 'ativo' ? 'inativo' : ''}">${esc(g.titulo)}${g.situacao !== 'ativo' ? ' <small>(inativa)</small>' : ''}</button>`; }).join('')
+    : '<div class="vazio">Nada encontrado.</div>';
+  $('#lista').querySelectorAll('[data-id]').forEach(b => b.onclick = () => { SEL = Number(b.dataset.id); desenhar(); });
+  mostrar(GUIAS.find(g => g.id === SEL), ls);
+}
+
+async function mostrar(g, ls) {
+  const v = $('#ver');
+  if (!g) { v.innerHTML = '<div class="vazio">Escolha uma página na lista.</div>'; return; }
+  const i = ls.findIndex(x => x.id === g.id), ant = ls[i - 1], prox = ls[i + 1];
+  v.innerHTML = `<div class="meta"><span class="tg neutro">${esc(g.categoria)}</span><span>página ${g.ordem}</span>
+      <span>atualizada ${dataHoraBR(g.atualizado_em)}${USU.get(g.atualizado_por) ? ' por ' + esc(USU.get(g.atualizado_por)) : ''}</span>
+      <span class="nav">${ant ? '<button class="btn fino" id="gAnt" title="Página anterior">‹</button>' : ''}${prox ? '<button class="btn fino" id="gProx" title="Próxima página">›</button>' : ''}
+      ${podeEditar() ? '<button class="btn fino" id="gEd">Alterar…</button>' : ''}</span></div>
+    <h2>${esc(g.titulo)}</h2>
+    <div id="gImg">${g.imagem ? '<div class="sem-img">Carregando a imagem…</div>' : '<div class="sem-img">Sem imagem</div>'}</div>
+    ${g.video_url ? `<p style="margin:10px 0 0"><a class="btn fino" href="${esc(g.video_url)}" target="_blank" rel="noopener">▶ Ver vídeo</a></p>` : ''}
+    ${(g.produto_ids || []).length ? `<div class="prods">${g.produto_ids.map(id => prod(id) ? `<span class="tg" title="${esc(prod(id).descricao)}">${esc(prod(id).codigo || '')} ${esc((prod(id).descricao || '').slice(0, 40))}</span>` : '').join('')}</div>` : ''}
+    ${g.texto ? `<div class="txt">${esc(g.texto)}</div>` : ''}`;
+  if (ant) $('#gAnt').onclick = () => { SEL = ant.id; desenhar(); };
+  if (prox) $('#gProx').onclick = () => { SEL = prox.id; desenhar(); };
+  $('#gEd')?.addEventListener('click', () => editar(g));
+  if (g.imagem) {
+    const u = await urlImagem(g.imagem); if (SEL !== g.id) return;
+    $('#gImg').innerHTML = u ? `<img class="img" src="${esc(u)}" alt="${esc(g.titulo)}" title="Clique para ampliar">` : '<div class="sem-img">Não carregou a imagem</div>';
+    $('#gImg img')?.addEventListener('click', () => {
+      const z = document.createElement('div'); z.className = 'zoom'; z.innerHTML = `<img src="${esc(u)}" alt="">`; z.onclick = () => z.remove(); document.body.appendChild(z); });
+  }
+}
+
+function editar(g) {
+  const novo = !g; g = g || { titulo: '', categoria: ABA || 'Intakes', ordem: Math.max(0, ...GUIAS.map(x => x.ordem)) + 1, texto: '', produto_ids: [], situacao: 'ativo' };
+  const cods = (g.produto_ids || []).map(id => prod(id)?.codigo).filter(Boolean).join(', ');
+  const m = abrirModal(`<h2>${novo ? 'Nova página do guia' : 'Alterar página'}</h2>
+    <div class="grade-campos">
+      <div class="campo l4"><label>Título <span class="obrig">*</span></label><input id="eTit" value="${esc(g.titulo)}" placeholder="ex.: INTAKE GOLF MK4 2.0 COM MAF"></div>
+      <div class="campo l2"><label>Categoria</label><input id="eCat" list="eCats" value="${esc(g.categoria)}"><datalist id="eCats">${CATS.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+      <div class="campo"><label>Ordem (página)</label><input id="eOrd" inputmode="numeric" value="${g.ordem}"></div>
+      <div class="campo"><label>Situação</label><select id="eSit" data-simples><option value="ativo">Ativa</option><option value="inativo"${g.situacao !== 'ativo' ? ' selected' : ''}>Inativa (some para a equipe)</option></select></div>
+      <div class="campo l4"><label>Imagem da página ${g.imagem ? '<span class="sub">(escolha outra só se for trocar)</span>' : ''}</label><input id="eImg" type="file" accept="image/png,image/jpeg"></div>
+      <div class="campo l4"><label>Produtos ligados <span class="sub">(códigos/SKU separados por vírgula, ex.: ITK097, DF-068)</span></label><input id="eProd" value="${esc(cods)}"></div>
+      <div class="campo l4"><label>Vídeo (link do Google Drive, opcional)</label><input id="eVid" value="${esc(g.video_url || '')}" placeholder="https://drive.google.com/…"></div>
+      <div class="campo l4"><label>Texto (itens, medidas e como montar)</label><textarea id="eTxt" rows="12">${esc(g.texto || '')}</textarea></div>
+    </div>
+    <div class="acoes"><button class="btn" id="eN">Voltar</button><button class="btn primario" id="eS">Salvar</button></div>`);
+  const q = s => m.querySelector(s);
+  q('#eN').onclick = () => m.remove();
+  q('#eS').onclick = async () => {
+    const titulo = q('#eTit').value.trim(); if (!titulo) return aviso('Informe o título', true);
+    const porCod = new Map([...PRODS.values()].filter(p => p.codigo).map(p => [p.codigo.toUpperCase(), p.id]));
+    const lidos = q('#eProd').value.split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+    const faltam = lidos.filter(c => !porCod.has(c)); if (faltam.length) return aviso('Código não encontrado no cadastro: ' + faltam.join(', '), true);
+    q('#eS').disabled = true;
+    const dados = { titulo, categoria: q('#eCat').value.trim() || 'Intakes', ordem: Number(q('#eOrd').value) || 0, situacao: q('#eSit').value,
+      texto: q('#eTxt').value.trim() || null, video_url: q('#eVid').value.trim() || null, produto_ids: [...new Set(lidos.map(c => porCod.get(c)))] };
+    const f = q('#eImg').files[0];
+    if (f) {
+      if (f.size > 8e6) { q('#eS').disabled = false; return aviso('Imagem grande demais (máx. 8 MB)', true); }
+      const caminho = `paginas/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${/png$/i.test(f.type) ? 'png' : 'jpg'}`;
+      const up = await db.storage.from('guias').upload(caminho, f, { contentType: f.type || 'image/jpeg' });
+      if (up.error) { q('#eS').disabled = false; return aviso('Imagem não subiu: ' + up.error.message, true); }
+      dados.imagem = caminho;
+    }
+    const r = novo ? await db.from('guias_montagem').insert(dados).select('id').single() : await db.from('guias_montagem').update(dados).eq('id', g.id).select('id').single();
+    if (r.error) { q('#eS').disabled = false; return aviso('Não salvou: ' + r.error.message, true); }
+    SEL = r.data.id; aviso('Página salva'); m.remove(); carregar();
+  };
+}
+
+async function carregar() {
+  const [gs, ps, us] = await Promise.all([
+    buscarTodos(() => db.from('guias_montagem').select('*').order('ordem')),
+    PRODS.size ? null : buscarTodos(() => db.from('produtos').select('id, codigo, descricao')),
+    USU.size ? null : db.rpc('usuarios_nomes')]);
+  GUIAS = gs || [];
+  if (ps) PRODS = new Map(ps.map(p => [p.id, p]));
+  if (us) USU = new Map((us.data || []).map(u => [u.id, u.nome]));
+  const pid = Number(new URLSearchParams(location.search).get('produto'));
+  if (pid && SEL === null) { const g = GUIAS.find(x => (x.produto_ids || []).includes(pid)); if (g) SEL = g.id; }
+  desenhar();
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  $('#btnNova').hidden = !podeEditar(); $('#btnNova').onclick = () => editar(null);
+  ligarBusca($('#fBusca'), desenhar);
+  window.addEventListener('aba-ativa', carregar);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelector('.zoom')?.remove(); });
+  carregar();
+})();
+</script>
+</body>
+</html>
