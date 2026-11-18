@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162108"></script>
-<script src="../../assets/js/ui.js?v=202611162108"></script>
-<script src="../../assets/js/auth.js?v=202611162108"></script>
-<script src="../../assets/js/layout.js?v=202611162108"></script>
-<script src="../../assets/js/cadastro.js?v=202611162108"></script>
-<script src="../../assets/js/comprovante.js?v=202611162108"></script>
+<script src="../../assets/js/supabase.js?v=202611181321"></script>
+<script src="../../assets/js/ui.js?v=202611181321"></script>
+<script src="../../assets/js/auth.js?v=202611181321"></script>
+<script src="../../assets/js/layout.js?v=202611181321"></script>
+<script src="../../assets/js/cadastro.js?v=202611181321"></script>
+<script src="../../assets/js/comprovante.js?v=202611181321"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -242,6 +242,21 @@ const parcelaDe = r => { if (r.parcela && r.parcelas) return [r.parcela, r.parce
 const colaborador = r => r.origem === 'rh' && r.funcionario_id ? (r.descricao || '').split(' · ').pop().trim() : '';
 // Título do RH com o total (SQL 134): sem nome de colaborador; o detalhe fica só nas telas do RH
 const rhTotal = r => r.origem === 'rh' && !r.funcionario_id;
+// Mesmo boleto para vários títulos do fornecedor (ex.: pedidos separados por categoria no Tiny): combinações com os títulos
+// do mesmo fornecedor que vencem no mesmo dia ou foram pagos na mesma data — o comprovante vale se mostrar uma dessas somas
+function gruposDoBoleto(r, valor, data) {
+  const mesmoForn = x => r.fornecedor_id ? x.fornecedor_id === r.fornecedor_id : !x.fornecedor_id && !!r.origem_ref?.fornecedor_tiny && x.origem_ref?.fornecedor_tiny === r.origem_ref.fornecedor_tiny;
+  const irmaos = LINHAS.filter(x => x.id !== r.id && x.situacao !== 'cancelado' && !x.projecao && mesmoForn(x)).map(x => {
+    const pg = (extraAtual.pagamentos?.[x.id] || []).filter(p => !p.estornado && p.data_pagamento === data).reduce((s, p) => s + Number(p.valor) + Number(p.juros || 0) - Number(p.desconto || 0), 0);
+    const v = pg > 0 ? pg : x.data_vencimento === r.data_vencimento && Number(x.saldo) > 0 ? Number(x.saldo) : 0;
+    return v > 0 && { v, nome: x.documento || x.descricao?.slice(0, 40) || '#' + x.id };
+  }).filter(Boolean).slice(0, 8), out = [];
+  for (let m = 1; m < 1 << irmaos.length; m++) {
+    const sel = irmaos.filter((_, i) => m & 1 << i);
+    out.push({ soma: Math.round((valor + sel.reduce((s, x) => s + x.v, 0)) * 100) / 100, junto: sel.map(x => `${x.nome} (${reais(x.v)})`).join(', ') });
+  }
+  return out;
+}
 const mesmoNomeTiny = r => LINHAS.filter(x => x.id !== r.id && !x.fornecedor_id && x.origem_ref?.fornecedor_tiny === r.origem_ref?.fornecedor_tiny && ['aberto', 'programado'].includes(x.situacao));
 
 /* ---------- Rastreio da compra até o pagamento ---------- */
@@ -314,11 +329,17 @@ function htmlAnexos(r) {
   return `<div class="secao">Anexos${ls.length ? ' · ' + ls.length : ''}</div>
     ${ls.length ? `<table class="lista-mini"><tbody>${ls.map(a => `<tr><td><a href="#" data-anexo="${a.id}" style="color:var(--destaque)">${esc(a.nome)}</a></td>
       <td><span class="tg neutro">${esc(CAT_ANEXO[a.categoria] || a.categoria)}</span>${a.pagamento_id ? ' <small class="sub">do pagamento de ' + dataCurta((extraAtual.pagamentos[r.id] || []).find(p => p.id === a.pagamento_id)?.data_pagamento) + '</small>' : ''}</td>
-      <td class="sub">${dataHoraBR(a.criado_em)}</td>${podeExcluirAnexo(a) ? `<td><button type="button" class="btn discreto fino" data-anexo-rm="${a.id}">Excluir</button></td>` : '<td></td>'}</tr>`).join('')}</tbody></table>`
+      <td class="sub">${dataHoraBR(a.criado_em)}${a.conferencia?.substituido_por ? ' <span class="tg neutro">substituído</span>' : divergente(a) ? ' <span class="tg erro">divergente</span>' : ''}</td>${podeExcluirAnexo(a) ? `<td><button type="button" class="btn discreto fino" data-anexo-rm="${a.id}">Excluir</button></td>` : '<td></td>'}</tr>
+      ${divergente(a) ? `<tr><td colspan="4" style="background:#fdeceb;padding:6px 8px"><small><b>Não bateu:</b> ${(a.conferencia.itens || []).filter(i => !i.ok).map(i => esc(i.item + ': ' + i.detalhe)).join(' · ')}
+        ${a.conferencia.justificativa ? '<br><b>Justificativa:</b> ' + esc(a.conferencia.justificativa) : ''}<br>Se o comprovante estiver errado (trocado, de outro pagamento, sem o valor), troque pelo certo. Se estiver certo, o master dá ciente.</small>
+        ${podeAnexar ? `<label class="btn fino" style="cursor:pointer;margin-left:6px">Trocar comprovante<input type="file" data-trocar="${a.id}" accept="application/pdf,image/*" hidden></label>` : ''}</td></tr>` : ''}`).join('')}</tbody></table>`
       : '<p class="sub" style="margin:0 0 6px">Nenhum arquivo. Anexe o comprovante do pagamento, o boleto ou a nota.</p>'}
     ${podeAnexar ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">${selCatAnexo('anCat', ABERTOS.includes(r.situacao) ? 'boleto' : 'comprovante')}
       <label class="btn fino" style="cursor:pointer">+ Anexar arquivo<input type="file" id="anArq" multiple accept="application/pdf,image/*,.xml" hidden></label><small class="sub">PDF ou imagem, até 15 MB</small></div>` : ''}`;
 }
+let ultimoAnexoId = null;
+// Comprovante que não bateu e ainda está com o master (sem ciente e sem troca)
+const divergente = a => a.categoria === 'comprovante' && a.conferencia?.ok === false && !a.ciente_em;
 async function anexarArquivos(r, arquivos, categoria, pagamentoId, conferencia) {
   let n = 0;
   for (const f of arquivos) {
@@ -327,9 +348,9 @@ async function anexarArquivos(r, arquivos, categoria, pagamentoId, conferencia) 
     const caminho = `pagar/${r.empresa_id}/${r.id}/${Date.now()}_${limpo}`;
     const up = await db.storage.from('financeiro').upload(caminho, f, { contentType: f.type || undefined });
     if (up.error) { aviso(f.name + ': ' + up.error.message, true); continue; }
-    const { error } = await db.from('titulos_anexos').insert({ tipo: 'pagar', titulo_id: r.id, pagamento_id: pagamentoId || null, categoria, nome: f.name, caminho, mime: f.type || null, tamanho: f.size, conferencia: conferencia || null });
+    const { data: ins, error } = await db.from('titulos_anexos').insert({ tipo: 'pagar', titulo_id: r.id, pagamento_id: pagamentoId || null, categoria, nome: f.name, caminho, mime: f.type || null, tamanho: f.size, conferencia: conferencia || null }).select('id').single();
     if (error) { aviso(f.name + ': ' + error.message, true); continue; }
-    n++;
+    ultimoAnexoId = ins?.id; n++;
   }
   return n;
 }
@@ -349,6 +370,23 @@ function ligarAnexos(m, r) {
     if (error || !data?.length) return aviso('Não excluiu: ' + (error?.message || 'só quem enviou o arquivo (até 7 dias) ou o master pode excluir'), true);
     const st = await db.storage.from('financeiro').remove([x.caminho]);
     aviso(st.error ? 'Anexo tirado do título, mas o arquivo ficou no armazenamento: ' + st.error.message : 'Anexo excluído', !!st.error);
+    m.remove(); cfg.recarregar();
+  });
+  m.querySelectorAll('[data-trocar]').forEach(inpT => inpT.onchange = async () => {
+    const arq = inpT.files[0]; inpT.value = ''; if (!arq) return;
+    const x = (extraAtual.anexos[r.id] || []).find(y => y.id === Number(inpT.dataset.trocar));
+    const pg = (extraAtual.pagamentos[r.id] || []).find(p => p.id === x.pagamento_id);
+    if (!pg) return aviso('Não achei o pagamento deste comprovante', true);
+    const forn = FORN.find(f => f.v === r.fornecedor_id);
+    const conf = await conferirComTela(arq, { valor: Number(pg.valor) + Number(pg.juros || 0) - Number(pg.desconto || 0), data: pg.data_pagamento,
+      nome: forn?.nome || r.origem_ref?.fornecedor_tiny || colaborador(r) || '', fantasia: forn?.fantasia, doc: forn?.doc,
+      apelidos: apelidosDe(APELIDOS, r.fornecedor_id, r.origem_ref?.fornecedor_tiny) }, 'Trocar comprovante');
+    if (!conf) return;
+    ultimoAnexoId = null;
+    if (!await anexarArquivos(r, [arq], 'comprovante', pg.id, conf) || !ultimoAnexoId) return;
+    const { error } = await db.rpc('comprovante_trocar', { p_antigo: x.id, p_novo: ultimoAnexoId });
+    if (error) return aviso('O novo foi anexado, mas o antigo continua pendente: ' + error.message, true);
+    aviso(conf.ok ? 'Comprovante trocado: confere e saiu das pendências' : 'Comprovante trocado: o novo também diverge e foi para o master com a justificativa', !conf.ok);
     m.remove(); cfg.recarregar();
   });
   const inp = m.querySelector('#anArq');
@@ -381,7 +419,7 @@ async function registrarPagamento(r) {
   if (!comp.length) return aviso('Anexe o comprovante do pagamento (obrigatório)', true);
   const forn = FORN.find(f => f.v === r.fornecedor_id);
   const conf = await conferirComTela(comp[0], { valor: p.valor + p.juros - p.desconto, data: p.data_pagamento, nome: forn?.nome || r.origem_ref?.fornecedor_tiny || colaborador(r) || '', fantasia: forn?.fantasia, doc: forn?.doc,
-    apelidos: apelidosDe(APELIDOS, r.fornecedor_id, r.origem_ref?.fornecedor_tiny) });
+    apelidos: apelidosDe(APELIDOS, r.fornecedor_id, r.origem_ref?.fornecedor_tiny), grupos: gruposDoBoleto(r, p.valor + p.juros - p.desconto, p.data_pagamento) });
   if (!conf) return;
   if (conf.justificativa) p.observacoes = 'Comprovante com divergência: ' + conf.justificativa;
   const { data: pg, error } = await db.from('pagamentos').insert(p).select('id').single();
@@ -392,7 +430,7 @@ async function registrarPagamento(r) {
 }
 
 // Lê o comprovante, mostra o que bateu e o que não bateu; divergência só segue com justificativa
-async function conferirComTela(arquivo, esperado) {
+async function conferirComTela(arquivo, esperado, rotulo) {
   const m = abrirModal(`<h2>Conferindo o comprovante…</h2><p class="sub" id="cfSt">Lendo ${esc(arquivo.name)} (pode levar alguns segundos em foto)</p>`);
   let itens, texto = '';
   try { texto = await lerComprovante(arquivo); itens = conferirComprovante(texto, esperado); }
@@ -405,7 +443,7 @@ async function conferirComTela(arquivo, esperado) {
       ${tudo ? '' : `<div class="campo"><label>Justificativa para registrar mesmo assim *</label><textarea id="cfJ" rows="2" placeholder="ex.: pago pelo app com o nome fantasia; valor com juros do banco"></textarea></div>
       ${itens.some(x => x.item === 'Fornecedor' && !x.ok) ? '<p class="sub" style="margin:4px 0 0">Se for o mesmo fornecedor com outro nome (razão social x nome fantasia), diga isso na justificativa: quando o gestor der ciente, o sistema aprende esse nome e não bloqueia de novo.</p>' : ''}`}
       ${texto ? `<details style="margin-top:6px"><summary class="sub">Texto lido do comprovante</summary><pre style="font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto">${esc(texto.slice(0, 3000))}</pre></details>` : ''}
-      <div class="acoes"><button class="btn" id="cfN">Voltar</button><button class="btn primario" id="cfS">${tudo ? 'Registrar pagamento' : 'Registrar com justificativa'}</button></div>`;
+      <div class="acoes"><button class="btn" id="cfN">Voltar</button><button class="btn primario" id="cfS">${tudo ? (rotulo || 'Registrar pagamento') : (rotulo ? rotulo + ' com justificativa' : 'Registrar com justificativa')}</button></div>`;
     m.querySelector('#cfN').onclick = () => { m.remove(); res(null); };
     m.querySelector('#cfS').onclick = () => {
       const j = m.querySelector('#cfJ')?.value.trim();
@@ -427,6 +465,34 @@ function janela(titulo, corpo, botao, aoConfirmar) {
 /* ---------- Fila "NF recebidas para lançar" (SQL 132) ----------
    O almoxarifado deu entrada da NF (estoque atualizado); o financeiro confere e lança (vira título real) ou devolve com o motivo.
    Entra também a NF sem pedido aprovada pelo master, depois da entrada no estoque. */
+/* Órgão de imposto (cadastro de fornecedores, categoria "Impostos e guias", SQL 151):
+   escolheu o órgão → a categoria vem do tipo de imposto dele (um só: já preenche; vários: ficam no topo da lista);
+   escolheu a categoria de um imposto sem fornecedor → o órgão desse imposto entra sozinho (se houver só um). */
+function ligarImposto(m) {
+  const fF = m.querySelector('#f_fornecedor_id'), fC = m.querySelector('#f_categoria_financeira_id');
+  if (!fF || !fC) return;
+  const dica = () => {
+    m.querySelector('#dicaImposto')?.remove();
+    const f = FORN.find(x => x.v === Number(fF.value)); if (!f?.impostos.length) return;
+    const nomes = f.impostos.map(id => CATS.find(c => c.id === id)?.nome).filter(Boolean);
+    fC.closest('.campo').insertAdjacentHTML('beforeend', `<p class="ajuda" id="dicaImposto">Órgão de imposto: ${esc(nomes.join(', '))}</p>`);
+  };
+  fF.addEventListener('change', () => {
+    const f = FORN.find(x => x.v === Number(fF.value)), lst = f?.impostos || [];
+    if (lst.length && !lst.includes(Number(fC.value))) {
+      const ops = [...fC.options], topo = lst.map(id => ops.find(o => Number(o.value) === id)).filter(Boolean);
+      topo.reverse().forEach(o => fC.insertBefore(o, fC.options[1] || null));   // tipos do órgão no topo
+      if (lst.length === 1 && topo.length) { fC.value = String(lst[0]); fC.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
+    dica();
+  });
+  fC.addEventListener('change', () => {
+    if (fF.value) return;
+    const cat = Number(fC.value), donos = FORN.filter(x => x.ativo && x.impostos.includes(cat));
+    if (donos.length === 1) { fF.value = String(donos[0].v); fF.dispatchEvent(new Event('change', { bubbles: true })); aviso(`Fornecedor preenchido: ${donos[0].n} (órgão deste imposto)`); }
+  });
+  dica();
+}
 let FILA = [], PC_ABERTOS = [], abrirFilaAoCarregar = new URLSearchParams(location.search).has('fila');
 function desenharFila() {
   let box = document.getElementById('filaNF');
@@ -540,9 +606,9 @@ const cfg = {
   subtitulo: 'Despesas e títulos por empresa. Compra de produto entra pelo pedido de compra / NF; aqui, manualmente, só despesas.',
   dicaBusca: 'fornecedor, documento, categoria, conta…', ordem: 'data_vencimento', revisao: false, porEmpresa: true,
   filtrosExtras: [
-    { id: 'grupo', label: 'Situação', padrao: 'abertos', opcoes: [{ v: 'abertos', n: 'Em aberto (a pagar)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'hoje', n: 'Vencem hoje' }, { v: 'programados', n: 'Programados' },
+    { id: 'grupo', label: 'Situação', padrao: 'abertos', opcoes: [{ v: 'abertos', n: 'Em aberto (a pagar)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'hoje', n: 'Vencem hoje' }, { v: 'urgentes', n: 'Urgentes' }, { v: 'programados', n: 'Programados' },
         { v: 'parcial', n: 'Pago parcial' }, { v: 'pago', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }],
-      teste: (r, v) => v === 'abertos' ? ABERTOS.includes(r.situacao) : v === 'vencidos' ? vencido(r) : v === 'hoje' ? ABERTOS.includes(r.situacao) && dias(r) === 0 : v === 'programados' ? r.situacao === 'programado' : r.situacao === v },
+      teste: (r, v) => v === 'abertos' ? ABERTOS.includes(r.situacao) : v === 'vencidos' ? vencido(r) : v === 'hoje' ? ABERTOS.includes(r.situacao) && dias(r) === 0 : v === 'urgentes' ? ABERTOS.includes(r.situacao) && r.urgente : v === 'programados' ? r.situacao === 'programado' : r.situacao === v },
     { id: 'prazo', label: 'Prazo (data prevista)', opcoes: FAIXAS.map(f => ({ v: f.v, n: f.n })), teste: (r, v) => faixa(r) === v },
     { id: 'tipo', label: 'Real ou projeção', opcoes: [{ v: 'real', n: 'Só reais' }, { v: 'projecao', n: 'Só projeções' }], teste: (r, v) => (v === 'projecao') === !!r.projecao },
     { id: 'conc', label: 'Conciliação', opcoes: [{ v: 'nao', n: 'Pago e não conciliado' }, { v: 'sim', n: 'Conciliado' }],
@@ -551,7 +617,7 @@ const cfg = {
   totais: ['valor', 'saldo'],
   valorTotal: (r, c) => r.situacao === 'cancelado' ? 0 : r[c],
   // Ordem padrão: o que ainda vai ser pago primeiro (pela data prevista); pagos depois, do mais recente
-  ordenarPor: { data_vencimento: r => (ABERTOS.includes(r.situacao) ? '0' + prevista(r) : '1' + (9e15 - Date.parse(r.data_pagamento || r.data_vencimento))) },
+  ordenarPor: { data_vencimento: r => (ABERTOS.includes(r.situacao) ? '0' + (r.urgente ? '0' : '1') + prevista(r) : '1' + (9e15 - Date.parse(r.data_pagamento || r.data_vencimento))) },
   periodos: [{ campo: 'data_vencimento', label: 'Vencimento' }, { campo: 'data_pagamento', label: 'Pagamento' }, { campo: 'data_emissao', label: 'Emissão' },
     { campo: 'data_competencia', label: 'Competência' }, { campo: 'data_programada', label: 'Programado para' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
   // Lista: vencimento (com o prazo), empresa, fornecedor (com a descrição), documento (com a parcela), valor, saldo, situação
@@ -569,7 +635,9 @@ const cfg = {
           : rhTotal(r) ? `<span class="texto-curto" title="Total do RH, pago pela Diretoria. O valor por colaborador fica só no RH.">RH · Diretoria <small class="tg neutro">total</small></span>`
           : r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : '') + d; } },
     { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato',
-      listaHtml: r => (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '')
+      listaHtml: r => (r.urgente && ABERTOS.includes(r.situacao) ? '<span class="tg erro pisca" title="Marcado como urgente pelo comprador">URGENTE</span> ' : '')
+        + (r.origem_ref?.antecipado ? '<span class="tg alerta" title="Pedido de compra com pagamento antecipado: pagar antes da mercadoria chegar">PC · antecipado</span> ' : '')
+        + (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '')
         + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '') },
     { id: 'descricao', label: 'Descrição / histórico', col: 2, ajuda: 'Nos títulos do Tiny: o histórico de lá.' },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
@@ -595,13 +663,16 @@ const cfg = {
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', filtro: true, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
     { id: 'projecao', label: 'Projeção', tipo: 'bool', textoBool: 'Valor estimado', ajuda: 'Valor ainda estimado (ex.: conta de luz antes de chegar). Desmarque quando chegar a conta/boleto real.' },
     { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 4 },
+    { id: 'pix', label: 'Pix (chave ou copia e cola)', col: 2 },
+    { id: 'link_pagamento', label: 'Link de pagamento', col: 2 },
+    { id: 'urgente', label: 'Urgência', tipo: 'bool', textoBool: 'URGENTE (aparece primeiro na lista)' },
     { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, secao: 'Origem', oculto: r => !r.id },
     { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
   ],
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx; LINHAS = linhas;
     const [f, c, cb, fp, pg, ra, an, ap] = await Promise.all([
-      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao, cnpj').order('nome')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, situacao, cnpj, categoria, impostos').order('nome')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, aplica_produtos, situacao').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('contas_bancarias').select('id, descricao, empresa_id, situacao, tipo').order('descricao')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, exige_codigo, situacao').order('nome')),
@@ -615,7 +686,8 @@ const cfg = {
       ctx.pode('compras') ? db.from('pedidos_compra').select('id, numero, fornecedor_id').in('situacao', ['aprovado', 'enviado', 'recebido_parcial']) : { data: [] }]);
     FILA = fl.data || []; PC_ABERTOS = pa.data || [];
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
-    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x), nome: x.nome, fantasia: x.nome_fantasia, doc: x.cnpj }));
+    FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x), nome: x.nome, fantasia: x.nome_fantasia, doc: x.cnpj, ativo: x.situacao === 'ativo',
+      impostos: x.categoria === 'Impostos e guias' ? x.impostos || [] : [] }));
     CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' }));
     CONTAS = cb; FORMAS = fp.filter(x => x.situacao === 'ativo');
     const pagamentos = {}, rateio = {};
@@ -643,6 +715,7 @@ const cfg = {
     { id: 'produto_sem_pedido', nome: 'Compra de produto sem pedido', cor: 'alerta',
       teste: (r, e) => ['manual', 'recorrente'].includes(r.origem) && [r.categoria_financeira_id, ...(e.rateio[r.id] || []).map(x => x.categoria_financeira_id)].some(id => cat(id)?.aplica_produtos) },
     { id: 'sem_codigo', nome: 'Boleto sem código de barras', cor: 'neutro', teste: r => ABERTOS.includes(r.situacao) && forma(r.forma_pagamento_id)?.exige_codigo && !r.codigo_barras },
+    { id: 'comp_divergente', nome: 'Comprovante divergente', cor: 'erro', teste: (r, e) => (e.anexos[r.id] || []).some(divergente) },
     { id: 'sem_comprovante', nome: 'Pago sem comprovante', cor: 'neutro', teste: (r, e) => r.situacao === 'pago' && r.data_pagamento >= '2026-10-23' && !(e.anexos[r.id] || []).some(a => a.categoria === 'comprovante') },
     { id: 'nao_conc', nome: 'Pago e não conciliado', cor: 'neutro', teste: (r, e) => (e.pagamentos[r.id] || []).some(p => !p.estornado && !p.conciliado) }
   ],
@@ -663,6 +736,7 @@ const cfg = {
       };
       fEmp.addEventListener('change', filtrarContas); filtrarContas();
     }
+    if (pode) ligarImposto(m);
     // Título do RH: mostra o colaborador que recebe (no lugar do fornecedor, que não se aplica)
     if (colaborador(r)) m.querySelector('[data-campo="empresa_id"]')?.insertAdjacentHTML('afterend', `<div class="campo l2"><label>Favorecido (colaborador)</label>
       <input type="text" value="${esc(colaborador(r))}" disabled><p class="ajuda">Gerado pelo RH: quem recebe é o colaborador, por isso não tem fornecedor.</p></div>`);

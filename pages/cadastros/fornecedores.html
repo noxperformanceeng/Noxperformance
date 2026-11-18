@@ -6,17 +6,17 @@
 <title>Fornecedores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
 </head>
 <body data-modulo="fornecedores" data-titulo="Fornecedores">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162108"></script>
-<script src="../../assets/js/ui.js?v=202611162108"></script>
-<script src="../../assets/js/auth.js?v=202611162108"></script>
-<script src="../../assets/js/layout.js?v=202611162108"></script>
-<script src="../../assets/js/cadastro.js?v=202611162108"></script>
-<script src="../../assets/js/comprovante.js?v=202611162108"></script>
+<script src="../../assets/js/supabase.js?v=202611181321"></script>
+<script src="../../assets/js/ui.js?v=202611181321"></script>
+<script src="../../assets/js/auth.js?v=202611181321"></script>
+<script src="../../assets/js/layout.js?v=202611181321"></script>
+<script src="../../assets/js/cadastro.js?v=202611181321"></script>
+<script src="../../assets/js/comprovante.js?v=202611181321"></script>
 <script>
 /* Outros nomes no comprovante (SQL 114/136): sócio, pessoa física, intermediador (ex.: Mercado Pago).
    O comprovante em nome de um deles passa na conferência. Incluir/excluir: só o master (um nome aqui libera pagamentos sem alerta). */
@@ -51,9 +51,24 @@ function ligarOutrosNomes(m, r) {
     b.closest('tr').remove(); aviso('Nome excluído');
   });
 }
+const IMPOSTO = 'Impostos e guias';
 const SIT = [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }];
 const CATEGORIAS = ['Matéria-prima', 'Usinagem (terceiro)', 'Corte a laser (terceiro)', 'Pintura (terceiro)', 'Polimento (terceiro)',
-  'Embalagem', 'Ferramentas e abrasivos', 'Fixadores', 'Filtros e componentes', 'Serviços', 'Transporte', 'Outros'];
+  'Embalagem', 'Ferramentas e abrasivos', 'Fixadores', 'Filtros e componentes', 'Serviços', 'Transporte', IMPOSTO, 'Outros'];
+/* Categoria "Impostos e guias" (SQL 151): o órgão (Receita Federal, Caixa/FGTS, Sefaz, Prefeitura…) recebe um ou mais
+   tipos de imposto = categorias financeiras de imposto. Ao salvar, os títulos a pagar sem fornecedor desses tipos
+   passam a ser dele, e o comprovante da guia confere pelo nome do órgão. */
+const ehImposto = c => /^(2\.01|8\.01|10\.04|6\.08)\./.test(c.codigo) || /FGTS|INSS/i.test(c.nome);
+function montarImpostos(m, r, e) {
+  const fCat = m.querySelector('#f_categoria'); if (!fCat) return;
+  const marcados = new Set(r?.impostos || []), cats = (e.cats || []).filter(c => ehImposto(c) || marcados.has(c.id));
+  fCat.closest('.campo').insertAdjacentHTML('afterend', `<div class="campo l4" id="impostosBox" hidden><label>Tipos de imposto pagos a este órgão</label>
+    ${cats.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px 16px">${cats.map(c => `<label class="chk"><input type="checkbox" data-imposto="${c.id}" ${marcados.has(c.id) ? 'checked' : ''}> ${esc(c.nome)}</label>`).join('')}</div>`
+      : '<p class="sub" style="margin:0">Sem acesso às categorias financeiras: peça a quem cuida do financeiro para marcar os tipos de imposto.</p>'}
+    <p class="ajuda">Ex.: Receita Federal → DAS, PIS, COFINS, IRPJ, CSLL, IRRF. Ao salvar, os títulos a pagar sem fornecedor desses tipos passam a ser deste órgão, e o comprovante da guia confere pelo nome dele.</p></div>`);
+  const box = m.querySelector('#impostosBox'), mostrar = () => box.hidden = fCat.value !== IMPOSTO;
+  fCat.addEventListener('change', mostrar); mostrar();
+}
 
 montarCadastro({
   tabela: 'fornecedores', modulo: 'fornecedores', titulo: 'Fornecedores', singular: 'fornecedor', plural: 'fornecedores',
@@ -87,14 +102,15 @@ montarCadastro({
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
   ],
   async carregarExtra(linhas, ctx) {
-    const [v, ap] = await Promise.all([buscarTodos(() => db.from('produto_fornecedores').select('fornecedor_id, codigo_fornecedor, preferencial, produtos(codigo, descricao, tipo, situacao)').order('id')),
-      db.from('fornecedores_apelidos').select('id, fornecedor_id, apelido, anexo_id, criado_em').not('fornecedor_id', 'is', null).order('apelido')]);
+    const [v, ap, cf] = await Promise.all([buscarTodos(() => db.from('produto_fornecedores').select('fornecedor_id, codigo_fornecedor, preferencial, produtos(codigo, descricao, tipo, situacao)').order('id')),
+      db.from('fornecedores_apelidos').select('id, fornecedor_id, apelido, anexo_id, criado_em').not('fornecedor_id', 'is', null).order('apelido'),
+      db.from('categorias_financeiras').select('id, codigo, nome').eq('aceita_lancamento', true).eq('situacao', 'ativo').order('codigo')]);
     const por = {}, apelidos = {};
     v.forEach(x => (por[x.fornecedor_id] ||= []).push(x));
     (ap.data || []).forEach(x => (apelidos[x.fornecedor_id] ||= []).push(x));
-    return { produtos: por, apelidos, admin: !!ctx?.admin };
+    return (EXTRA_FORN = { produtos: por, apelidos, cats: cf.data || [], admin: !!ctx?.admin });
   },
-  colunasExtras: [{ label: 'Produtos', texto: (r, e) => String((e.produtos[r.id] || []).length) }],
+  colunasExtras: [{ label: 'Produtos / impostos', texto: (r, e) => r.categoria === IMPOSTO ? (r.impostos || []).map(id => (e.cats || []).find(c => c.id === id)?.nome || '?').join(', ') : String((e.produtos[r.id] || []).length) }],
   textoBuscaExtra: (r, e) => (e.produtos[r.id] || []).map(x => `${x.produtos?.codigo} ${x.produtos?.descricao} ${x.codigo_fornecedor || ''}`).join(' '),
   subtituloLinha: r => r.nome_fantasia,
   secaoExtra: (r, e) => {
@@ -104,18 +120,30 @@ montarCadastro({
       : '<p class="sub" style="margin:0">Nenhum produto vinculado. O vínculo é feito no cadastro de Produtos.</p>')
       + htmlOutrosNomes(r, e);
   },
-  aoAbrir: (m, r) => ligarOutrosNomes(m, r),
+  aoAbrir: (m, r) => { montarImpostos(m, r, EXTRA_FORN || {}); ligarOutrosNomes(m, r); },
+  antesSalvar: d => {
+    const box = document.querySelector('#impostosBox'); if (!box?.querySelector('[data-imposto]')) return;   // sem acesso às categorias: não mexe
+    const ids = d.categoria === IMPOSTO ? [...box.querySelectorAll('[data-imposto]:checked')].map(x => Number(x.dataset.imposto)) : [];
+    d.impostos = ids.length ? ids : null;
+  },
+  validar: d => d.categoria === IMPOSTO && document.querySelector('#impostosBox [data-imposto]') && !d.impostos ? 'Marque ao menos um tipo de imposto pago a este órgão'
+    : d.tipo_pessoa === 'PF' && d.cnpj && d.cnpj.length !== 11 ? 'Pessoa física deve ter CPF (11 dígitos)' : d.tipo_pessoa === 'PJ' && d.cnpj && d.cnpj.length !== 14 ? 'Pessoa jurídica deve ter CNPJ (14 dígitos)' : null,
+  // órgão de imposto salvo: os títulos foram vinculados no banco; o master já reconfere os comprovantes pendentes dele
+  async depoisSalvar(id, d) {
+    if (d.categoria !== IMPOSTO || !EXTRA_FORN?.admin) return;
+    try { const x = await reconferirPendentes(() => {}, id); if (x.liberados) aviso(`${x.liberados} comprovante(s) pendente(s) passaram a conferir`); } catch { /* dá para reconferir nas Aprovações */ }
+  },
   pendencias: [
     { id: 'sem_doc', nome: 'Sem CNPJ/CPF', cor: 'erro', bloqueia: true, teste: r => !r.cnpj },
     { id: 'doc_inv', nome: 'Documento inválido', cor: 'erro', bloqueia: true, teste: r => r.cnpj && !(r.cnpj.length === 11 ? cpfValido(r.cnpj) : cnpjValido(r.cnpj)) },
-    { id: 'sem_contato', nome: 'Sem telefone/e-mail', cor: 'alerta', bloqueia: true, teste: r => !r.telefone && !r.email },
+    { id: 'sem_contato', nome: 'Sem telefone/e-mail', cor: 'alerta', bloqueia: true, teste: r => !r.telefone && !r.email && r.categoria !== IMPOSTO },
+    { id: 'sem_imposto', nome: 'Órgão sem tipo de imposto', cor: 'alerta', bloqueia: true, teste: r => r.categoria === IMPOSTO && !r.impostos?.length },
     { id: 'sem_cat', nome: 'Sem categoria', cor: 'alerta', bloqueia: true, teste: r => !r.categoria },
     { id: 'sem_cidade', nome: 'Sem cidade', cor: 'alerta', teste: r => !r.cidade },
-    { id: 'sem_prod', nome: 'Sem produtos vinculados', cor: 'neutro', teste: (r, e) => r.situacao === 'ativo' && !(e.produtos[r.id] || []).length }
+    { id: 'sem_prod', nome: 'Sem produtos vinculados', cor: 'neutro', teste: (r, e) => r.situacao === 'ativo' && r.categoria !== IMPOSTO && !(e.produtos[r.id] || []).length }
   ],
   acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
   apagado: r => r.situacao === 'inativo',
-  validar: d => d.tipo_pessoa === 'PF' && d.cnpj && d.cnpj.length !== 11 ? 'Pessoa física deve ter CPF (11 dígitos)' : d.tipo_pessoa === 'PJ' && d.cnpj && d.cnpj.length !== 14 ? 'Pessoa jurídica deve ter CNPJ (14 dígitos)' : null,
   msgDuplicado: 'Já existe fornecedor com este CNPJ/CPF'
 });
 </script>

@@ -6,7 +6,7 @@
 <title>Solicitações de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .sub-ed th { text-align: left; font-size: 11px; color: var(--texto-suave); font-weight: 500; padding: 0 3px 3px; white-space: nowrap; }
@@ -22,16 +22,23 @@
   .aviso-box.erro { background: #fdeceb; color: var(--erro); }
   .tg.pc { background: #f3effe; color: #6d28d9; }
   .fila-grupo td { padding-top: 10px !important; }
+  .sc-legenda { background: #eef4ff; border: 1px solid #c9dafc; border-radius: 8px; padding: 10px 14px; margin: 6px 0 10px; font-size: 14.5px; line-height: 1.5; color: #1d2b4f; }
+  .sc-legenda > b { font-size: 15.5px; display: block; margin-bottom: 4px; }
+  .sc-legenda > div { margin: 3px 0; }
+  .sc-legenda .tg { font-size: 12.5px; margin-right: 4px; }
+  .sc-erro { margin-top: 4px; padding: 7px 10px; border-radius: 6px; background: #fdeceb; border: 1px solid #f3b4ae; color: #8a1c13; font-size: 13.5px; line-height: 1.4; }
+  .sc-erro .btn { margin-left: 6px; }
+  tr.sc-errada > td { background: #fff7f6; }
 </style>
 </head>
 <body data-modulo="solicitacoes_compra" data-titulo="Solicitações de compra">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162108"></script>
-<script src="../../assets/js/ui.js?v=202611162108"></script>
-<script src="../../assets/js/auth.js?v=202611162108"></script>
-<script src="../../assets/js/layout.js?v=202611162108"></script>
-<script src="../../assets/js/cadastro.js?v=202611162108"></script>
+<script src="../../assets/js/supabase.js?v=202611181321"></script>
+<script src="../../assets/js/ui.js?v=202611181321"></script>
+<script src="../../assets/js/auth.js?v=202611181321"></script>
+<script src="../../assets/js/layout.js?v=202611181321"></script>
+<script src="../../assets/js/cadastro.js?v=202611181321"></script>
 <script>
 /* =====================================================================
    Solicitações de compra (antes do pedido)
@@ -75,6 +82,43 @@ function etapa(r) {
 }
 
 /* ---------- Itens (sempre do cadastro de produtos ou de serviços) ---------- */
+// Regras para pedir certo: peça usinada (NX) = SERVIÇO de usinagem com a peça que volta; produto pronto = PRODUTO.
+let USI = new Set();   // peças marcadas no cadastro como "feito por usinagem terceirizada"
+const ehUsinada = c => c && c.tipo === 'produto' && USI.has(c.id);
+const ehServUsi = c => c && c.tipo === 'servico' && /USINAGEM/i.test(c.descricao || '');
+const ehServPeca = c => c && c.tipo === 'servico' && /PINTURA|POLIMENTO/i.test(c.descricao || '');
+const optPecas = sel => '<option value="">— peça que volta usinada —</option>' + CAT.filter(ehUsinada)
+  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' · ' + c.descricao)}</option>`).join('');
+const LEGENDA = `<div class="sc-legenda">
+  <b>Como pedir certo</b>
+  <div><span class="tg ok">Produto</span> o que se compra <b>pronto</b> e entra no estoque como veio: matéria-prima (tubo, chapa, barra), insumo, ferramenta, peça comprada pronta, peça de <b>corte a laser</b> (família 200).</div>
+  <div><span class="tg alerta">Serviço</span> quando a NOX <b>manda o material</b> para alguém trabalhar e <b>paga o serviço</b>:
+    <b>USINAGEM</b> (peças que a NOX manda usinar: escolha também a <b>peça que volta usinada</b> — é ela que entra no estoque), <b>PINTURA / POLIMENTO</b> (diga no detalhe o que vai ser pintado/polido), <b>DESENHO TÉCNICO</b>.</div>
+  <div class="sub">Ex.: repor NX27 (usinada a mando da NOX) → Tipo <b>Serviço</b> › <b>USINAGEM</b> › peça <b>NX27</b>. NX42 prolongador de sonda (comprado pronto) ou tubo inox → Tipo <b>Produto</b>. Se escolher errado, o sistema avisa na hora.</div>
+</div>`;
+// Confere a linha na hora e explica o erro (sem esperar salvar)
+function conferirLinha(tr) {
+  const g = k => tr.querySelector(`[data-k=${k}]`), t = g('tipo').value, c = itemCat(t, Number(g('item').value));
+  let msg = '', acao = '';
+  if (ehUsinada(c)) { msg = `${c.codigo} é feita por <b>usinagem terceirizada</b> (marcado no cadastro do produto): não se compra pronta. A NOX manda a matéria-prima e paga o <b>serviço de usinagem</b>; a peça volta pronta e entra no estoque.`; acao = `<button type="button" class="btn fino" data-trocar>Trocar para Serviço › Usinagem › ${esc(c.codigo)}</button>`; }
+  else if (ehServUsi(c) && !g('peca')?.value) msg = 'Usinagem: escolha a <b>peça que volta usinada</b> (é ela que entra no estoque).';
+  else if (ehServPeca(c) && !g('observacao').value.trim() && !g('peca')?.value) msg = `${esc(c.descricao)}: diga no detalhe <b>o que</b> vai ser feito (ex.: defletor DF-002, 10 conjuntos).`;
+  else if (t === 'servico' && c && !ehServUsi(c)) {
+    const txt = ' ' + g('observacao').value.toUpperCase() + ' ', pr = CAT.find(x => x.tipo === 'produto' && x.codigo && !ehUsinada(x) && txt.includes(' ' + x.codigo.toUpperCase() + ' ') && !/PINTURA|POLIMENTO/i.test(c.descricao));
+    if (pr) msg = `${esc(pr.codigo)} (${esc(pr.descricao)}) é <b>produto</b> do cadastro: para comprá-lo, use Tipo = <b>Produto</b>. Serviço é só quando a NOX paga alguém para trabalhar o material.`;
+  }
+  let box = tr.querySelector('.sc-erro');
+  if (!msg) { box?.remove(); tr.classList.remove('sc-errada'); return true; }
+  if (!box) { box = document.createElement('div'); box.className = 'sc-erro'; tr.querySelector('[data-k=observacao]').after(box); }
+  box.innerHTML = `⚠ ${msg} ${acao}`; tr.classList.add('sc-errada');
+  box.querySelector('[data-trocar]')?.addEventListener('click', () => {
+    const usi = CAT.find(ehServUsi), q = g('quantidade').value;
+    g('tipo').value = 'servico'; g('tipo').dispatchEvent(new Event('change', { bubbles: true }));
+    if (usi) { g('item').value = usi.id; g('item').dispatchEvent(new Event('change', { bubbles: true })); }
+    const pc = tr.querySelector('[data-k=peca]'); if (pc) pc.value = c.id; g('quantidade').value = q; conferirLinha(tr);
+  });
+  return false;
+}
 const optCat = (tipo, sel) => `<option value="">— escolha o ${tipo === 'servico' ? 'serviço' : 'produto'} —</option>` + CAT.filter(c => c.tipo === tipo)
   .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc((c.codigo ? c.codigo + ' · ' : '') + c.descricao + (c.pendente ? ' (cadastro aguardando aprovação)' : ''))}</option>`).join('');
 const linkCad = tipo => CTX.pode(tipo === 'servico' ? 'compras' : 'produtos', 'criar')
@@ -84,6 +128,7 @@ function linhaItem(x = {}, ped = false) {
   return `<tr data-id="${x.id || ''}">
     <td style="width:96px"><select data-k="tipo" data-simples><option value="produto"${tipo === 'produto' ? ' selected' : ''}>Produto</option><option value="servico"${tipo === 'servico' ? ' selected' : ''}>Serviço</option></select></td>
     <td style="min-width:260px"><div style="display:flex;gap:6px;align-items:center"><select data-k="item" style="flex:1;min-width:0">${optCat(tipo, x.produto_id || x.servico_id)}</select><span data-k="lk">${linkCad(tipo)}</span></div>
+      <select data-k="peca" style="margin-top:3px"${ehServUsi(itemCat('servico', x.servico_id)) ? '' : ' hidden'}>${optPecas(x.peca_id)}</select>
       <input data-k="observacao" placeholder="Detalhe (opcional): medida, cor, aplicação…" value="${esc(x.observacao || '')}" style="margin-top:3px"></td>
     <td style="width:62px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
     <td style="width:84px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
@@ -93,9 +138,9 @@ function linhaItem(x = {}, ped = false) {
 }
 function lerItens(m) {
   return [...m.querySelectorAll('#itens tbody tr')].map(tr => { const g = k => tr.querySelector(`[data-k=${k}]`), t = g('tipo').value, id = Number(g('item').value) || null;
-    return { produto_id: t === 'produto' ? id : null, servico_id: t === 'servico' ? id : null, unidade: g('unidade').value.trim() || null,
+    return { produto_id: t === 'produto' ? id : null, servico_id: t === 'servico' ? id : null, peca_id: t === 'servico' && !g('peca').hidden ? Number(g('peca').value) || null : null, unidade: g('unidade').value.trim() || null,
       quantidade: lerNumero(g('quantidade').value) || 0, urgencia: g('urgencia').value, observacao: g('observacao').value.trim() || null }; })
-    .filter(i => i.produto_id || i.servico_id || i.observacao);
+    .filter(i => i.produto_id || i.servico_id || i.observacao || i.peca_id);
 }
 
 /* ---------- Aprovar / recusar / cancelar ---------- */
@@ -178,8 +223,9 @@ const cfg = {
     CTX = ctx; cfg._linhas = linhas;
     const [it, cat, pe, us, ac, co] = await Promise.all([
       buscarTodos(() => db.from('solicitacoes_compra_itens').select('*').order('id')),
-      db.rpc('sc_catalogo'), db.rpc('sc_pedidos'), db.rpc('usuarios_nomes'), db.rpc('minhas_acoes'), db.rpc('sc_cotacoes')
+      buscarTodos(() => db.rpc('sc_catalogo').order('tipo', { ascending: false }).order('id')).then(data => ({ data })), db.rpc('sc_pedidos'), db.rpc('usuarios_nomes'), db.rpc('minhas_acoes'), db.rpc('sc_cotacoes')
     ]);
+    try { USI = new Set(((await db.rpc('sc_pecas_usinagem')).data || []).map(Number)); } catch (e) { USI = new Set(); }
     CAT = (cat.data || []).sort((a, b) => String(a.descricao).localeCompare(String(b.descricao), 'pt-BR'));
     PEDS = Object.fromEntries((pe.data || []).map(p => [p.id, p])); USU = us.data || []; ACOES = new Set(ac.data || []); COTS = Object.fromEntries((co.data || []).map(c => [c.id, c]));
     const itens = {}; it.forEach(x => (itens[x.solicitacao_id] ||= []).push(x));
@@ -228,7 +274,7 @@ const cfg = {
     const novo = !r.id, editavel = novo || (EDITAVEL.includes(r.situacao) && (minha(r) || ctx.pode('solicitacoes_compra', 'total')));
     const ped = r.situacao === 'aprovado';
     const box = document.createElement('div');
-    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">O que precisa comprar</div>
+    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">O que precisa comprar</div>${editavel ? LEGENDA : ''}
       <table><thead><tr><th>Tipo</th><th>Produto ou serviço (do cadastro)</th><th>Un</th><th>Qtd</th><th>Urgência</th>${ped ? '<th>Pedido</th>' : ''}<th></th></tr></thead>
       <tbody>${(novo ? [{}] : itensDe(r)).map(x => linhaItem(x, ped)).join('')}</tbody></table>
       ${editavel ? '<div style="margin-top:6px"><button type="button" class="btn fino" id="addItem">+ Item</button> <span class="sub">Não achou o item? Use "+ cadastrar" ao lado da lista.</span></div>' : ''}</div>`;
@@ -248,7 +294,10 @@ const cfg = {
       const tr = e.target.closest('tr'); if (!tr) return;
       if (e.target.dataset.k === 'tipo') { const t = e.target.value; tr.querySelector('[data-k=item]').innerHTML = optCat(t); tr.querySelector('[data-k=lk]').innerHTML = linkCad(t); tr.querySelector('[data-k=unidade]').value = ''; }
       if (e.target.dataset.k === 'item') { const c = itemCat(tr.querySelector('[data-k=tipo]').value, Number(e.target.value)); if (c?.unidade) tr.querySelector('[data-k=unidade]').value = c.unidade; }
+      if (e.target.dataset.k === 'tipo' || e.target.dataset.k === 'item') { const c = itemCat(tr.querySelector('[data-k=tipo]').value, Number(tr.querySelector('[data-k=item]').value)); const pc = tr.querySelector('[data-k=peca]'); pc.hidden = !ehServUsi(c); if (pc.hidden) pc.value = ''; }
+      conferirLinha(tr);
     });
+    box.addEventListener('focusout', e => { const tr = e.target.closest('tr'); if (tr && e.target.dataset.k === 'observacao') conferirLinha(tr); });
     if (!novo && r.situacao === 'em_aprovacao') m.querySelector('#cAviso').innerHTML = '<div class="aviso-box">Ainda aguardando aprovação: se alterar, ela continua na fila da diretoria com os dados novos.</div>';
   },
   validar: (d, r) => {
@@ -256,6 +305,8 @@ const cfg = {
     if (!its.length) return 'Inclua pelo menos um item';
     if (its.some(i => !i.produto_id && !i.servico_id)) return 'Escolha o produto ou serviço do cadastro em cada item (se não existir, use "+ cadastrar")';
     if (its.some(i => !(i.quantidade > 0))) return 'Item com quantidade zerada';
+    const errada = [...document.querySelectorAll('.modal-fundo #itens tbody tr')].find(tr => !conferirLinha(tr));
+    if (errada) { errada.scrollIntoView({ block: 'center' }); return 'Há item pedido do jeito errado (em vermelho): veja a explicação no próprio item'; }
     return null;
   },
   async salvar(dados, r, m, novo) {

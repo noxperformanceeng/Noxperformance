@@ -76,7 +76,8 @@ function nomeNoComprovante(texto) {
   return m && bom(m[1].trim()) ? m[1].trim() : null;
 }
 // somaGrupo: quando o mesmo comprovante pagou vários títulos, o total deles (aceito se o valor do título sozinho não aparecer)
-function conferirComprovante(texto, { valor, data, nome, fantasia, doc, apelidos, somaGrupo }) {
+// grupos: [{ soma, junto }] combinações prováveis do mesmo boleto (ex.: pedidos separados por categoria) — aceita a que aparecer
+function conferirComprovante(texto, { valor, data, nome, fantasia, doc, apelidos, somaGrupo, grupos }) {
   // junta números que o OCR separou ("1.088 ,00" → "1.088,00"); vírgula seguida de espaço é texto ("0728, 24 horas")
   const t = _norm(texto).replace(/\s+/g, ' ').replace(/(\d) ?([.,])(\d)/g, '$1$2$3'), soNum = t.replace(/\D/g, ''), out = [];
   // Valor: 1.234,56 · 1234,56 · 1234.56
@@ -87,6 +88,8 @@ function conferirComprovante(texto, { valor, data, nome, fantasia, doc, apelidos
   const fmt = x => x.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let okValor = achouValor, detValor = br + ' encontrado';
   if (!okValor && somaGrupo && Math.abs(somaGrupo - v) > 0.005 && perto(somaGrupo) != null) { okValor = true; detValor = `${br} faz parte de um pagamento de ${fmt(perto(somaGrupo))} (vários títulos no mesmo comprovante)`; }
+  const g = !okValor && (grupos || []).find(x => Math.abs(x.soma - v) > 0.005 && perto(x.soma) != null);
+  if (g) { okValor = true; detValor = `${br} faz parte de um pagamento de ${fmt(g.soma)}, junto com ${g.junto}`; }
   if (!okValor) detValor = br + ' não encontrado no comprovante' + (valores.filter(x => x > 0).length ? ` (o comprovante mostra ${[...new Set(valores.filter(x => x > 0))].slice(0, 3).map(fmt).join(', ')})` : '');
   out.push({ item: 'Valor', ok: okValor, detalhe: detValor });
   // Data: numérica (dd/mm/aaaa, dd.mm.aa, aaaa-mm-dd…) ou com o mês escrito (23 out. 2026, 23 de outubro de 2026)

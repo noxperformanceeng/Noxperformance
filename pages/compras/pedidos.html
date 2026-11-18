@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162108"></script>
-<script src="../../assets/js/ui.js?v=202611162108"></script>
-<script src="../../assets/js/auth.js?v=202611162108"></script>
-<script src="../../assets/js/layout.js?v=202611162108"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611162108"></script>
-<script src="../../assets/js/cadastro.js?v=202611162108"></script>
+<script src="../../assets/js/supabase.js?v=202611181321"></script>
+<script src="../../assets/js/ui.js?v=202611181321"></script>
+<script src="../../assets/js/auth.js?v=202611181321"></script>
+<script src="../../assets/js/layout.js?v=202611181321"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611181321"></script>
+<script src="../../assets/js/cadastro.js?v=202611181321"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -139,7 +139,8 @@ function checarPreco(tr) {
   const { pid, sid } = chaveLinha(tr), h = historico(pid, sid), u = h[0], vu = lerNumero(tr.querySelector('[data-k=valor_unitario]').value) || 0;
   const todos = historico(pid, sid, true);
   const link = todos.length ? ` <button type="button" data-hist title="Ver as compras anteriores deste item" style="background:none;border:0;padding:0;color:var(--destaque-texto);cursor:pointer;font:inherit;text-decoration:underline">histórico de preços (${todos.length})</button>` : '';
-  if (!u) { el.innerHTML = (pid || sid) ? `<span class="sub">sem compra anterior aprovada</span>${link}` : ''; return; }
+  const pr = !sid && pid ? prod(pid) : null, refTab = pr?.custo_referencia ? ` <span class="sub" title="Preço de referência cadastrado (tabela antiga, só parâmetro)">· referência ${reais(pr.custo_referencia)}/${esc(pr.unidade || 'un')}${pr.custo_referencia_em ? ' (' + dataCurta(pr.custo_referencia_em) + ')' : ''}</span>` : '';
+  if (!u) { el.innerHTML = (pid || sid) ? `<span class="sub">sem compra anterior aprovada</span>${refTab}${link}` : ''; return; }
   const ult = Number(u.valor_unitario), pct = vu && ult ? (vu / ult - 1) * 100 : 0, ref = `última ${reais(ult)} · ${esc(u.p.numero)} · ${dataCurta(u.p.data_pedido)} · ${esc(nomeComFantasia(forn(u.p.fornecedor_id)) || '')}`;
   el.innerHTML = (vu && pct > 0.05 ? `<span class="tg erro" title="${ref}">▲ ${pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% acima da última compra</span> `
     : vu && pct < -0.05 ? `<span class="tg ok" title="${ref}">▼ ${Math.abs(pct).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% abaixo da última</span> ` : '')
@@ -596,9 +597,12 @@ function secaoPedido(r) {
   const pend = avulsosPendentes(r);
   if (pend.length && EDITAVEL.includes(s)) avisos.push(`<div class="aviso-box erro"><b>Item sem cadastro:</b> ${esc(pend.map(i => i.descricao).join(', '))}. Cadastre o produto e escolha-o no item, ou peça liberação ao administrador (compra ocasional, ex.: manutenção). Sem isso o pedido não vai para aprovação.</div>`);
   else if (r.liberacao_avulso && (ex.itens[r.id] || []).some(i => !i.produto_id && !i.servico_id)) avisos.push(`<div class="aviso-box">Item sem cadastro <b>liberado</b> por ${esc(usu(r.liberacao_avulso.por) || 'administrador')} em ${dataHoraBR(r.liberacao_avulso.em)} · ${esc(r.liberacao_avulso.motivo || '')}</div>`);
+  const temUsi = (ex.itens[r.id] || []).some(i => i.tipo_item === 'servico_usinagem') && pos.includes(s);
   return `<div class="secao">Andamento</div>
     <div class="fluxo-pc">${etapas.join('<i>›</i>')}</div><div id="pcPend"></div>${avisos.join('')}
     <div class="acoes-pc">${acoes.join('')}</div>
+    ${r.origem !== 'tiny' ? '<div class="secao">Solicitação de compra</div><div id="pcSol"><p class="sub" style="margin:0">Carregando…</p></div>' : ''}
+    ${temUsi ? '<div class="secao">Material na usinagem</div><div id="pcMat"><p class="sub" style="margin:0">Carregando…</p></div>' : ''}
     <div class="secao">Contas a pagar</div>
     ${tits.length ? `<table class="lista-mini"><thead><tr><th>Documento</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Situação</th></tr></thead><tbody>
       ${tits.map(t => `<tr><td>${CTX.pode('pagar') ? `<a href="${RAIZ}pages/financeiro/contas-pagar.html?abrir=${t.id}" style="color:var(--destaque)">${esc(t.documento || '#' + t.id)}</a>` : esc(t.documento || '#' + t.id)}
@@ -760,6 +764,148 @@ Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. 
   };
 }
 
+/* ---------- Solicitação de compra vinculada (sem ela o pedido não vai para aprovação) ---------- */
+async function mostrarSolicitacoes(m, r) {
+  const box = m.querySelector('#pcSol'); if (!box) return;
+  const { data, error } = await db.rpc('pc_solicitacoes', { p_pedido: r.id });
+  if (error) { box.innerHTML = `<p class="sub erro" style="margin:0">Não carregou: ${esc(error.message)}</p>`; return; }
+  const sols = data?.solicitacoes || [], vinc = sols.filter(x => x.vinculada), pode = EDITAVEL.includes(r.situacao) && CTX.pode('compras', 'criar');
+  const itens = x => (x.itens || []).map(i => `<li>${num(i.quantidade)} ${esc(i.unidade || '')} ${esc(i.descricao)}${i.deste ? ' <span class="tg ok">neste pedido</span>' : i.pedido ? ` <span class="tg">${esc(i.pedido)}</span>` : i.em_cotacao ? ` <span class="tg">cotação ${esc(i.em_cotacao)}</span>` : ''}</li>`).join('');
+  box.innerHTML = (vinc.length ? vinc.map(x => `<div class="aviso-box ok" style="margin:0 0 6px">
+      <b>${esc(x.numero)}</b> · ${esc(x.solicitante)} · ${dataCurta(x.data)}${x.justificativa ? ' · ' + esc(x.justificativa) : ''}
+      ${pode ? ` <button type="button" class="btn fino discreto" data-desv="${x.id}">Desvincular</button>` : ''}
+      <ul style="margin:4px 0 0 18px;padding:0">${itens(x)}</ul></div>`).join('')
+    : `<div class="aviso-box ${EDITAVEL.includes(r.situacao) ? 'erro' : ''}" style="margin:0 0 6px">Nenhuma solicitação vinculada.${EDITAVEL.includes(r.situacao) ? ' <b>Sem a solicitação de compra aprovada, o pedido não vai para aprovação.</b>' : ''}</div>`)
+    + (pode ? '<div class="acoes-pc"><button type="button" class="btn' + (vinc.length ? '' : ' primario') + '" id="pcSolVinc">Vincular solicitação…</button></div>' : '');
+  box.querySelector('#pcSolVinc')?.addEventListener('click', () => abrirVincular(r, m, sols.filter(x => !x.vinculada)));
+  box.querySelectorAll('[data-desv]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const { error } = await db.rpc('pedido_compra_desvincular_solicitacao', { p_pedido: r.id, p_solicitacao: Number(b.dataset.desv) });
+    if (error) { b.disabled = false; return aviso('Não desvinculou: ' + error.message, true); }
+    aviso('Solicitação desvinculada'); mostrarSolicitacoes(m, r); mostrarPendencias(m, r);
+  });
+}
+function abrirVincular(r, pai, sols) {
+  const livre = i => !i.pedido && !i.em_cotacao && !i.deste;
+  const m = abrirModal(`<h2>Vincular solicitação de compra · ${esc(r.numero)}</h2>
+    <p class="sub" style="margin:0 0 8px">Escolha a solicitação <b>aprovada</b> que originou este pedido e marque os itens que ele atende (eles saem da fila "sem pedido" da solicitação). Itens que já estão em outro pedido aparecem só para consulta — ex.: a pintura de um conjunto cujas peças estão em outro pedido.</p>
+    <div class="campo"><input id="vBusca" placeholder="Buscar por número, solicitante ou item"></div>
+    <div id="vLista" style="max-height:52vh;overflow:auto"></div>
+    <div class="acoes"><button class="btn" id="vN">Voltar</button></div>`);
+  const q = s => m.querySelector(s);
+  const desenhar = () => {
+    const t = normMat(q('#vBusca').value);
+    const ls = sols.filter(x => !t || normMat([x.numero, x.solicitante, x.justificativa, ...(x.itens || []).map(i => i.descricao)].join(' ')).includes(t));
+    q('#vLista').innerHTML = ls.length ? ls.map(x => `<div class="aviso-box" style="margin:0 0 8px">
+        <b>${esc(x.numero)}</b> · ${esc(x.solicitante)} · ${dataCurta(x.data)}${x.necessidade ? ' · precisa até ' + dataCurta(x.necessidade) : ''}${x.justificativa ? '<br><span class="sub">' + esc(x.justificativa) + '</span>' : ''}
+        <div style="margin:4px 0">${(x.itens || []).map(i => `<label class="chk" style="display:block"><input type="checkbox" data-it="${i.id}" ${livre(i) ? 'checked' : 'disabled'}> ${num(i.quantidade)} ${esc(i.unidade || '')} ${esc(i.descricao)}${i.pedido ? ` <span class="tg">já no ${esc(i.pedido)}</span>` : i.em_cotacao ? ` <span class="tg">em cotação ${esc(i.em_cotacao)}</span>` : ''}</label>`).join('')}</div>
+        <button type="button" class="btn primario fino" data-vinc="${x.id}">Vincular ${esc(x.numero)}</button></div>`).join('')
+      : '<p class="sub">Nenhuma solicitação aprovada encontrada (últimos 180 dias). A solicitação precisa ser feita e aprovada antes.</p>';
+    q('#vLista').querySelectorAll('[data-vinc]').forEach(b => b.onclick = async () => {
+      const its = [...b.parentElement.querySelectorAll('[data-it]:checked:not(:disabled)')].map(c => Number(c.dataset.it));
+      b.disabled = true;
+      const { error } = await db.rpc('pedido_compra_vincular_solicitacao', { p_pedido: r.id, p_solicitacao: Number(b.dataset.vinc), p_itens: its });
+      if (error) { b.disabled = false; return aviso('Não vinculou: ' + error.message, true); }
+      aviso('Solicitação vinculada'); m.remove(); mostrarSolicitacoes(pai, r); mostrarPendencias(pai, r);
+    });
+  };
+  q('#vBusca').oninput = desenhar; q('#vN').onclick = () => m.remove(); desenhar();
+}
+
+/* ---------- Usinagem: material enviado ao prestador (sai do estoque, fica "em poder de terceiro") ---------- */
+const podeMaterial = () => CTX.pode('estoque', 'criar') || CTX.pode('almoxarifado', 'criar') || CTX.pode('compras', 'alterar');
+const normMat = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+// material sugerido: o lembrado na ficha; senão o produto cuja descrição começa com o material da ficha (ex.: MACIÇO 1.1/2")
+function materialSugerido(pid) {
+  const f = FICHAS[pid]; if (!f) return null; if (f.material_produto_id) return f.material_produto_id;
+  const alvo = normMat(f.material); if (!alvo) return null;
+  const l = PRODS.filter(p => p.situacao === 'ativo' && p.id !== pid && normMat(p.descricao).startsWith(alvo));
+  return (l.find(p => normMat(p.descricao) === alvo) || l.sort((a, b) => a.descricao.length - b.descricao.length)[0])?.id || null;
+}
+async function mostrarMaterial(m, r) {
+  const box = m.querySelector('#pcMat'); if (!box) return;
+  const { data, error } = await db.rpc('pc_usinagem_material', { p_pedido: r.id });
+  if (error) { box.innerHTML = `<p class="sub erro" style="margin:0">Não carregou o material: ${esc(error.message)}</p>`; return; }
+  const ls = data || [], itens = (ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem'), aberto = ['aprovado', 'enviado', 'recebido_parcial'].includes(r.situacao);
+  const peca = id => prod(itens.find(i => i.id === id)?.produto_id)?.codigo || '';
+  const semEnvio = itens.filter(i => !ls.some(x => x.item_id === i.id));
+  box.innerHTML = `${ls.length ? `<table class="lista-mini"><thead><tr><th>Material</th><th>Peça</th><th class="num">Enviado</th><th class="num" title="Baixado sozinho na entrada das peças, na proporção das peças que voltaram">Consumido</th>
+      <th class="num" title="Sobra que voltou para o estoque">Sobra voltou</th><th class="num">Perda</th><th class="num">No prestador</th><th></th></tr></thead><tbody>
+    ${ls.map(x => `<tr><td>${esc(x.codigo || '')} ${esc(x.descricao)}${x.custo_unitario == null ? ' <span class="tg alerta" title="Sem custo de compra: o custo da peça fica só com o serviço">sem custo</span>' : ''}</td><td>${esc(peca(x.item_id))}</td>
+      <td class="num">${num(x.enviado)} ${esc(x.unidade || '')}</td><td class="num">${num(x.consumido)}</td><td class="num">${num(x.voltou)}</td><td class="num">${num(x.baixado)}</td>
+      <td class="num">${Number(x.em_poder) > 0 ? `<b>${num(x.em_poder)}</b>` : '<span class="tg ok">0</span>'}</td>
+      <td>${Number(x.em_poder) > 0 && (CTX.pode('estoque', 'criar') || CTX.pode('almoxarifado', 'criar')) ? `<button type="button" class="btn fino" data-sobra="${x.id}">Sobra voltou…</button> <button type="button" class="btn fino" data-perda="${x.id}">Perda…</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="sub" style="margin:0">Nenhum material registrado como enviado ainda.</p>'}
+    ${semEnvio.length && aberto ? `<div class="aviso-box" style="margin-top:6px">Falta registrar o envio do material de: <b>${esc(semEnvio.map(i => prod(i.produto_id)?.codigo || i.descricao).join(', '))}</b>. Enquanto não registrar, a entrada das peças não dá baixa no material nem soma o custo dele.</div>` : ''}
+    <p class="sub" style="margin:4px 0 0">O material sai do estoque e fica <b>em poder do prestador</b>. Na entrada das peças o sistema dá baixa nele sozinho (proporcional às peças que voltaram) e soma o custo dele ao custo da peça. O que sobrar no prestador: <b>Sobra voltou</b> (volta para o estoque) ou <b>Perda</b>.</p>
+    ${aberto && podeMaterial() ? '<div class="acoes-pc" style="margin-top:6px"><button type="button" class="btn primario" id="pcMatEnv">Registrar envio do material…</button></div>' : ''}`;
+  box.querySelector('#pcMatEnv')?.addEventListener('click', () => abrirEnvioMaterial(r, m, ls));
+  box.querySelectorAll('[data-sobra],[data-perda]').forEach(b => b.onclick = () => resolverMaterial(r, m, ls.find(x => x.id === Number(b.dataset.sobra || b.dataset.perda)), b.dataset.sobra ? 'guardar' : 'baixar'));
+}
+function abrirEnvioMaterial(r, pai, ls) {
+  const itens = (ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem'); if (!itens.length) return;
+  const optMat = (sel, peca) => '<option value="">— escolha o material do estoque —</option>' + PRODS.filter(p => p.id !== peca && (p.situacao === 'ativo' || p.id === sel))
+    .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo ? p.codigo + ' · ' : '') + p.descricao)}${p.unidade ? ' (' + esc(p.unidade) + ')' : ''}</option>`).join('');
+  const m = abrirModal(`<h2>Envio do material para usinagem · ${esc(r.numero)}</h2>
+    <p class="sub" style="margin:0 0 8px">${esc(nomeComFantasia(forn(r.fornecedor_id)))}. O material sai do local dele no estoque e fica <b>em poder do prestador</b> até as peças voltarem.</p>
+    <div class="grade-campos">
+      <div class="campo l4"><label>Peça que vai ser usinada</label><select id="mItem" data-simples>${itens.map(i => `<option value="${i.id}">${esc(prod(i.produto_id)?.codigo || '')} · ${esc(i.descricao)} · ${num(i.quantidade)} pç</option>`).join('')}</select></div>
+      <div class="campo l4"><label>Material enviado <span class="obrig">*</span></label><select id="mMat"></select></div>
+      <div class="campo"><label>Quantidade enviada <span class="obrig">*</span> <span class="sub" id="mUn"></span></label><input id="mQtd" inputmode="decimal"></div>
+      <div class="campo l3"><label>&nbsp;</label><div class="sub" id="mInfo" style="padding-top:6px"></div></div>
+      <div class="campo l4"><label>Observação (opcional)</label><input id="mObs" placeholder="ex.: levado pelo motorista, NF de remessa 123"></div>
+    </div>
+    <div class="acoes"><button class="btn" id="mN">Voltar</button><button class="btn primario" id="mS">Registrar envio</button></div>`);
+  const q = s => m.querySelector(s);
+  const item = () => itens.find(i => i.id === Number(q('#mItem').value));
+  const aoMaterial = async () => {
+    const p = prod(Number(q('#mMat').value)), i = item(); q('#mUn').textContent = p?.unidade ? `(${p.unidade})` : '';
+    if (!p) { q('#mInfo').textContent = ''; return; }
+    const ja = ls.filter(x => x.item_id === i.id && x.produto_id === p.id).reduce((a, x) => a + Number(x.enviado), 0);
+    const mm = { MM: 1, CM: 10, M: 1000 }[String(p.unidade || '').toUpperCase()];
+    const sug = i.barras_enviar ? (mm && i.barra_mm ? i.barras_enviar * i.barra_mm / mm : i.barras_enviar) : null;
+    if (!q('#mQtd').value && sug && sug > ja) q('#mQtd').value = num(sug - ja);
+    const { data } = await db.rpc('estoque_disponivel', { p_produtos: [p.id] }); const d = (data || [])[0];
+    q('#mInfo').innerHTML = [sug ? `Pedido calcula ${num(i.barras_enviar)} barra(s)${i.barra_mm ? ' de ' + num(i.barra_mm) + ' mm' : ''}` : 'Ficha sem cálculo de barras',
+      ja ? `já enviado ${num(ja)} ${esc(p.unidade || '')}` : '', `disponível no estoque: <b>${num(d?.disponivel ?? 0)}</b> ${esc(p.unidade || '')}`].filter(Boolean).join(' · ');
+  };
+  const aoItem = () => { const i = item(), s = materialSugerido(i.produto_id); q('#mMat').innerHTML = optMat(s, i.produto_id); q('#mQtd').value = ''; aoMaterial(); };
+  q('#mItem').onchange = aoItem; q('#mMat').onchange = () => { q('#mQtd').value = ''; aoMaterial(); };
+  aoItem();
+  q('#mN').onclick = () => m.remove();
+  q('#mS').onclick = async () => {
+    const mat = Number(q('#mMat').value), n = lerNumero(q('#mQtd').value);
+    if (!mat) return aviso('Escolha o material enviado', true); if (!(n > 0)) return aviso('Informe a quantidade enviada', true);
+    q('#mS').disabled = true;
+    const { error } = await db.rpc('pc_usinagem_enviar_material', { p_item: item().id, p_material: mat, p_quantidade: n, p_obs: q('#mObs').value.trim() || null });
+    if (error) { q('#mS').disabled = false; return aviso('Não registrou: ' + error.message, true); }
+    if (FICHAS[item().produto_id]) FICHAS[item().produto_id].material_produto_id = mat;
+    aviso('Envio registrado · o material está em poder do prestador'); m.remove(); mostrarMaterial(pai, r);
+  };
+}
+async function resolverMaterial(r, pai, x, acao) {
+  const sobra = acao === 'guardar';
+  let locs = [];
+  if (sobra) locs = ((await db.from('locais_estoque').select('id, codigo, area').eq('situacao', 'ativo').order('codigo')).data || []).filter(l => !['terceiros', 'quarentena'].includes(l.area));
+  const m = abrirModal(`<h2>${sobra ? 'Sobra de material voltou' : 'Perda de material'} · ${esc(x.codigo || '')} ${esc(x.descricao)}</h2>
+    <p class="sub" style="margin:0 0 8px">No prestador: <b>${num(x.em_poder)} ${esc(x.unidade || '')}</b>. ${sobra ? 'Volta para o estoque no local escolhido.' : 'Sai do estoque como perda (ex.: refugo, peça errada, material não devolvido).'}</p>
+    <div class="grade-campos">
+      <div class="campo"><label>Quantidade <span class="obrig">*</span></label><input id="xQ" inputmode="decimal" value="${num(x.em_poder)}"></div>
+      ${sobra ? `<div class="campo l3"><label>Guardado em <span class="obrig">*</span></label><select id="xL"><option value="">— local —</option>${locs.map(l => `<option value="${l.id}">${esc(l.codigo)}</option>`).join('')}</select></div>` : ''}
+      <div class="campo l4"><label>${sobra ? 'Observação (opcional)' : 'Motivo da perda <span class="obrig">*</span>'}</label><input id="xO"></div>
+    </div>
+    <div class="acoes"><button class="btn" id="xN">Voltar</button><button class="btn primario" id="xS">${sobra ? 'Dar entrada da sobra' : 'Lançar perda'}</button></div>`);
+  m.querySelector('#xN').onclick = () => m.remove();
+  m.querySelector('#xS').onclick = async () => {
+    const n = lerNumero(m.querySelector('#xQ').value), loc = sobra ? Number(m.querySelector('#xL').value) || null : null, o = m.querySelector('#xO').value.trim();
+    if (!(n > 0)) return aviso('Informe a quantidade', true); if (sobra && !loc) return aviso('Escolha onde a sobra foi guardada', true); if (!sobra && !o) return aviso('Informe o motivo da perda', true);
+    m.querySelector('#xS').disabled = true;
+    const { error } = await db.rpc('estoque_fora_resolver', { p_id: x.id, p_acao: acao, p_quantidade: n, p_local: loc, p_obs: (sobra ? 'SOBRA DA USINAGEM' : 'PERDA NA USINAGEM: ' + o) + (sobra && o ? ' · ' + o : '') });
+    if (error) { m.querySelector('#xS').disabled = false; return aviso('Não deu: ' + error.message, true); }
+    aviso(sobra ? 'Sobra devolvida ao estoque' : 'Perda lançada'); m.remove(); mostrarMaterial(pai, r);
+  };
+}
+
 /* ---------- Recebimento da NF ---------- */
 function abrirRecebimento(r, pai) {
   const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem' || i.servico_id), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
@@ -769,12 +915,13 @@ function abrirRecebimento(r, pai) {
   const m = abrirModal(`<h2>${soServico ? 'Entrada do serviço' : 'Entrada da NF'} · ${esc(r.numero)}</h2>
     <p class="sub" style="margin:0 0 8px">Confira o que chegou e onde foi guardado. O estoque é atualizado agora; o contas a pagar fica para o financeiro conferir e lançar.</p>
     <div class="grade-campos">
-      <div class="campo"><label>NF nº ${soServico ? '<span class="sub">(pode ficar vazio: serviço sem nota)</span>' : '<span class="obrig">*</span>'}</label><input id="rNf"></div>
+      <div class="campo"><label>NF nº <span class="sub">(vazio = compra sem nota)</span></label><input id="rNf"></div>
       <div class="campo"><label>Série</label><input id="rSerie"></div>
       <div class="campo"><label>Emissão da NF <span class="obrig">*</span></label><input id="rEm" type="date" value="${hojeISO()}"></div>
       <div class="campo"><label>Recebida em</label><input id="rRec" type="date" value="${hojeISO()}"></div>
       <div class="campo l4"><label>Chave de acesso</label><input id="rChave" placeholder="44 dígitos (opcional)"></div>
     </div>
+    ${soServico ? '' : '<label class="chk" id="rSemNfBox" style="margin:2px 0 6px"><input type="checkbox" id="rSemNf"> <span>Esta compra <b>não tem nota fiscal</b> (entra no estoque e vai para o financeiro como "SEM NF")</span></label>'}
     <div class="sub-ed"><div class="secao">Itens recebidos${srvIds.size ? ' · peças usinadas que voltam entram no estoque (por enquanto só fica registrado no pedido; o serviço não é item de estoque)' : ''}</div><table><thead><tr><th>Item</th><th>Pedido</th><th>Já recebido</th><th>Nesta NF</th><th class="num" title="Quanto continua em aberto no pedido depois desta NF">Fica faltando</th><th class="num">Valor${comIpi ? ' (com IPI)' : ''}</th></tr></thead><tbody>
       ${itens.map(i => `<tr data-item="${i.id}" data-pend="${i.pend}" data-unit="${(Number(i.valor_total) + Number(i.valor_ipi || 0)) / Number(i.quantidade)}"><td>${esc(i.descricao)}</td><td>${num(i.quantidade)} ${esc(i.unidade || '')}</td><td>${num(i.quantidade_recebida)}</td>
         <td style="width:90px"><input data-q inputmode="decimal" value="${num(i.pend)}"></td><td class="num" data-f></td><td class="num" data-v></td></tr>`).join('')}</tbody></table>
@@ -826,7 +973,8 @@ function abrirRecebimento(r, pai) {
     const nf = { numero: q('#rNf').value.trim(), serie: q('#rSerie').value.trim(), data_emissao: q('#rEm').value, data_recebimento: q('#rRec').value, chave: q('#rChave').value.replace(/\D/g, ''), valor: lerNumero(q('#rValor').value) };
     const its = [...m.querySelectorAll('[data-item]')].map(tr => ({ item_id: Number(tr.dataset.item), quantidade: lerNumero(tr.querySelector('[data-q]').value) || 0 })).filter(x => x.quantidade > 0);
     if (!its.length) return aviso('Informe a quantidade recebida de pelo menos um item', true);
-    if (!nf.numero && !its.every(x => srvIds.has(x.item_id))) return aviso('Informe o número da NF', true);
+    if (!nf.numero && !its.every(x => srvIds.has(x.item_id)) && !q('#rSemNf')?.checked) return aviso('Informe o número da NF ou marque "Esta compra não tem nota fiscal"', true);
+    if (nf.numero && q('#rSemNf')?.checked) return aviso('Marcou "sem nota fiscal" mas informou o número da NF: desmarque ou apague o número', true);
     const recebidos = new Set(its.map(x => itens.find(i => i.id === x.item_id)?.produto_id));
     const dest = lerDestinos(); if (!dest) return;
     const baixa = q('#rBaixa')?.checked ? (q('#rBaixaMot').value || '').trim() : null;
@@ -974,7 +1122,8 @@ const cfg = {
   periodos: [{ campo: 'data_pedido', label: 'Data do pedido' }, { campo: 'data_entrega_prevista', label: 'Entrega prevista' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
   campos: [
     { id: 'numero', label: 'Nº', somenteLeitura: true, lista: true,
-      listaHtml: r => r.origem === 'tiny' ? `<span class="tg alerta" title="Ordem de compra feita no Tiny (${esc(r.numero)} no sistema)">TINY ${esc(r.numero_tiny || '')}</span>` : esc(r.numero || '') },
+      listaHtml: r => (r.origem === 'tiny' ? `<span class="tg alerta" title="Ordem de compra feita no Tiny (${esc(r.numero)} no sistema)">TINY ${esc(r.numero_tiny || '')}</span>` : esc(r.numero || ''))
+        + (r.pagamento_antecipado ? ` <span class="tg ${r.pagamento_urgente ? 'erro' : 'alerta'}" title="Pagamento antecipado: na aprovação vai para o contas a pagar${r.pagamento_data ? ', pagar até ' + dataCurta(r.pagamento_data) : ''}">${r.pagamento_urgente ? 'URGENTE · ' : ''}pagto antecipado</span>` : '') },
     { id: 'data_pedido', label: 'Data', tipo: 'data', obrig: true, lista: true, padrao: () => hojeISO() },
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'rascunho',
@@ -988,6 +1137,13 @@ const cfg = {
     { id: 'frete', label: 'Frete (R$)', tipo: 'moeda', secao: 'Valores' },
     { id: 'outras_despesas', label: 'Outras despesas (R$)', tipo: 'moeda' },
     { id: 'desconto', label: 'Desconto no pedido (R$)', tipo: 'moeda' },
+    { id: 'pagamento_antecipado', label: 'Pagar antes de receber?', tipo: 'bool', textoBool: 'Sim, pagamento antecipado (ex.: Mercado Livre, Pix na hora)', col: 2, secao: 'Pagamento antecipado',
+      ajuda: 'Marcado: quando o pedido for aprovado, já entra no Contas a pagar liberado para o financeiro pagar na data abaixo. Na entrada da mercadoria não nasce outra conta.' },
+    { id: 'pagamento_urgente', label: 'Urgência', tipo: 'bool', textoBool: 'URGENTE (financeiro paga primeiro)' },
+    { id: 'pagamento_data', label: 'Pagar até', tipo: 'data' },
+    { id: 'pagamento_pix', label: 'Pix (chave ou copia e cola)', col: 2 },
+    { id: 'pagamento_codigo_barras', label: 'Boleto: código de barras / linha digitável', col: 2 },
+    { id: 'pagamento_link', label: 'Link de pagamento (ex.: Mercado Livre)', col: 2 },
     { id: 'contato_fornecedor', label: 'Contato no fornecedor', secao: 'Contato para envio' },
     { id: 'email_fornecedor', label: 'E-mail', tipo: 'email' },
     { id: 'whatsapp_fornecedor', label: 'WhatsApp', tipo: 'tel' },
@@ -1000,7 +1156,7 @@ const cfg = {
     CTX = ctx;
     const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi, sv, es] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
-      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao').order('descricao')),
+      buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao, custo_referencia, custo_referencia_em').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao, aceita_lancamento').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
       buscarTodos(() => db.from('formas_pagamento').select('id, nome, situacao').eq('situacao', 'ativo').order('nome')),
@@ -1014,7 +1170,7 @@ const cfg = {
       db.from('empresas').select('id, nome, cnpj'),
       db.rpc('usuarios_nomes'),
       db.rpc('minhas_acoes'),
-      buscarTodos(() => db.from('produto_usinagem').select('produto_id, material, comprimento_mm, perda_mm, preco_servico, fornecedor_id')),
+      buscarTodos(() => db.from('produto_usinagem').select('produto_id, material, comprimento_mm, perda_mm, preco_servico, fornecedor_id, material_produto_id')),
       buscarTodos(() => db.from('servicos').select('id, nome, categoria_financeira_id, unidade, usinagem, fornecedor_id, preco_referencia, situacao').order('nome')),
       buscarTodos(() => db.from('produto_estrutura').select('produto_id, componente_id').eq('ativo', true))
     ]);
@@ -1057,6 +1213,7 @@ const cfg = {
     { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
     { id: 'nao_enviado', nome: 'Aprovado sem envio', cor: 'alerta', teste: r => r.situacao === 'aprovado' },
     { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista && r.origem !== 'tiny' },
+    { id: 'antecipado_incompleto', nome: 'Pagamento antecipado sem data ou sem Pix/boleto/link', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && r.pagamento_antecipado && (!r.pagamento_data || !(r.pagamento_pix || r.pagamento_codigo_barras || r.pagamento_link)) },
     { id: 'sem_forma', nome: 'Sem forma de pagamento (não vai para aprovação)', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && !r.forma_pagamento_id && r.origem !== 'tiny' },
     { id: 'aumento', nome: 'Preço acima da última compra', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && r.origem !== 'tiny' && (e.itens[r.id] || []).some(i => {
         const u = historico(i.produto_id, i.servico_id, false, r.id)[0]; return u && Number(i.valor_unitario) > Number(u.valor_unitario) + 0.005; }) },
@@ -1067,6 +1224,8 @@ const cfg = {
   aoAbrir(m, r, ctx) {
     modalAtual = m; sujo = false; PED_ATUAL = r.id || null;
     if (r.id && r.origem !== 'tiny') mostrarPendencias(m, r);
+    if (r.id) mostrarMaterial(m, r);
+    if (r.id && r.origem !== 'tiny') mostrarSolicitacoes(m, r);
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
     const box = document.createElement('div');

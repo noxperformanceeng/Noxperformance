@@ -9,6 +9,7 @@
 .fb-campos.c1 { grid-template-columns: 1fr; }
 .fb-campos .l2 { grid-column: span 2; }
 .fb-campos .l3 { grid-column: span 3; }
+.fb-campos .l4 { grid-column: span 4; }
 @media (max-width: 640px) { .fb-campos.c4 { grid-template-columns: 1fr 1fr; } .fb-campos .l2, .fb-campos .l3 { grid-column: 1 / -1; } }
 .fb-campos label { display: block; font-size: 12px; color: var(--texto-suave); margin-bottom: 3px; }
 .fb-campos input, .fb-campos select, .fb-campos textarea { width: 100%; }

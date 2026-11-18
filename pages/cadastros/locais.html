@@ -6,16 +6,16 @@
 <title>Locais de estoque · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
 </head>
 <body data-modulo="locais" data-titulo="Locais de estoque">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162108"></script>
-<script src="../../assets/js/ui.js?v=202611162108"></script>
-<script src="../../assets/js/auth.js?v=202611162108"></script>
-<script src="../../assets/js/layout.js?v=202611162108"></script>
-<script src="../../assets/js/cadastro.js?v=202611162108"></script>
+<script src="../../assets/js/supabase.js?v=202611181321"></script>
+<script src="../../assets/js/ui.js?v=202611181321"></script>
+<script src="../../assets/js/auth.js?v=202611181321"></script>
+<script src="../../assets/js/layout.js?v=202611181321"></script>
+<script src="../../assets/js/cadastro.js?v=202611181321"></script>
 <script>
 /* Local de estoque = só o endereço físico (galpão, rua, prateleira, posição). O produto é alocado no local
    pela tela Posição de estoque (ou em lote no Inventário); aqui a lista só mostra quantos produtos há em cada um. */
@@ -32,7 +32,7 @@ montarCadastro({
   dicaBusca: 'código, rua, prateleira, produto…', ordem: 'codigo', revisao: false,
   abas: { campo: 'area', padrao: '', opcoes: [{ v: '', n: 'Todas as áreas' }, ...AREAS] },
   campos: [
-    { id: 'codigo', label: 'Código', lista: true, maiusculo: true, ajuda: 'Monta sozinho com rua-prateleira-posição (ex.: RUA 1-B-015). É o que vai na etiqueta. Não use o código do produto.' },
+    { id: 'codigo', label: 'Código', lista: true, maiusculo: true, ajuda: 'Gerado sozinho com rua-prateleira-posição (ex.: RUA 1-B-015). É o que vai na etiqueta. Para mudar, mude o endereço.', placeholder: 'gerado pelo endereço' },
     { id: 'area', label: 'Área', tipo: 'select', opcoes: AREAS, obrig: true, padrao: 'almoxarifado', lista: true },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo', filtro: true },
     { id: 'deposito', label: 'Depósito / galpão', filtro: true, maiusculo: true, lista_sugestoes: ['GALPÃO PRINCIPAL', 'MEZANINO'] },
@@ -52,13 +52,14 @@ montarCadastro({
   textoBuscaExtra: r => doLocal(r.id).map(p => `${p.codigo} ${p.descricao}`).join(' '),
   secaoExtra: r => { const ps = doLocal(r.id); return `<div class="secao">Produtos guardados aqui</div><div class="info">${ps.length ? ps.map(p => `<div><b>${esc(p.codigo || '')}</b> ${esc(p.descricao)}</div>`).join('') : '<div>Nenhum.</div>'}
     <div class="sub">Para pôr ou tirar produto deste local, use a tela <b>Posição de estoque</b> (botão Local no produto).</div></div>`; },
-  aoAbrir: m => {   // código acompanha o endereço enquanto o usuário não digita outro
+  aoAbrir: m => {   // código é sempre o endereço: não se digita, acompanha rua/prateleira/posição
     const cod = m.querySelector('#f_codigo'), f = id => m.querySelector('#f_' + id);
-    let auto = !cod.value || cod.value === endereco({ rua: f('rua').value, prateleira: f('prateleira').value, posicao: f('posicao').value });
-    cod.addEventListener('input', () => auto = false);
-    ['rua', 'prateleira', 'posicao'].forEach(k => f(k).addEventListener('input', () => { if (auto) cod.value = endereco({ rua: f('rua').value, prateleira: f('prateleira').value, posicao: f('posicao').value }).toUpperCase(); }));
+    cod.readOnly = true; cod.tabIndex = -1; cod.style.background = 'var(--fundo, #f3f4f6)'; cod.style.cursor = 'default';
+    const atual = () => { const e = endereco({ rua: f('rua').value, prateleira: f('prateleira').value, posicao: f('posicao').value }).toUpperCase(); if (e) cod.value = e; };
+    ['rua', 'prateleira', 'posicao'].forEach(k => f(k).addEventListener('input', atual));
+    atual();
   },
-  antesSalvar: d => { if (!d.codigo && d.rua) d.codigo = endereco(d); },
+  antesSalvar: d => { const e = endereco(d).toUpperCase(); if (e) d.codigo = e; },
   validar: (d, r) => !d.codigo ? 'Informe pelo menos a rua (o código é montado com o endereço)'
     : d.codigo !== r.codigo && ehProduto(d.codigo) ? `${d.codigo} é código de produto. O local é o endereço (ex.: RUA 1-B-015); o produto se aloca no local pela Posição de estoque.` : null,
   acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],

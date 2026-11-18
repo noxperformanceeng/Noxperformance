@@ -6,8 +6,8 @@
 <title>Posição de estoque · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611162108">
-<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611162108">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
+<link rel="stylesheet" href="../../assets/css/fabricacao.css?v=202611181321">
 <style>
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .neg { color: #b42318; font-weight: 600; }
@@ -56,10 +56,10 @@
   <p class="sub" id="rodape" style="margin-top:10px"></p>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611162108"></script>
-<script src="../../assets/js/ui.js?v=202611162108"></script>
-<script src="../../assets/js/auth.js?v=202611162108"></script>
-<script src="../../assets/js/layout.js?v=202611162108"></script>
+<script src="../../assets/js/supabase.js?v=202611181321"></script>
+<script src="../../assets/js/ui.js?v=202611181321"></script>
+<script src="../../assets/js/auth.js?v=202611181321"></script>
+<script src="../../assets/js/layout.js?v=202611181321"></script>
 <script>
 /* Saldo = soma dos movimentos (compras, produção, consumo, vendas, contagens, avulsos). Só produtos ativos que
    controlam estoque. Contagem e local também em lote na tela Inventário. */
@@ -172,6 +172,18 @@ async function abrir(id) {
     <div class="fb-bts"><button class="btn" id="esFechar">Fechar</button></div>`);
   m.querySelector('.modal').style.cssText += ';width:min(860px, calc(100vw - 32px));max-width:none';
   const q = s => m.querySelector(s), un = esc(p.unidade || '');
+  // produto medido por comprimento (MM, CM, M): a pessoa informa quantas peças e a medida de cada; o sistema faz a conta
+  const fator = { MM: 1, CM: 10, M: 1000, MT: 1000, MTS: 1000, METRO: 1000, METROS: 1000 }[String(p.unidade || '').toUpperCase().trim()];
+  const campoQtd = rot => fator ? `<div><label>Peças</label><input id="fPc" inputmode="decimal" placeholder="ex.: 20"></div>
+      <div><label>Medida de cada (mm)</label><input id="fMd" inputmode="decimal" placeholder="ex.: 240"></div>
+      <div><label>${rot} (${un})</label><input id="fQ" inputmode="decimal" title="Calculado: peças × medida. Pode digitar direto se preferir."></div>`
+    : `<div><label>${rot} (${un})</label><input id="fQ" inputmode="decimal"></div>`;
+  const ligarConta = () => { if (!fator) return;
+    const conta = () => { const pc = lerNumero(q('#fPc').value), md = lerNumero(q('#fMd').value);
+      if (pc > 0 && md > 0) q('#fQ').value = (pc * md / fator).toLocaleString('pt-BR', { maximumFractionDigits: 4 }); };
+    q('#fPc').oninput = conta; q('#fMd').oninput = conta; q('#fPc').focus(); };
+  const detalheConta = () => { if (!fator) return ''; const pc = lerNumero(q('#fPc')?.value), md = lerNumero(q('#fMd')?.value);
+    return pc > 0 && md > 0 ? `${pc.toLocaleString('pt-BR')} PÇ × ${md.toLocaleString('pt-BR')} MM` : ''; };
   q('#esFechar').onclick = () => m.remove();
   const extrato = async () => {
     const { data, error } = await db.rpc('estoque_extrato', { p_produto: id, p_limite: 200 });
@@ -182,12 +194,12 @@ async function abrir(id) {
   const recarregar = async () => { await carregar(); m.remove(); abrir(id); };
   m.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     const f = b.dataset.f, box = q('#esForm');
-    if (f === 'cont') box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div><label>Quantidade contada (${un})</label><input id="fQ" inputmode="decimal"></div>
-      <div class="l3"><label>Observação (opcional)</label><input id="fO" placeholder="ex.: contagem geral, quem contou"></div></div>
+    if (f === 'cont') box.innerHTML = `<div class="es-form"><div class="fb-campos c4">${campoQtd('Quantidade contada')}
+      <div class="${fator ? '' : 'l3'}"><label>Observação (opcional)</label><input id="fO" placeholder="ex.: contagem geral, quem contou"></div></div>
       <p class="sub" style="margin:6px 0 0">O saldo passa a ser o que foi contado; a diferença fica registrada no extrato.</p>
       <div class="fb-bts"><button class="btn primario" id="fOk">Salvar contagem</button></div></div>`;
-    else if (f === 'ent' || f === 'sai') box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div><label>Quantidade (${un})</label><input id="fQ" inputmode="decimal"></div>
-      <div class="${f === 'ent' ? 'l2' : 'l3'}"><label>Motivo</label><input id="fO" placeholder="${f === 'ent' ? 'ex.: devolução de cliente, sobra de obra' : 'ex.: amostra, uso interno, brinde'}"></div>
+    else if (f === 'ent' || f === 'sai') box.innerHTML = `<div class="es-form"><div class="fb-campos c4">${campoQtd('Quantidade')}
+      <div class="${fator ? (f === 'ent' ? 'l3' : 'l4') : f === 'ent' ? 'l2' : 'l3'}"><label>Motivo</label><input id="fO" placeholder="${f === 'ent' ? 'ex.: devolução de cliente, sobra de obra' : 'ex.: amostra, uso interno, brinde'}"></div>
       ${f === 'ent' ? '<div><label>Custo unitário (opcional)</label><input id="fC" inputmode="decimal" placeholder="R$"></div>' : ''}</div>
       <div class="fb-bts"><button class="btn primario" id="fOk">${f === 'ent' ? 'Dar entrada' : 'Dar saída'}</button></div></div>`;
     else box.innerHTML = `<div class="es-form"><div class="fb-campos c4"><div class="l3"><label>Local de armazenagem</label><select id="fL"><option value="">— sem local —</option>${LOCAIS.filter(x => x.situacao === 'ativo').map(x => `<option value="${x.id}"${x.id === (p.local_id || mesmoCodigo(p)) ? ' selected' : ''}>${esc(nomeLocal(x))}</option>`).join('')}</select></div></div>
@@ -195,7 +207,7 @@ async function abrir(id) {
       <div id="fNovoBox" hidden class="fb-campos c4" style="margin-top:6px"><div><label>Depósito / galpão</label><input id="nD" list="nDl" value="GALPÃO PRINCIPAL"><datalist id="nDl">${[...new Set(['GALPÃO PRINCIPAL', 'MEZANINO', ...LOCAIS.map(x => x.deposito).filter(Boolean)])].map(v => `<option value="${esc(v)}">`).join('')}</datalist></div>
         <div><label>Rua / corredor</label><input id="nR" placeholder="ex.: RUA 1"></div><div><label>Prateleira / estante</label><input id="nP" placeholder="ex.: B"></div><div><label>Posição / nível</label><input id="nN" placeholder="ex.: 021"></div></div>` : ''}
       <div class="fb-bts"><button class="btn primario" id="fOk">Salvar local</button></div></div>`;
-    q('#fQ')?.focus();
+    q('#fQ')?.focus(); ligarConta();
     if (q('#fNovoL')) q('#fNovoL').onclick = e => { e.preventDefault(); q('#fNovoBox').hidden = false; q('#fL').value = ''; q('#nR').focus(); };
     q('#fOk').onclick = async () => {
       let r;
@@ -205,7 +217,7 @@ async function abrir(id) {
         r = await db.rpc('estoque_definir_local', { p_produtos: [id], p_local: loc });
       }
       else {
-        const n = lerNumero(q('#fQ').value), o = q('#fO').value.trim();
+        const n = lerNumero(q('#fQ').value), dc = detalheConta(), o0 = q('#fO').value.trim(), o = o0 && dc ? `${o0} · ${dc}` : o0 || (f === 'cont' ? dc : '');
         if (n == null || n < 0 || (f !== 'cont' && n === 0)) return aviso('Informe a quantidade', true);
         if (f !== 'cont' && !o) return aviso('Informe o motivo', true);
         if (f === 'cont') r = await db.rpc('estoque_contagem', { p_itens: [{ produto_id: id, contado: n }], p_obs: o || null });

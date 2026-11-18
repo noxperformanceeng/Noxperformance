@@ -48,6 +48,9 @@ const tempoReal = (() => {
     estoque_saldo_item: ['estoque_movimentos'],
     estoque_saldos: ['estoque_movimentos'],
     estoque_fora_avisos: ['estoque_fora_local', 'produtos', 'fornecedores'],
+    pc_usinagem_material: ['estoque_fora_local', 'estoque_movimentos', 'produtos'],
+    pc_solicitacoes: ['pedidos_compra_solicitacoes', 'solicitacoes_compra', 'solicitacoes_compra_itens', 'pedidos_compra', 'cotacoes_compra'],
+    pc_tem_solicitacao: ['pedidos_compra_solicitacoes', 'solicitacoes_compra_itens'],
     usuarios_ultimo_acesso: ['usuarios'],
     vendas_recentes: ['pedidos_venda', 'pedidos_venda_itens'],
     expedicao_lista: ['clientes', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens', 'produtos'],
@@ -68,7 +71,7 @@ const tempoReal = (() => {
     sc_pedidos: ['pedidos_compra', 'solicitacoes_compra', 'solicitacoes_compra_itens'],
     sc_cotacoes: ['solicitacoes_compra_itens', 'cotacoes_compra'],
     cotacao_analise: ['cotacoes_compra_precos', 'cotacoes_compra_fornecedores', 'cotacoes_compra_itens', 'pedidos_compra_recebimentos'],
-    menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'pedidos_compra_recebimentos', 'nfe_entrada'],
+    menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'pedidos_compra_recebimentos', 'nfe_entrada', 'titulos_pagar'],
     sugestao_compra: ['estoque_movimentos', 'fornecedores', 'pedidos_compra', 'pedidos_compra_itens', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens', 'produto_fornecedores', 'produtos'],
     usuarios_nomes: []           // só nomes para exibir: não vale recarregar a tela por isso
   };
