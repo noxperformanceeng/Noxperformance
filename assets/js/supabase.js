@@ -49,6 +49,7 @@ const tempoReal = (() => {
     estoque_saldos: ['estoque_movimentos'],
     estoque_fora_avisos: ['estoque_fora_local', 'produtos', 'fornecedores'],
     pc_usinagem_material: ['estoque_fora_local', 'estoque_movimentos', 'produtos'],
+    shopee_status: ['shopee_contas', 'shopee_pedidos_brutos'],
     pc_solicitacoes: ['pedidos_compra_solicitacoes', 'solicitacoes_compra', 'solicitacoes_compra_itens', 'pedidos_compra', 'cotacoes_compra'],
     pc_tem_solicitacao: ['pedidos_compra_solicitacoes', 'solicitacoes_compra_itens'],
     usuarios_ultimo_acesso: ['usuarios'],

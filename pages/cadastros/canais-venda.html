@@ -6,22 +6,22 @@
 <title>Canais de venda · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181929">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181955">
 </head>
 <body data-modulo="canais_venda" data-titulo="Canais de venda" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181929"></script>
-<script src="../../assets/js/ui.js?v=202611181929"></script>
-<script src="../../assets/js/auth.js?v=202611181929"></script>
-<script src="../../assets/js/layout.js?v=202611181929"></script>
-<script src="../../assets/js/cadastro.js?v=202611181929"></script>
+<script src="../../assets/js/supabase.js?v=202611181955"></script>
+<script src="../../assets/js/ui.js?v=202611181955"></script>
+<script src="../../assets/js/auth.js?v=202611181955"></script>
+<script src="../../assets/js/layout.js?v=202611181955"></script>
+<script src="../../assets/js/cadastro.js?v=202611181955"></script>
 <script>
 /* Canais de venda: cada conta de marketplace (ML 30, ML 37, Shopee…) é de uma empresa e tem a conta onde o dinheiro cai.
    Os links montam o caminho direto para a venda dentro da plataforma (rastreio). */
 const PLAT = [{ v: 'mercado_livre', n: 'Mercado Livre' }, { v: 'shopee', n: 'Shopee' }, { v: 'amazon', n: 'Amazon' }, { v: 'magalu', n: 'Magalu' },
   { v: 'site', n: 'Site próprio' }, { v: 'distribuidor', n: 'Distribuidores' }, { v: 'direta', n: 'Venda direta' }, { v: 'outro', n: 'Outro' }];
-let CONTAS = [], CATS = [], ML = {};
+let CONTAS = [], CATS = [], ML = {}, SP = {};
 const ML_CLIENT_ID = '4244172402407817';   // ID do aplicativo NOX no Mercado Livre (não é segredo; a chave fica só no servidor)
 const reaisBR = v => Number(v || 0).toLocaleString('pt-BR');
 const MKT = ['mercado_livre', 'shopee', 'amazon', 'magalu', 'site'];
@@ -64,6 +64,38 @@ function ligarML(m, r) {
   });
 }
 
+/* ---------- Shopee: autorização e busca de vendas ---------- */
+function ligarShopee(m, r) {
+  const msg = t => { const el = m.querySelector('#spMsg'); if (el) el.innerHTML = t; };
+  m.querySelector('#spAutorizar')?.addEventListener('click', async () => {
+    const { data, error } = await db.rpc('shopee_iniciar_autorizacao', { p_canal_id: r.id });
+    if (error) return aviso('Não gerou o link: ' + error.message, true);
+    msg(`Abra este link, entre com o login de <b>vendedor</b> da loja ${esc(r.nome)} e confirme a autorização (vale 1 hora):<br>
+      <input readonly value="${esc(data)}" style="width:100%;margin-top:4px;font-size:12px" onclick="this.select()">
+      <a class="btn fino" style="margin-top:4px" href="${esc(data)}" target="_blank" rel="noopener">Abrir agora</a>`);
+  });
+  m.querySelector('#spBuscar')?.addEventListener('click', async e => {
+    const de = m.querySelector('#spDe').value, ate = m.querySelector('#spAte').value;
+    if (!de || !ate || ate < de) return aviso('Período inválido', true);
+    e.target.disabled = true; msg('Buscando as vendas na Shopee…');
+    const { data, error } = await db.functions.invoke('shopee-sync', { body: { canal_id: r.id, de, ate } });
+    e.target.disabled = false;
+    if (error || data?.erro) return msg(`<span style="color:var(--erro)">${esc(data?.erro || error.message)}</span>`);
+    msg(`Pronto: ${data.encontradas} venda(s) no período, ${data.gravadas} gravada(s), ${data.puladas} sem alteração.` + (data.erros?.length ? ` <span style="color:var(--erro)">${data.erros.length} com erro: ${esc(data.erros.slice(0, 3).join(' | '))}</span>` : ''));
+  });
+}
+const secaoShopee = r => `<div class="secao">Shopee (vendas)</div>
+    <div class="info">${SP[r.id] ? `<div>Loja: <b>${esc(SP[r.id].loja || String(SP[r.id].shop_id))}</b> · autorizada em ${dataHoraBR(SP[r.id].autorizado_em)}${SP[r.id].situacao !== 'ativo' ? ` · <span class="tg erro">${esc(SP[r.id].situacao)}</span>` : ''}</div>
+      <div>Vendas guardadas: <b>${SP[r.id].pedidos}</b>${SP[r.id].ultima_sync ? ` · última busca ${dataHoraBR(SP[r.id].ultima_sync)}` : ''} · busca automática a cada 30 min</div>
+      ${SP[r.id].refresh_expira_em ? `<div class="sub">Acesso renova sozinho; se o sistema ficar 30 dias sem falar com a Shopee, autorize de novo.</div>` : ''}
+      ${SP[r.id].ultimo_erro ? `<div style="color:var(--erro)">Último erro: ${esc(SP[r.id].ultimo_erro)}</div>` : ''}` : '<div>Loja ainda não autorizada.</div>'}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+      <button type="button" class="btn ${SP[r.id] ? 'fino' : 'primario fino'}" id="spAutorizar">${SP[r.id] ? 'Autorizar de novo' : 'Autorizar loja Shopee'}</button>
+      ${SP[r.id] ? `<div><label style="font-size:11px">De</label><input type="date" id="spDe" value="${new Date(Date.now() - 30 * 864e5).toLocaleDateString('sv-SE')}"></div>
+        <div><label style="font-size:11px">Até</label><input type="date" id="spAte" value="${new Date().toLocaleDateString('sv-SE')}"></div>
+        <button type="button" class="btn primario fino" id="spBuscar">Buscar vendas do período</button>` : ''}
+    </div><div id="spMsg" class="sub" style="margin-top:6px"></div>`;
+
 montarCadastro({
   textoNovo: '+ Novo canal',
   tabela: 'canais_venda', modulo: 'canais_venda', titulo: 'Canais de venda', singular: 'canal', plural: 'canais',
@@ -93,11 +125,12 @@ montarCadastro({
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome').eq('tipo', 'receita').eq('aceita_lancamento', true).eq('aprovacao', 'aprovado').eq('situacao', 'ativo').order('codigo'))
     ]);
     CONTAS = cb; CATS = c;
-    const st = await db.rpc('ml_status'); ML = Object.fromEntries((st.data || []).map(x => [x.canal_id, x]));
+    const [st, sp] = await Promise.all([db.rpc('ml_status'), db.rpc('shopee_status')]);
+    ML = Object.fromEntries((st.data || []).map(x => [x.canal_id, x])); SP = Object.fromEntries((sp.data || []).map(x => [x.canal_id, x]));
     return {};
   },
   aoAbrir(m, r) {
-    ligarML(m, r);
+    ligarML(m, r); ligarShopee(m, r);
     // Conta de repasse: só as contas da empresa escolhida
     const fEmp = m.querySelector('#f_empresa_id'), fConta = m.querySelector('#f_conta_bancaria_id');
     const filtrar = () => {
@@ -114,10 +147,10 @@ montarCadastro({
     return null;
   },
   colunasExtras: [
-    { label: 'Integração', texto: r => r.plataforma !== 'mercado_livre' ? '' : ML[r.id] ? `ML ${ML[r.id].nickname || ''} · ${ML[r.id].pedidos} vendas` : 'não autorizada',
-      html: r => r.plataforma !== 'mercado_livre' ? '' : ML[r.id] ? `<span class="tg ${ML[r.id].situacao === 'ativo' ? 'ok' : 'erro'}">${esc(ML[r.id].nickname || 'conectada')}</span> <small class="sub2" style="display:inline">${ML[r.id].pedidos} vendas${ML[r.id].ultima_sync ? ' · ' + dataHoraBR(ML[r.id].ultima_sync) : ''}</small>` : '<span class="tg neutro">não autorizada</span>' }
+    { label: 'Integração', texto: r => r.plataforma === 'shopee' ? (SP[r.id] ? `Shopee ${SP[r.id].loja || ''} · ${SP[r.id].pedidos} vendas` : 'não autorizada') : r.plataforma !== 'mercado_livre' ? '' : ML[r.id] ? `ML ${ML[r.id].nickname || ''} · ${ML[r.id].pedidos} vendas` : 'não autorizada',
+      html: r => r.plataforma === 'shopee' ? (SP[r.id] ? `<span class="tg ${SP[r.id].situacao === 'ativo' ? 'ok' : 'erro'}">${esc(SP[r.id].loja || 'conectada')}</span> <small class="sub2" style="display:inline">${SP[r.id].pedidos} vendas</small>` : '<span class="tg neutro">não autorizada</span>') : r.plataforma !== 'mercado_livre' ? '' : ML[r.id] ? `<span class="tg ${ML[r.id].situacao === 'ativo' ? 'ok' : 'erro'}">${esc(ML[r.id].nickname || 'conectada')}</span> <small class="sub2" style="display:inline">${ML[r.id].pedidos} vendas${ML[r.id].ultima_sync ? ' · ' + dataHoraBR(ML[r.id].ultima_sync) : ''}</small>` : '<span class="tg neutro">não autorizada</span>' }
   ],
-  secaoExtra: r => r.plataforma !== 'mercado_livre' ? '' : `<div class="secao">Mercado Livre (somente leitura)</div>
+  secaoExtra: r => r.plataforma === 'shopee' ? secaoShopee(r) : r.plataforma !== 'mercado_livre' ? '' : `<div class="secao">Mercado Livre (somente leitura)</div>
     <div class="info">${ML[r.id] ? `<div>Conta: <b>${esc(ML[r.id].nickname || String(ML[r.id].ml_user_id))}</b> · autorizada em ${dataHoraBR(ML[r.id].autorizado_em)}${ML[r.id].situacao !== 'ativo' ? ` · <span class="tg erro">${esc(ML[r.id].situacao)}</span>` : ''}</div>
       <div>Vendas guardadas: <b>${ML[r.id].pedidos}</b>${ML[r.id].ultima_sync ? ` · última busca ${dataHoraBR(ML[r.id].ultima_sync)}` : ''}${ML[r.id].eventos_pendentes ? ` · ${ML[r.id].eventos_pendentes} aviso(s) do ML pendente(s)` : ''}</div>
       ${ML[r.id].ultimo_erro ? `<div style="color:var(--erro)">Último erro: ${esc(ML[r.id].ultimo_erro)}</div>` : ''}` : '<div>Conta ainda não autorizada.</div>'}</div>
