@@ -502,3 +502,11 @@ function ligarOrdenacao(raiz, ordem, redesenhar) {
     };
   });
 }
+
+// Link de venda que não abre a venda direto (ex.: Shopee): modelo "https://…#copiar={pedido}" abre a lista
+// da plataforma e copia o número da venda, para colar na busca dela.
+document.addEventListener('click', ev => {
+  const a = ev.target.closest && ev.target.closest('a[href*="#copiar="]'); if (!a) return;
+  const n = decodeURIComponent(a.getAttribute('href').split('#copiar=')[1] || ''); if (!n) return;
+  navigator.clipboard?.writeText(n).then(() => aviso(`Número ${n} copiado: cole na busca da plataforma`), () => {});
+}, true);
