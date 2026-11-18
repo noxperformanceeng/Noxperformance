@@ -78,6 +78,20 @@ const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', 
 // IPI do item: (quantidade × unitário − desconto) × IPI %, arredondado em centavos (mesma conta do banco)
 const valorIpi = (base, pct) => Math.round(base * (Number(pct) || 0)) / 100;
 const hojeISO = () => new Date().toLocaleDateString('sv-SE');
+// Entrega por item: vazio = vale a "Entrega prevista" do pedido. Atrasado = algum item que falta entregar já passou da data.
+const entregaItem = (i, r) => i.data_entrega_prevista || r.data_entrega_prevista || null;
+const celEntrega = x => `<td style="width:128px"><input type="date" data-k="data_entrega_prevista" value="${esc(String(x.data_entrega_prevista || '').slice(0, 10))}" title="Entrega prevista deste item (organiza as entregas e as parcelas previstas no contas a pagar). Vazio: vale a entrega prevista do pedido"></td>`;
+const atrasado = r => { if (!['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao)) return false;
+  const its = (ex.itens?.[r.id] || []).filter(falta), h = hojeISO();
+  return its.length ? its.some(i => { const d = entregaItem(i, r); return d && d < h; }) : !!(r.data_entrega_prevista && r.data_entrega_prevista < h); };
+// Fornecedor: CNPJ e endereço (filiais com o mesmo nome); homônimos ganham CNPJ e cidade na lista
+const endForn = f => [[f.endereco, f.numero].filter(Boolean).join(', '), f.complemento, f.bairro, f.cidade && (f.cidade + (f.uf ? '/' + f.uf : '')), f.cep && 'CEP ' + f.cep].filter(Boolean).join(' · ');
+const fichaForn = f => !f ? '' : `<b>CNPJ</b> ${f.cnpj ? esc(fmtDoc(f.cnpj)) : '<span class="tg alerta">sem CNPJ no cadastro</span>'} · ${endForn(f) ? esc(endForn(f)) : '<span class="tg alerta">sem endereço no cadastro</span>'}`;
+function opcaoForn(f) {
+  const n = nomeComFantasia(f), chave = x => semAcento(String(x.nome || '')).toUpperCase().trim();
+  const dup = FORN.some(o => o.id !== f.id && o.situacao === 'ativo' && chave(o) === chave(f));
+  return dup ? `${n} · ${f.cnpj ? 'CNPJ ' + fmtDoc(f.cnpj) : 'sem CNPJ'}${f.cidade ? ' · ' + f.cidade + (f.uf ? '/' + f.uf : '') : ''}` : n;
+}
 const somaDias = (iso, d) => { const x = new Date(iso + 'T12:00:00'); x.setDate(x.getDate() + d); return x.toLocaleDateString('sv-SE'); };
 let PAIS = [], SERVS = [], FORN = [], PRODS = [], CATS = [], CONDS = [], FORMAS = [], CONTAS = [], ALC = [], USU = [], EMPRESAS = [], PF = [], FICHAS = {}, ACOES = new Set(), CTX = null, modalAtual = null, ex = {}, sujo = false;
 const forn = id => FORN.find(f => f.id === id);
@@ -194,6 +208,7 @@ const linhaServ = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-tip
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id)}</select></td>
+  ${celEntrega(x)}
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}
   <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
@@ -210,6 +225,7 @@ const linhaServico = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id || CATS.find(c => c.codigo === CAT_USINAGEM)?.id)}</select></td>
+  ${celEntrega(x)}
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}
   <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
@@ -288,6 +304,7 @@ const linhaProduto = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
   <td style="min-width:150px"><select data-k="categoria_financeira_id"${x.produto_id && !x.uso_consumo && prod(x.produto_id)?.categoria_financeira_id ? ' disabled title="Categoria do cadastro do produto"' : ''}>${optCats(x.categoria_financeira_id)}</select></td>
+  ${celEntrega(x)}
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}
   <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
@@ -307,7 +324,7 @@ function lerItens() {
       produto_id: pid, servico_id: sid,
       descricao: srv ? g('descricao').value.trim() : gen ? [serv(sid)?.nome, det].filter(Boolean).join(' · ') : pid ? prod(pid)?.descricao : g('produto_id').value === 'avulso' ? g('descricao').value.trim() : '', unidade: g('unidade').value.trim() || null,
       quantidade: lerNumero(g('quantidade').value) || 0, valor_unitario: lerNumero(g('valor_unitario').value) || 0, desconto: lerNumero(g('desconto').value) || 0, ipi_pct: lerNumero(g('ipi_pct').value) || 0,
-      categoria_financeira_id: Number(g('categoria_financeira_id').value) || null, uso_consumo: !srv && !gen && !!g('uso_consumo')?.checked,
+      categoria_financeira_id: Number(g('categoria_financeira_id').value) || null, data_entrega_prevista: g('data_entrega_prevista')?.value || null, uso_consumo: !srv && !gen && !!g('uso_consumo')?.checked,
       codigo_fornecedor: pid ? PF.find(x => x.produto_id === pid && x.fornecedor_id === Number(modalAtual.querySelector('#f_fornecedor_id')?.value))?.codigo_fornecedor || null : null };
   }).filter(x => x.produto_id || x.servico_id || (x.descricao && x.linha === 'produto') || x.valor_unitario);
 }
@@ -328,10 +345,10 @@ function recalcular() {
   modalAtual.querySelector('#totPed').innerHTML = `<span>Itens <b>${reais(t)}</b></span>${ti ? `<span>IPI <b>${reais(ti)}</b></span>` : ''}<span>Frete + outras <b>${reais(v('frete') + v('outras_despesas'))}</b></span><span>Desconto <b>${reais(v('desconto'))}</b></span><span>Total do pedido <b>${reais(total)}</b></span>`;
 }
 function trocarLinha(tr, html) {   // refaz a linha mantendo quantidade e preço digitados
-  const q = tr.querySelector('[data-k=quantidade]')?.value, u = tr.querySelector('[data-k=valor_unitario]')?.value, ip = tr.querySelector('[data-k=ipi_pct]')?.value;
+  const q = tr.querySelector('[data-k=quantidade]')?.value, u = tr.querySelector('[data-k=valor_unitario]')?.value, ip = tr.querySelector('[data-k=ipi_pct]')?.value, de = tr.querySelector('[data-k=data_entrega_prevista]')?.value;
   if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove();
   tr.insertAdjacentHTML('afterend', html); const n = tr.nextElementSibling; tr.remove();
-  if (q) n.querySelector('[data-k=quantidade]').value = q; if (u) n.querySelector('[data-k=valor_unitario]').value = u; if (ip) n.querySelector('[data-k=ipi_pct]').value = ip;
+  if (q) n.querySelector('[data-k=quantidade]').value = q; if (u) n.querySelector('[data-k=valor_unitario]').value = u; if (ip) n.querySelector('[data-k=ipi_pct]').value = ip; if (de) n.querySelector('[data-k=data_entrega_prevista]').value = de;
   return n;
 }
 function aoMudarTipo(tr) {
@@ -678,9 +695,11 @@ async function gerarPdf(r, baixar) {
     [f.endereco, f.numero, f.bairro, f.cidade && (f.cidade + (f.uf ? '/' + f.uf : ''))].filter(Boolean).join(', ')].filter(Boolean), 14, 38);
   // IPI: colunas "IPI %" e "IPI" só quando algum item tem IPI; o total da linha fica sem IPI (o IPI soma no rodapé)
   const comIpi = itens.some(i => Number(i.ipi_pct)), dir = { halign: 'right' };
-  doc.autoTable({ startY: 52, head: [['#', 'Código', 'Descrição', 'Un', 'Qtd', 'Unitário', 'Desconto', 'Total', ...(comIpi ? ['IPI %', 'IPI'] : [])]],
+  // coluna "Entrega" só quando algum item tem data diferente da entrega do pedido
+  const comEnt = itens.some(i => i.data_entrega_prevista && i.data_entrega_prevista !== r.data_entrega_prevista);
+  doc.autoTable({ startY: 52, head: [['#', 'Código', 'Descrição', 'Un', 'Qtd', 'Unitário', 'Desconto', 'Total', ...(comIpi ? ['IPI %', 'IPI'] : []), ...(comEnt ? ['Entrega'] : [])]],
     body: itens.map((i, k) => [k + 1, i.codigo_fornecedor || prod(i.produto_id)?.codigo || '', i.descricao, i.unidade || '', num(i.quantidade), reais(i.valor_unitario), i.desconto ? reais(i.desconto) : '', reais(i.valor_total),
-      ...(comIpi ? [Number(i.ipi_pct) ? num(i.ipi_pct) + '%' : '', Number(i.valor_ipi) ? reais(i.valor_ipi) : ''] : [])]),
+      ...(comIpi ? [Number(i.ipi_pct) ? num(i.ipi_pct) + '%' : '', Number(i.valor_ipi) ? reais(i.valor_ipi) : ''] : []), ...(comEnt ? [dataCurta(entregaItem(i, r)) || ''] : [])]),
     styles: { fontSize: 8, cellPadding: 1.5 }, headStyles: { fillColor: [40, 40, 40] },
     columnStyles: { 0: { cellWidth: 7 }, 4: dir, 5: dir, 6: dir, 7: dir, 8: dir, 9: dir } });
   let y = doc.lastAutoTable.finalY + 6;
@@ -1080,7 +1099,7 @@ function desenharAlertas(linhas) {
     { aba: 'recusados', n: ls.filter(r => r.situacao === 'recusado').length, t: 'recusado(s) para ajustar', cls: 'erro' },
     { aba: 'aprovacao', n: ls.filter(r => r.situacao === 'em_aprovacao').length, t: 'em aprovação', cls: 'alerta' },
     { aba: 'enviar', n: ls.filter(r => r.situacao === 'aprovado').length, t: 'aprovado(s) sem envio ao fornecedor', cls: 'alerta' },
-    { aba: 'atrasados', n: ls.filter(r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hoje).length, t: 'com entrega atrasada', cls: 'erro' },
+    { aba: 'atrasados', n: ls.filter(atrasado).length, t: 'com entrega atrasada', cls: 'erro' },
     { aba: 'receber', n: ls.filter(r => ['enviado', 'recebido_parcial'].includes(r.situacao)).length, t: 'aguardando entrega/NF', cls: 'info' }
   ].filter(x => x.n);
   box.innerHTML = a.map(x => `<button type="button" class="${x.cls}" ${x.acao ? `data-acao="${x.acao}"` : `data-aba="${x.aba}"`}><b>${x.n}</b> ${esc(x.t)}</button>`).join('');
@@ -1112,7 +1131,7 @@ const cfg = {
     { v: 'pendencia', n: '⚠ Com pendência', teste: r => !FINAL.includes(r.situacao) && r.origem !== 'tiny' && [...(r._pend || [])].some(x => x !== 'nao_revisado') },
     { v: 'enviar', n: 'Para enviar', teste: r => r.situacao === 'aprovado' },
     { v: 'receber', n: 'Aguardando entrega', teste: r => ['enviado', 'recebido_parcial'].includes(r.situacao) },
-    { v: 'atrasados', n: 'Atrasados', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
+    { v: 'atrasados', n: 'Atrasados', teste: atrasado },
     { v: 'historico', n: 'Histórico (recebidos e cancelados)', teste: r => FINAL.includes(r.situacao) },
     { v: 'tiny', n: 'Do Tiny', teste: r => r.origem === 'tiny' },
     { v: '', n: 'Todos' }] },
@@ -1128,7 +1147,7 @@ const cfg = {
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'rascunho',
       listaHtml: r => `<span class="tg ${sit(r.situacao).cor}">${esc(sit(r.situacao).n)}</span>${r.situacao === 'em_aprovacao' && possoAprovar(r) ? ' <span class="tg erro">sua vez</span>' : ''}` },
-    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN.filter(f => f.situacao === 'ativo').map(f => ({ v: f.id, n: nomeComFantasia(f) })),
+    { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN.filter(f => f.situacao === 'ativo').map(f => ({ v: f.id, n: opcaoForn(f) })),
       listaHtml: r => `<span class="texto-curto" title="${esc(nomeComFantasia(forn(r.fornecedor_id)))}">${esc(nomeComFantasia(forn(r.fornecedor_id)))}</span>` },
     { id: 'data_entrega_prevista', label: 'Entrega prevista', tipo: 'data', lista: true },
     { id: 'valor_total', label: 'Total (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
@@ -1155,7 +1174,7 @@ const cfg = {
   async carregarExtra(linhas, ctx) {
     CTX = ctx;
     const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi, sv, es] = await Promise.all([
-      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, bairro, cidade, uf').order('nome')),
+      buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, complemento, bairro, cidade, uf, cep').order('nome')),
       buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao, custo_referencia, custo_referencia_em').order('descricao')),
       buscarTodos(() => db.from('categorias_financeiras').select('id, codigo, nome, situacao, aceita_lancamento').eq('aprovacao', 'aprovado').order('codigo')),
       buscarTodos(() => db.from('condicoes_pagamento').select('id, nome, dias, situacao').eq('situacao', 'ativo').order('nome')),
@@ -1210,7 +1229,7 @@ const cfg = {
     { id: 'sem_cad', nome: 'Item sem cadastro aguardando liberação', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length > 0 },
     { id: 'sem_cat', nome: 'Item sem categoria financeira', cor: 'erro', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => !i.categoria_financeira_id) },
     { id: 'sem_itens', nome: 'Sem itens', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !(e.itens[r.id] || []).length },
-    { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
+    { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: atrasado },
     { id: 'nao_enviado', nome: 'Aprovado sem envio', cor: 'alerta', teste: r => r.situacao === 'aprovado' },
     { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista && r.origem !== 'tiny' },
     { id: 'antecipado_incompleto', nome: 'Pagamento antecipado sem data ou sem Pix/boleto/link', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && r.pagamento_antecipado && (!r.pagamento_data || !(r.pagamento_pix || r.pagamento_codigo_barras || r.pagamento_link)) },
@@ -1229,7 +1248,7 @@ const cfg = {
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
     const box = document.createElement('div');
-    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th title="IPI % do item">IPI %</th><th>Categoria</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
+    box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th title="IPI % do item">IPI %</th><th>Categoria</th><th title="Entrega prevista de cada item. Vazio: vale a do pedido">Entrega</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
         ${editavel && podeEd ? `<div class="itens-acoes"><button type="button" class="btn fino" id="addItem">+ Item</button>${CONJ.size ? '<button type="button" class="btn fino" id="addConj" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}<span class="itens-links">${CTX.pode('produtos', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${linkServ()}</span></div>` : ''}
         <div id="matBox" style="margin-top:8px"></div>
@@ -1238,7 +1257,7 @@ const cfg = {
     const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Valores');
     antes.parentNode.insertBefore(box, antes);
     if (editavel && podeEd) {
-      m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaProduto()); };
+      m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaProduto({ data_entrega_prevista: m.querySelector('#f_data_entrega_prevista')?.value })); };
       m.querySelector('#addConj')?.addEventListener('click', () => abrirConjunto());
       box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { const tr = e.target.closest('tr'); if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove(); tr.remove(); recalcular(); } });
       box.addEventListener('change', e => { if (e.target.dataset.k === 'tipo_linha') { aoMudarTipo(e.target.closest('tr')); return recalcular(); } if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else if (CONJ.has(Number(e.target.value))) trocarPorConjunto(tr); else aoEscolherProduto(tr); } recalcular(); });
@@ -1252,7 +1271,16 @@ const cfg = {
       // depois de aprovado só contato, entrega e observações internas mudam
       if (r.id) m.querySelectorAll('.campo input, .campo select, .campo textarea').forEach(i => {
         if (!['f_contato_fornecedor', 'f_email_fornecedor', 'f_whatsapp_fornecedor', 'f_observacoes_internas', 'f_data_entrega_prevista'].includes(i.id) || FINAL.includes(r.situacao)) i.disabled = true; });
+      // a entrega de cada item pode ser remarcada depois de aprovado (como a do pedido), sem nova aprovação
+      if (r.id && !FINAL.includes(r.situacao) && r.origem !== 'tiny' && ctx.pode('compras', 'alterar')) box.querySelectorAll('[data-k=data_entrega_prevista]').forEach(i => i.disabled = false);
     }
+    // ficha do fornecedor (CNPJ e endereço) logo abaixo da escolha
+    const sF = m.querySelector('#f_fornecedor_id');
+    if (sF) { const fi = document.createElement('div'); fi.className = 'sub'; fi.id = 'fichaForn'; fi.style.marginTop = '3px'; sF.after(fi);
+      const mostrarF = () => { fi.innerHTML = fichaForn(forn(Number(sF.value))); }; sF.addEventListener('change', mostrarF); mostrarF(); }
+    // mudou a entrega do pedido: leva junto os itens que estavam vazios ou com a data antiga
+    const sE = m.querySelector('#f_data_entrega_prevista');
+    if (sE) { let ant = sE.value; sE.addEventListener('change', () => { box.querySelectorAll('[data-k=data_entrega_prevista]:not(:disabled)').forEach(i => { if (!i.value || i.value === ant) i.value = sE.value; }); ant = sE.value; recalcular(); }); }
     prazoLivre(m, r, editavel && podeEd);
     m.querySelectorAll('.campo input, .campo select, .campo textarea, #itens input, #itens select').forEach(i => i.addEventListener('input', () => { sujo = true; }));
     recalcular();
@@ -1313,7 +1341,9 @@ const cfg = {
         return data;
       }
     }
-    const { data, error } = await db.rpc('pedido_compra_salvar', { p_pedido: { ...dados, id: novo ? null : r.id }, p_itens: itens });
+    const ent = editavel ? {} : { entregas_itens: [...(modalAtual?.querySelectorAll('#itens > table > tbody > tr[data-id]:not(.hist-precos)') || [])].filter(tr => tr.dataset.id)
+      .map(tr => ({ id: Number(tr.dataset.id), data: tr.querySelector('[data-k=data_entrega_prevista]')?.value || null })) };
+    const { data, error } = await db.rpc('pedido_compra_salvar', { p_pedido: { ...dados, ...ent, id: novo ? null : r.id }, p_itens: itens });
     if (error) throw error;
     sujo = false;
     if (editavel && lerItens().some(i => !i.categoria_financeira_id)) setTimeout(() => aviso('Rascunho salvo com pendência: item sem categoria financeira (precisa antes de enviar para aprovação)', true), 600);
