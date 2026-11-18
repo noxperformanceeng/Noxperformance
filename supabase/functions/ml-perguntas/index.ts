@@ -28,7 +28,13 @@ async function responder(db: Db, id: number) {
       body: JSON.stringify({ question_id: id, text: p.resposta_pendente })
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`ML recusou (${r.status}): ${j.message ?? j.error ?? ''}`.trim());
+    if (!r.ok) {
+      // a pergunta já não está aberta no ML (respondida lá, apagada pelo cliente ou bloqueada pelo ML):
+      // em vez de mostrar o erro, traz a situação real e tira a pendência da tela e da faixa
+      const sit = await sincronizar(db, conta, token, id);
+      if (sit && sit !== 'UNANSWERED') return { ok: true, situacao: sit };
+      throw new Error(`ML recusou (${r.status}): ${j.message ?? j.error ?? ''}`.trim());
+    }
     await db.from('ml_perguntas').update({
       resposta: p.resposta_pendente, resposta_pendente: null, situacao: 'ANSWERED', respondida_em: new Date().toISOString(),
       resposta_origem: 'sistema', resposta_erro: null, atualizado_em: new Date().toISOString()
@@ -39,6 +45,18 @@ async function responder(db: Db, id: number) {
     await db.from('ml_perguntas').update({ resposta_erro: msg, atualizado_em: new Date().toISOString() }).eq('id', id);
     return { erro: msg };
   }
+}
+
+// Busca a pergunta no ML e grava a situação de lá. Se não está mais aberta, limpa a resposta que ia ser enviada.
+async function sincronizar(db: Db, conta: Conta, token: string, id: number) {
+  const q = await mlGet(token, `/questions/${id}?api_version=4`).catch(() => undefined);
+  if (q === undefined) return null;                                  // falha ao consultar: mantém o erro original
+  const agora = new Date().toISOString();
+  if (!q) await db.from('ml_perguntas').update({ situacao: 'DELETED', atualizado_em: agora }).eq('id', id);
+  else await gravarPerguntas(db, conta, [q]);
+  const sit = !q || q.deleted_from_listing ? 'DELETED' : q.status;
+  if (sit !== 'UNANSWERED') await db.from('ml_perguntas').update({ resposta_pendente: null, resposta_erro: null, atualizado_em: agora }).eq('id', id);
+  return sit;
 }
 
 // Uma consulta paginada (offset até 1.000). Para quando a página não traz nada novo, no modo 'recentes'.

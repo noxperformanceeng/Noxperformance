@@ -145,7 +145,7 @@ function cartaoAberta(q) {
     .sort((a, b) => a.criada_em < b.criada_em ? -1 : 1).slice(-3);
   const sug = parecidas(q), envi = q.resposta_pendente && !q.resposta_erro, tarde = (Date.now() - Date.parse(q.criada_em)) > 12 * 36e5;
   const pode = CTX.pode('perguntas_ml', 'alterar');
-  return `<div class="cartao pq" data-id="${q.id}">
+  return `<div class="cartao pq" data-id="${q.id}" data-livre>
     ${it?.foto ? `<img class="ft" src="${esc(it.foto)}" alt="">` : '<div></div>'}
     <div>
       ${anuncioHtml(q)}
