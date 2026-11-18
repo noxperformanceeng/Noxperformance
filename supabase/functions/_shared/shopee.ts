@@ -5,8 +5,11 @@ import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 export const SHOPEE_API = 'https://partner.shopeemobile.com';
 export const REDIRECT = 'https://qijeqdfhwwruhoruvvgb.supabase.co/functions/v1/shopee-auth';
-export const PARTNER_ID = () => Number(Deno.env.get('SHOPEE_PARTNER_ID') ?? '2054327');
-const PARTNER_KEY = () => Deno.env.get('SHOPEE_PARTNER_KEY') ?? '';
+export const PARTNER_ID = () => Number((Deno.env.get('SHOPEE_PARTNER_ID') ?? '2054327').trim());
+const PARTNER_KEY = () => (Deno.env.get('SHOPEE_PARTNER_KEY') ?? '').trim();
+
+// diagnóstico sem revelar a chave: tamanho, se tem o prefixo shpk e o partner_id em uso
+export const diagnostico = () => { const k = PARTNER_KEY(); return { partner_id: PARTNER_ID(), chave_tamanho: k.length, chave_shpk: k.startsWith('shpk'), chave_hex: /^[0-9a-f]+$/i.test(k.replace(/^shpk/, '')) }; };
 
 export function adminDb(): SupabaseClient {
   return createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });

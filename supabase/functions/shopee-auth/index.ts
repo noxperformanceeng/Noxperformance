@@ -1,7 +1,7 @@
 // ERP NOX · shopee-auth — autorização da loja Shopee
 // ?inicio=<state>: assina e manda para a Shopee. Retorno (?state, code, shop_id): troca o código pelos acessos e guarda
 // em shopee_contas, ligado ao canal escolhido na tela. Sem login do sistema (a Shopee chama direto).
-import { adminDb, linkAutorizacao, trocarCodigo, shopeeGet, ContaShopee } from '../_shared/shopee.ts';
+import { adminDb, diagnostico, linkAutorizacao, trocarCodigo, shopeeGet, ContaShopee } from '../_shared/shopee.ts';
 
 const TELA = 'https://noxperformanceeng.github.io/Noxperformance/pages/cadastros/canais-venda.html';
 const voltar = (titulo: string, texto: string, ok: boolean, canal?: number) => {
@@ -15,6 +15,7 @@ const uuid = (s: string | null) => !!s && /^[0-9a-f-]{36}$/.test(s);
 
 Deno.serve(async req => {
   const url = new URL(req.url), db = adminDb();
+  if (url.searchParams.has('diag')) return new Response(JSON.stringify(diagnostico()), { headers: { 'Content-Type': 'application/json' } });
   const inicio = url.searchParams.get('inicio');
   if (inicio) {
     if (!uuid(inicio)) return voltar('Link inválido', 'Gere um novo link em Canais de venda.', false);
