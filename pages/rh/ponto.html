@@ -6,7 +6,7 @@
 <title>Ponto · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181339">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -23,12 +23,12 @@
 <body data-modulo="ponto" data-titulo="Ponto" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181321"></script>
-<script src="../../assets/js/ui.js?v=202611181321"></script>
-<script src="../../assets/js/auth.js?v=202611181321"></script>
-<script src="../../assets/js/layout.js?v=202611181321"></script>
-<script src="../../assets/js/cadastro.js?v=202611181321"></script>
-<script src="../../assets/js/rh.js?v=202611181321"></script>
+<script src="../../assets/js/supabase.js?v=202611181339"></script>
+<script src="../../assets/js/ui.js?v=202611181339"></script>
+<script src="../../assets/js/auth.js?v=202611181339"></script>
+<script src="../../assets/js/layout.js?v=202611181339"></script>
+<script src="../../assets/js/cadastro.js?v=202611181339"></script>
+<script src="../../assets/js/rh.js?v=202611181339"></script>
 <script>
 /* =====================================================================
    Ponto — leitura do relógio
@@ -41,7 +41,7 @@
    - "Fechar ponto" grava as horas do mês e manda HE e atrasos para os Lançamentos (150, 9161, 8069).
      Faltas vão para a tela Faltas, onde são abonadas ou descontadas.
    ===================================================================== */
-let CTX, MES = lerCompetencia(), MARC = [], FALTAS = [], FECH = {}, PODE = false, RES = [];
+let CTX, MES = lerCompetencia(), MARC = [], FALTAS = [], FECH = {}, PODE = false, RES = [], ordem = { campo: 'nome', asc: true };
 
 (async () => {
   CTX = await iniciarTela(); if (!CTX) return;
@@ -52,7 +52,7 @@ let CTX, MES = lerCompetencia(), MARC = [], FALTAS = [], FECH = {}, PODE = false
     <div class="barra-ferr"><div></div><div class="ferr"><input id="busca" class="busca" type="search" placeholder="Buscar funcionário…"><div id="rel"></div></div></div>
     <div class="pendencias" id="pend"></div>
     <div class="barra-lista"><span id="contagem"></span><span class="resumo" id="resumo"></span></div>
-    <div class="cartao tabela-rolagem"><table><thead><tr><th>Funcionário</th><th class="num">Dias c/ marcação</th><th class="num">Previsto</th><th class="num">Trabalhado</th><th class="num">HE 50%</th><th class="num">HE 100%</th><th class="num">Atrasos</th><th class="num">Faltas</th><th>Pendências</th><th>Folha</th></tr></thead>
+    <div class="cartao tabela-rolagem"><table><thead><tr><th data-ord="nome">Funcionário</th><th class="num" data-ord="diasMarc">Dias c/ marcação</th><th class="num" data-ord="prev">Previsto</th><th class="num" data-ord="trab">Trabalhado</th><th class="num" data-ord="he50">HE 50%</th><th class="num" data-ord="he100">HE 100%</th><th class="num" data-ord="atraso">Atrasos</th><th class="num" data-ord="faltas">Faltas</th><th data-ord="pend">Pendências</th><th data-ord="folha">Folha</th></tr></thead>
       <tbody id="lista"><tr><td colspan="10" class="vazio">Carregando…</td></tr></tbody></table></div>
     <p class="sub" style="margin-top:8px">Horas em h:mm. Tolerância diária da escala (padrão 10 min) não conta como atraso nem extra.</p>`;
   const mes = document.getElementById('mes'); mes.value = MES;
@@ -107,6 +107,11 @@ function desenhar() {
   const b = document.getElementById('busca').value;
   const ids = new Set([...ativosNoMes(MES, CTX.empresa).map(f => f.id), ...MARC.filter(m => !CTX.empresa || m.empresa_id === CTX.empresa).map(m => m.funcionario_id)]);
   RES = [...ids].map(funcionario).filter(f => f && (!b || combinaBusca(f.nome, b))).sort((a, c) => a.nome.localeCompare(c.nome)).map(calcular);
+  // Ordenação pelo cabeçalho (ui.js); zeros contam como vazio (vão para o fim) nas colunas de horas
+  const nz = k => r => r[k] || null;
+  ordenarLista(RES, ordem, { nome: r => r.f.nome, diasMarc: nz('diasMarc'), prev: nz('prev'), trab: nz('trab'), he50: nz('he50'), he100: nz('he100'), atraso: nz('atraso'),
+    faltas: r => r.faltas.length || null, pend: r => r.impares.length + r.faltas.length || null, folha: r => (FECH[r.f.id] ? 0 : null) });
+  ligarOrdenacao(document.getElementById('lista').closest('table'), ordem, desenhar);
   const semMarc = RES.filter(r => !r.diasMarc).length;
   document.getElementById('pend').innerHTML = !MARC.length ? '<span class="tg alerta">Nenhuma marcação neste mês: importe o arquivo do relógio</span>'
     : (semMarc ? `<span class="tg neutro">${semMarc} funcionário(s) sem marcação no mês (confira PIS/CPF/código no relógio no cadastro)</span>` : '');
