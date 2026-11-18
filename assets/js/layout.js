@@ -7,11 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-<<<<<<< HEAD
-const VERSAO_TELAS = '202611181928';
-=======
-const VERSAO_TELAS = '202611181928';
->>>>>>> guias-montagem
+const VERSAO_TELAS = '202611181929';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
