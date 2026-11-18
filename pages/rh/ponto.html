@@ -6,7 +6,7 @@
 <title>Ponto · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181339">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181343">
 <style>
   .cab-tela .acoes-cab { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .cab-tela input[type=month] { width: 150px; padding: 6px 8px; }
@@ -23,12 +23,12 @@
 <body data-modulo="ponto" data-titulo="Ponto" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181339"></script>
-<script src="../../assets/js/ui.js?v=202611181339"></script>
-<script src="../../assets/js/auth.js?v=202611181339"></script>
-<script src="../../assets/js/layout.js?v=202611181339"></script>
-<script src="../../assets/js/cadastro.js?v=202611181339"></script>
-<script src="../../assets/js/rh.js?v=202611181339"></script>
+<script src="../../assets/js/supabase.js?v=202611181343"></script>
+<script src="../../assets/js/ui.js?v=202611181343"></script>
+<script src="../../assets/js/auth.js?v=202611181343"></script>
+<script src="../../assets/js/layout.js?v=202611181343"></script>
+<script src="../../assets/js/cadastro.js?v=202611181343"></script>
+<script src="../../assets/js/rh.js?v=202611181343"></script>
 <script>
 /* =====================================================================
    Ponto — leitura do relógio
@@ -97,7 +97,8 @@ function calcular(f) {
       if (x.tipo === 'feriado' || diaSemana(d) === 7) dia.he100 = trab; else dia.he50 = trab;
     }
     if (dia.he50) dia.oc.push('extra'); if (dia.he100) dia.oc.push('extra 100%'); if (dia.atraso) dia.oc.push('atraso');
-    r.prev += (x.tipo === 'trabalho' || x.tipo === 'compensacao') && (d < h || ms.length) ? prev : 0;   // dias que ainda não vieram não contam r.trab += trab; r.he50 += dia.he50; r.he100 += dia.he100; r.atraso += dia.atraso;
+    r.prev += (x.tipo === 'trabalho' || x.tipo === 'compensacao') && (d < h || ms.length) ? prev : 0;   // dias que ainda não vieram não contam
+    r.trab += trab; r.he50 += dia.he50; r.he100 += dia.he100; r.atraso += dia.atraso;
     r.dias.push(dia);
   }
   return r;
