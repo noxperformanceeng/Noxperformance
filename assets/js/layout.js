@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611181321';
+const VERSAO_TELAS = '202611181345';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -39,6 +39,7 @@ const MENU = [
   ]},
   { grupo: 'Financeiro', icone: 'financeiro', itens: [
     { id: 'pagar',         nome: 'Contas a pagar',    arquivo: 'pages/financeiro/contas-pagar.html' },
+    { id: 'despesas',      nome: 'Despesas sem pedido', arquivo: 'pages/financeiro/despesas.html' },
     { id: 'receber',       nome: 'Contas a receber',  arquivo: 'pages/financeiro/contas-receber.html' },
     { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: 'pages/financeiro/fluxo-caixa.html' },
     { id: 'conciliacao',   nome: 'Extratos e conciliação', arquivo: 'pages/financeiro/conciliacao.html' }
@@ -261,7 +262,7 @@ async function iniciarTela() {
     });
   };
   contarTelas(); setInterval(contarTelas, 120000); window.addEventListener('nox:aprovacoes', contarTelas);
-  if (typeof ouvirMudancas === 'function') ouvirMudancas(['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'titulos_pagar'], contarTelas, { auxiliar: true, mesmoOculto: true });
+  if (typeof ouvirMudancas === 'function') ouvirMudancas(['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'titulos_pagar', 'despesas_diretas'], contarTelas, { auxiliar: true, mesmoOculto: true });
   // Perguntas do Mercado Livre sem resposta: alerta forte em qualquer tela (faixa vermelha piscando, som,
   // aviso do computador e título da aba piscando). Some quando todas forem respondidas.
   // Som só para quem atende o ML (perfil Comercial: Caio e Kleyton); os demais veem só o aviso visual.

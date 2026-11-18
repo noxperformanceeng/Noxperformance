@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611181321">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181345">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611181321"></script>
-<script src="../../assets/js/ui.js?v=202611181321"></script>
-<script src="../../assets/js/auth.js?v=202611181321"></script>
-<script src="../../assets/js/layout.js?v=202611181321"></script>
-<script src="../../assets/js/cadastro.js?v=202611181321"></script>
-<script src="../../assets/js/comprovante.js?v=202611181321"></script>
+<script src="../../assets/js/supabase.js?v=202611181345"></script>
+<script src="../../assets/js/ui.js?v=202611181345"></script>
+<script src="../../assets/js/auth.js?v=202611181345"></script>
+<script src="../../assets/js/layout.js?v=202611181345"></script>
+<script src="../../assets/js/cadastro.js?v=202611181345"></script>
+<script src="../../assets/js/comprovante.js?v=202611181345"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -278,6 +278,7 @@ function htmlRastreio(r) {
       etapa(r.pedido_compra_id, 'Aprovado'),
       etapa(ref.nf || r.nf_entrada_id, ref.nf ? `NF ${ref.nf}` : 'NF (aguardando)')].join('<i>›</i>') + '<i>›</i>'
     : r.origem === 'rh' ? rastreioRH(ref) + '<i>›</i>'
+    : ref.despesa_direta ? `<a class="ok" href="${RAIZ}pages/financeiro/despesas.html?abrir=${ref.despesa_direta}">Despesa sem pedido ${esc(ref.numero || '')} ↗</a><i>›</i><span class="ok">Aprovada</span><i>›</i>`
     : r.origem === 'importacao' && ref.tiny_id ? `<span class="ok" title="${esc([ref.fornecedor_tiny, ref.categoria_tiny].filter(Boolean).join(' · '))}">Tiny #${esc(ref.tiny_id)}</span><i>›</i>`
     : `<span class="ok">${esc(ORIGENS.find(o => o.v === r.origem)?.n || 'Manual')}</span><i>›</i>`}
     ${etapa(true, 'Título')}<i>›</i>${etapa(pgs.length, pgs.length ? `Pago ${dataCurta(pgs.at(-1).data_pagamento)}` : 'Pagamento')}<i>›</i>${etapa(pgs.length && pgs.every(p => p.conciliado), 'Conciliado')}</div>
@@ -713,7 +714,7 @@ const cfg = {
     { id: 'sem_forn', nome: 'Fornecedor sem cadastro', cor: 'alerta', teste: r => ABERTOS.includes(r.situacao) && !r.fornecedor_id && !!r.origem_ref?.fornecedor_tiny },
     { id: 'sem_cat', nome: 'Sem categoria (importado)', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !r.categoria_financeira_id && !(e.rateio[r.id] || []).length },
     { id: 'produto_sem_pedido', nome: 'Compra de produto sem pedido', cor: 'alerta',
-      teste: (r, e) => ['manual', 'recorrente'].includes(r.origem) && [r.categoria_financeira_id, ...(e.rateio[r.id] || []).map(x => x.categoria_financeira_id)].some(id => cat(id)?.aplica_produtos) },
+      teste: (r, e) => ['manual', 'recorrente'].includes(r.origem) && !r.origem_ref?.despesa_direta && [r.categoria_financeira_id, ...(e.rateio[r.id] || []).map(x => x.categoria_financeira_id)].some(id => cat(id)?.aplica_produtos) },
     { id: 'sem_codigo', nome: 'Boleto sem código de barras', cor: 'neutro', teste: r => ABERTOS.includes(r.situacao) && forma(r.forma_pagamento_id)?.exige_codigo && !r.codigo_barras },
     { id: 'comp_divergente', nome: 'Comprovante divergente', cor: 'erro', teste: (r, e) => (e.anexos[r.id] || []).some(divergente) },
     { id: 'sem_comprovante', nome: 'Pago sem comprovante', cor: 'neutro', teste: (r, e) => r.situacao === 'pago' && r.data_pagamento >= '2026-10-23' && !(e.anexos[r.id] || []).some(a => a.categoria === 'comprovante') },

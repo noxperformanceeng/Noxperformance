@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Despesas sem pedido · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611181345">
+<style>
+  .ds-fluxo { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; margin: 4px 0 8px; }
+  .ds-fluxo span { padding: 3px 8px; border-radius: 10px; background: var(--fundo); color: var(--texto-suave); }
+  .ds-fluxo span.ok { background: #e8f5ec; color: var(--ok); } .ds-fluxo span.agora { background: #fff4e5; color: #b45309; font-weight: 600; }
+  .ds-fluxo span.erro { background: #fdeceb; color: var(--erro); font-weight: 600; } .ds-fluxo i { color: var(--texto-suave); font-style: normal; }
+  .ds-cupom { border: 1px dashed var(--linha); border-radius: 8px; padding: 10px 12px; margin: 8px 0; font-size: 13px; }
+  .ds-cupom.falta { border-color: var(--erro); background: #fff7f6; }
+  .ds-dica { background: #eef4ff; border: 1px solid #c9dafc; border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: #1d2b4f; }
+  .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
+  .aviso-box.erro { background: #fdeceb; color: var(--erro); }
+</style>
+</head>
+<body data-modulo="despesas" data-titulo="Despesas sem pedido">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611181345"></script>
+<script src="../../assets/js/ui.js?v=202611181345"></script>
+<script src="../../assets/js/auth.js?v=202611181345"></script>
+<script src="../../assets/js/layout.js?v=202611181345"></script>
+<script src="../../assets/js/cadastro.js?v=202611181345"></script>
+<script>
+/* =====================================================================
+   Despesas sem pedido de compra (SQL 152)
+   Gasto pequeno que não é estoque nem produção (combustível, mercado no cartão, água, luz, aluguel,
+   copa e cozinha…): sem produto e sem pedido, com categoria financeira obrigatória e foto do cupom.
+   Lançada → aprovação (central de Aprovações ou aqui) → vira título no contas a pagar com o cupom anexado.
+   Recusada volta para quem lançou ajustar e reenviar.
+   ===================================================================== */
+const SIT = [
+  { v: 'em_aprovacao', n: 'Aguardando aprovação', cor: 'alerta' }, { v: 'recusado', n: 'Recusada (ajustar)', cor: 'erro' },
+  { v: 'aprovado', n: 'Aprovada · no contas a pagar', cor: 'ok' }, { v: 'cancelado', n: 'Cancelada', cor: 'neutro' }];
+const EDITAVEL = ['em_aprovacao', 'recusado'];
+const hojeISO = () => new Date().toLocaleDateString('sv-SE');
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+let CTX = null, CATS = [], FORN = [], FORMAS = [], USU = [], ACOES = new Set();
+const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
+const usu = id => USU.find(u => u.id === id)?.nome || '';
+const cat = id => CATS.find(c => c.id === id);
+const forn = id => FORN.find(f => f.id === id);
+const minha = r => r.criado_por === CTX.usuario.id;
+const possoAprovar = r => (CTX.admin || ACOES.has('despesas.aprovar')) && (!minha(r) || CTX.admin);
+const quem = r => forn(r.fornecedor_id)?.nome || r.estabelecimento || '';
+let arquivo = null;   // cupom escolhido no formulário aberto
+
+/* ---------- Cupom / nota (obrigatório) ---------- */
+async function enviarCupom(f) {
+  if (f.size > 15 * 1024 * 1024) throw new Error(f.name + ': maior que 15 MB');
+  const nome = f.name.normalize('NFD').replace(/[^\w.\-]+/g, '_').slice(-80);
+  const caminho = `despesas/${CTX.usuario.id}/${Date.now()}-${nome}`;
+  const { error } = await db.storage.from('financeiro').upload(caminho, f, { contentType: f.type || undefined });
+  if (error) throw new Error('Cupom não foi enviado: ' + error.message);
+  return { cupom_caminho: caminho, cupom_nome: f.name, cupom_mime: f.type || null };
+}
+async function verCupom(r) {
+  const { data, error } = await db.storage.from('financeiro').createSignedUrl(r.cupom_caminho, 300);
+  if (error) return aviso('Não abriu o cupom: ' + error.message, true);
+  window.open(data.signedUrl, '_blank');
+}
+
+/* ---------- Aprovar / recusar / cancelar ---------- */
+async function decidir(r, aprovar) {
+  let mot = null;
+  if (!aprovar) { mot = prompt('Motivo da recusa (volta para quem lançou ajustar):'); if (!mot?.trim()) return; }
+  const { error } = await db.rpc('aprovacao_decidir', { p_tipo: 'despesa_direta', p_ids: [r.id], p_aprovar: aprovar, p_motivo: mot });
+  if (error) return aviso('Não salvou: ' + error.message, true);
+  aviso(aprovar ? `${r.numero} aprovada · foi para o contas a pagar` : `${r.numero} recusada · voltou para quem lançou`);
+  document.querySelector('.modal-fundo')?.remove(); cfg.recarregar(); window.top.dispatchEvent(new Event('nox:aprovacoes'));
+}
+async function cancelar(r) {
+  const mot = prompt(`Cancelar a despesa ${r.numero}? Informe o motivo:`); if (!mot?.trim()) return;
+  const { error } = await db.rpc('despesa_direta_cancelar', { p_id: r.id, p_motivo: mot });
+  if (error) return aviso('Não cancelou: ' + error.message, true);
+  aviso(`${r.numero} cancelada`); document.querySelector('.modal-fundo')?.remove(); cfg.recarregar(); window.top.dispatchEvent(new Event('nox:aprovacoes'));
+}
+
+// Categorias liberadas, agrupadas pela categoria-mãe (ex.: 6.07 Veículos › COMBUSTIVEL)
+function optCats(sel) {
+  const grupos = {};
+  CATS.filter(c => c.ativa || c.id === sel).forEach(c => (grupos[c.grupo || ''] ||= []).push(c));
+  return '<option value="">— escolha a categoria —</option>' + Object.entries(grupos).map(([g, cs]) =>
+    `<optgroup label="${esc(g)}">${cs.map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</optgroup>`).join('');
+}
+
+const cfg = {
+  textoNovo: '+ Lançar despesa',
+  tabela: 'despesas_diretas', modulo: 'despesas', titulo: 'Despesas sem pedido', singular: 'despesa', plural: 'despesas',
+  subtitulo: 'Gastos que não são de estoque nem de produção (combustível, mercado no cartão, água, luz, aluguel, copa e cozinha…): lance aqui com a categoria e a foto do cupom, sem cadastrar produto nem fazer pedido de compra. Depois de aprovada, vai sozinha para o contas a pagar.',
+  dicaBusca: 'nº, descrição, estabelecimento, categoria…', ordem: 'data_despesa', revisao: false, porEmpresa: true,
+  abas: { campo: 'situacao', padrao: 'andamento', opcoes: [
+    { v: 'andamento', n: 'Em andamento', teste: r => EDITAVEL.includes(r.situacao) },
+    { v: 'minhas', n: 'Minhas', teste: r => minha(r) },
+    { v: 'aprovacao', n: 'Aguardando aprovação', teste: r => r.situacao === 'em_aprovacao' },
+    { v: 'recusadas', n: 'Recusadas', teste: r => r.situacao === 'recusado' },
+    { v: 'aprovadas', n: 'Aprovadas', teste: r => r.situacao === 'aprovado' },
+    { v: 'canceladas', n: 'Canceladas', teste: r => r.situacao === 'cancelado' },
+    { v: '', n: 'Todas' }] },
+  ordenarPor: { data_despesa: r => String(9e15 - Date.parse(r.data_despesa)) + String(1e12 - r.id).padStart(13, '0') },
+  periodos: [{ campo: 'data_despesa', label: 'Data da despesa' }, { campo: 'data_vencimento', label: 'Vencimento' }],
+  totais: ['valor'],
+  campos: [
+    { id: 'numero', label: 'Nº', somenteLeitura: true, lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'em_aprovacao',
+      listaHtml: r => `<span class="tg ${sit(r.situacao).cor}">${esc(sit(r.situacao).n)}</span>` },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id || null },
+    { id: 'data_despesa', label: 'Data da despesa', tipo: 'data', obrig: true, lista: true, padrao: () => hojeISO() },
+    { id: 'descricao', label: 'Descrição', obrig: true, col: 2, lista: true, placeholder: 'ex.: Gasolina Kagoo · Café e açúcar · Conta de luz out/26',
+      listaHtml: r => `<span class="texto-curto" style="max-width:240px" title="${esc(r.descricao)}">${esc(r.descricao)}</span>` },
+    { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', obrig: true, col: 2, cadastro: false,
+      opcoes: () => CATS.map(c => ({ v: c.id, n: c.codigo + ' ' + c.nome })),
+      ajuda: 'É ela que leva o gasto para a linha certa dos relatórios. Só aparecem as categorias de despesa liberadas no cadastro de categorias (marca "Despesa sem pedido"). Compra para produção ou estoque continua pelo pedido de compra.' },
+    { id: 'fornecedor_id', label: 'Fornecedor (se tiver cadastro)', tipo: 'select', col: 2, cadastro: false,
+      opcoes: () => FORN.map(f => ({ v: f.id, n: f.nome })) },
+    { id: 'estabelecimento', label: 'Ou o nome do estabelecimento', col: 2, placeholder: 'ex.: Posto Shell Av. Brasil · Assaí',
+      ajuda: 'Use quando o lugar não está no cadastro de fornecedores (posto, mercado, padaria…).' },
+    { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true },
+    { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', cadastro: false, opcoes: () => FORMAS.filter(f => f.ativo).map(f => ({ v: f.id, n: f.nome })) },
+    { id: 'data_vencimento', label: 'Vencimento', tipo: 'data', obrig: true, lista: true, padrao: () => hojeISO(),
+      ajuda: 'Cartão de crédito: a data de vencimento da fatura. Pago na hora (Pix, débito, dinheiro): a própria data da despesa.' },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4 },
+    { id: 'motivo_recusa', label: 'Motivo da recusa', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'recusado' },
+    { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' }
+  ],
+  async carregarExtra(linhas, ctx) {
+    CTX = ctx;
+    const [l, us, ac] = await Promise.all([db.rpc('dd_listas'), db.rpc('usuarios_nomes'), db.rpc('minhas_acoes')]);
+    if (l.error) aviso('Não carregou as listas: ' + l.error.message, true);
+    CATS = l.data?.categorias || []; FORN = l.data?.fornecedores || []; FORMAS = l.data?.formas || [];
+    USU = us.data || []; ACOES = new Set(ac.data || []);
+    return {};
+  },
+  colunasExtras: [
+    { label: 'Categoria', texto: r => { const c = cat(r.categoria_financeira_id); return c ? c.codigo + ' ' + c.nome : ''; } },
+    { label: 'Onde', texto: r => quem(r) },
+    { label: 'Forma', texto: r => FORMAS.find(f => f.id === r.forma_pagamento_id)?.nome || '' },
+    { label: 'Lançada por', texto: r => usu(r.criado_por) }
+  ],
+  textoBuscaExtra: r => [quem(r), cat(r.categoria_financeira_id)?.codigo, cat(r.categoria_financeira_id)?.nome, usu(r.criado_por), r.observacoes].filter(Boolean).join(' '),
+  apagado: r => r.situacao === 'cancelado',
+  pendencias: [
+    { id: 'recusada', nome: 'Recusada: ajustar e reenviar', cor: 'erro', teste: r => r.situacao === 'recusado' },
+    { id: 'aguardando', nome: 'Aguardando aprovação', cor: 'alerta', teste: r => r.situacao === 'em_aprovacao' }
+  ],
+  secaoExtra: r => {
+    const passo = (t, cls) => `<span class="${cls}">${t}</span>`;
+    const fluxo = [passo('Lançada', 'ok'),
+      passo(r.situacao === 'recusado' ? 'Recusada' : 'Aprovação', r.situacao === 'em_aprovacao' ? 'agora' : r.situacao === 'recusado' ? 'erro' : r.situacao === 'aprovado' ? 'ok' : ''),
+      passo('Contas a pagar', r.situacao === 'aprovado' ? 'ok' : '')].join('<i>›</i>');
+    const bts = [
+      r.situacao === 'em_aprovacao' && possoAprovar(r) ? '<button type="button" class="btn primario" data-ds="aprovar">Aprovar</button><button type="button" class="btn" data-ds="recusar">Recusar…</button>' : '',
+      r.titulo_id && CTX.pode('pagar') ? `<a class="btn" href="${RAIZ}pages/financeiro/contas-pagar.html?abrir=${r.titulo_id}">Ver no contas a pagar ↗</a>` : '',
+      EDITAVEL.includes(r.situacao) && (minha(r) || CTX.admin || CTX.pode('despesas', 'total')) ? '<button type="button" class="btn discreto" data-ds="cancelar">Cancelar despesa</button>' : ''].join('');
+    return `<div class="secao">Andamento</div><div class="ds-fluxo">${fluxo}</div>
+      <div class="sub">Lançada por <b>${esc(usu(r.criado_por))}</b>${r.decidido_em ? ` · ${r.situacao === 'recusado' ? 'recusada' : 'aprovada'} por <b>${esc(usu(r.decidido_por))}</b> em ${dataHoraBR(r.decidido_em)}` : ''}</div>
+      ${r.situacao === 'recusado' && minha(r) ? '<div class="aviso-box">Recusada: ajuste o que for preciso e salve para mandar de novo para aprovação.</div>' : ''}
+      ${bts ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${bts}</div>` : ''}`;
+  },
+  aoAbrir(m, r, ctx) {
+    arquivo = null;
+    const novo = !r.id, editavel = novo || (EDITAVEL.includes(r.situacao) && (minha(r) || ctx.admin || ctx.pode('despesas', 'total')));
+    // categoria agrupada por categoria-mãe
+    const sc = m.querySelector('#f_categoria_financeira_id'); if (sc) { const v = Number(sc.value) || r.categoria_financeira_id || null; sc.innerHTML = optCats(v); }
+    const box = document.createElement('div');
+    box.innerHTML = `${novo ? '<div class="ds-dica"><b>Quando usar:</b> gasto que não entra no estoque nem na produção. Compra de matéria-prima, insumo, peça ou serviço de produção continua pelo pedido de compra.</div>' : ''}
+      <div class="ds-cupom${r.cupom_caminho ? '' : ' falta'}" id="dsCupom"><b>Foto do cupom ou da nota</b> <span class="obrig">*</span>
+        <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${r.cupom_caminho ? `<button type="button" class="btn fino" id="dsVer">Ver ${esc(r.cupom_nome || 'cupom')}</button>` : ''}
+          ${editavel ? `<input type="file" id="dsArq" accept="image/*,application/pdf"><span class="sub" id="dsNome">${r.cupom_caminho ? 'escolha outro arquivo só se quiser trocar' : 'tire a foto ou escolha o arquivo (imagem ou PDF)'}</span>` : ''}
+        </div></div>`;
+    const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Andamento' || s.textContent === 'Histórico');
+    antes ? antes.parentNode.insertBefore(box, antes) : m.querySelector('.acoes').before(box);
+    box.querySelector('#dsVer')?.addEventListener('click', () => verCupom(r));
+    box.querySelector('#dsArq')?.addEventListener('change', e => { arquivo = e.target.files[0] || null;
+      box.querySelector('#dsCupom').classList.toggle('falta', !arquivo && !r.cupom_caminho);
+      box.querySelector('#dsNome').textContent = arquivo ? arquivo.name : 'nenhum arquivo escolhido'; });
+    m.querySelectorAll('[data-ds]').forEach(b => b.onclick = () => ({ aprovar: () => decidir(r, true), recusar: () => decidir(r, false), cancelar: () => cancelar(r) })[b.dataset.ds]());
+    // Fornecedor escolhido: o nome do estabelecimento fica opcional
+    const fF = m.querySelector('#f_fornecedor_id'), fE = m.querySelector('#f_estabelecimento');
+    fF?.addEventListener('change', () => { if (fF.value && fE && !fE.value) fE.placeholder = 'opcional: já tem o fornecedor'; });
+    // Data da despesa puxa o vencimento quando ainda está igual (pago na hora)
+    const fD = m.querySelector('#f_data_despesa'), fV = m.querySelector('#f_data_vencimento');
+    let ultima = fD?.value;
+    fD?.addEventListener('change', () => { if (fV && (!fV.value || fV.value === ultima)) fV.value = fD.value; ultima = fD.value; });
+    if (!editavel) {
+      m.querySelectorAll('.campo input, .campo select, .campo textarea').forEach(i => i.disabled = true);
+      m.querySelector('#mSalvar')?.remove();
+      return;
+    }
+    if (!novo && r.situacao === 'em_aprovacao') m.querySelector('#cAviso').innerHTML = '<div class="aviso-box">Ainda aguardando aprovação: se alterar, continua na fila com os dados novos.</div>';
+  },
+  validar: (d, r) => {
+    if (!d.fornecedor_id && !d.estabelecimento) return 'Escolha o fornecedor ou escreva o nome do estabelecimento';
+    if (!(d.valor > 0)) return 'Informe o valor';
+    if (d.data_vencimento && d.data_despesa && d.data_vencimento < d.data_despesa) return 'O vencimento não pode ser antes da data da despesa';
+    if (!arquivo && !r?.cupom_caminho) return 'Anexe a foto do cupom ou da nota (obrigatório)';
+    return null;
+  },
+  async salvar(dados, r, m, novo) {
+    const cupom = arquivo ? await enviarCupom(arquivo) : {};
+    const { data, error } = await db.rpc('despesa_direta_salvar', { p: { ...dados, ...cupom, id: novo ? null : r.id } });
+    if (error) throw error;
+    arquivo = null;
+    window.top.dispatchEvent(new Event('nox:aprovacoes'));
+    setTimeout(() => aviso(novo ? 'Despesa enviada para aprovação' : 'Despesa reenviada para aprovação'), 600);
+    return data;
+  },
+  tituloRegistro: r => `${r.numero} · ${sit(r.situacao).n}`,
+  chaveHistorico: r => r.numero
+};
+montarCadastro(cfg);
+</script>
+</body>
+</html>
