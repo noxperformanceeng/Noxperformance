@@ -1,11 +1,11 @@
 // ERP NOX · funções comuns da integração com a Shopee (Open Platform v2, somente leitura de vendas)
-// Chave do app só no servidor: segredos SHOPEE_PARTNER_ID e SHOPEE_PARTNER_KEY (Supabase › Edge Functions › Secrets).
+// Chave do app só no servidor: segredo SHOPEE_PARTNER_KEY (Supabase › Edge Functions › Secrets). O partner_id não é segredo.
 // Os acessos da loja (tokens) ficam em shopee_contas, que só o servidor lê.
 import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 export const SHOPEE_API = 'https://partner.shopeemobile.com';
 export const REDIRECT = 'https://qijeqdfhwwruhoruvvgb.supabase.co/functions/v1/shopee-auth';
-export const PARTNER_ID = () => Number(Deno.env.get('SHOPEE_PARTNER_ID') ?? '0');
+export const PARTNER_ID = () => Number(Deno.env.get('SHOPEE_PARTNER_ID') ?? '2054327');
 const PARTNER_KEY = () => Deno.env.get('SHOPEE_PARTNER_KEY') ?? '';
 
 export function adminDb(): SupabaseClient {
