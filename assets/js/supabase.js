@@ -71,7 +71,7 @@ const tempoReal = (() => {
     sc_pedidos: ['pedidos_compra', 'solicitacoes_compra', 'solicitacoes_compra_itens'],
     sc_cotacoes: ['solicitacoes_compra_itens', 'cotacoes_compra'],
     cotacao_analise: ['cotacoes_compra_precos', 'cotacoes_compra_fornecedores', 'cotacoes_compra_itens', 'pedidos_compra_recebimentos'],
-    menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'pedidos_compra_recebimentos', 'nfe_entrada'],
+    menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'pedidos_compra_recebimentos', 'nfe_entrada', 'titulos_pagar'],
     sugestao_compra: ['estoque_movimentos', 'fornecedores', 'pedidos_compra', 'pedidos_compra_itens', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens', 'produto_fornecedores', 'produtos'],
     usuarios_nomes: []           // só nomes para exibir: não vale recarregar a tela por isso
   };

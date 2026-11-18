@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611180852">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611180942">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611180852"></script>
-<script src="../../assets/js/ui.js?v=202611180852"></script>
-<script src="../../assets/js/auth.js?v=202611180852"></script>
-<script src="../../assets/js/layout.js?v=202611180852"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611180852"></script>
-<script src="../../assets/js/cadastro.js?v=202611180852"></script>
+<script src="../../assets/js/supabase.js?v=202611180942"></script>
+<script src="../../assets/js/ui.js?v=202611180942"></script>
+<script src="../../assets/js/auth.js?v=202611180942"></script>
+<script src="../../assets/js/layout.js?v=202611180942"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611180942"></script>
+<script src="../../assets/js/cadastro.js?v=202611180942"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -1122,7 +1122,8 @@ const cfg = {
   periodos: [{ campo: 'data_pedido', label: 'Data do pedido' }, { campo: 'data_entrega_prevista', label: 'Entrega prevista' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
   campos: [
     { id: 'numero', label: 'Nº', somenteLeitura: true, lista: true,
-      listaHtml: r => r.origem === 'tiny' ? `<span class="tg alerta" title="Ordem de compra feita no Tiny (${esc(r.numero)} no sistema)">TINY ${esc(r.numero_tiny || '')}</span>` : esc(r.numero || '') },
+      listaHtml: r => (r.origem === 'tiny' ? `<span class="tg alerta" title="Ordem de compra feita no Tiny (${esc(r.numero)} no sistema)">TINY ${esc(r.numero_tiny || '')}</span>` : esc(r.numero || ''))
+        + (r.pagamento_antecipado ? ` <span class="tg ${r.pagamento_urgente ? 'erro' : 'alerta'}" title="Pagamento antecipado: na aprovação vai para o contas a pagar${r.pagamento_data ? ', pagar até ' + dataCurta(r.pagamento_data) : ''}">${r.pagamento_urgente ? 'URGENTE · ' : ''}pagto antecipado</span>` : '') },
     { id: 'data_pedido', label: 'Data', tipo: 'data', obrig: true, lista: true, padrao: () => hojeISO() },
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', obrig: true, lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || ctx.empresas[0]?.id },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'rascunho',
@@ -1136,6 +1137,13 @@ const cfg = {
     { id: 'frete', label: 'Frete (R$)', tipo: 'moeda', secao: 'Valores' },
     { id: 'outras_despesas', label: 'Outras despesas (R$)', tipo: 'moeda' },
     { id: 'desconto', label: 'Desconto no pedido (R$)', tipo: 'moeda' },
+    { id: 'pagamento_antecipado', label: 'Pagar antes de receber?', tipo: 'bool', textoBool: 'Sim, pagamento antecipado (ex.: Mercado Livre, Pix na hora)', col: 2, secao: 'Pagamento antecipado',
+      ajuda: 'Marcado: quando o pedido for aprovado, já entra no Contas a pagar liberado para o financeiro pagar na data abaixo. Na entrada da mercadoria não nasce outra conta.' },
+    { id: 'pagamento_urgente', label: 'Urgência', tipo: 'bool', textoBool: 'URGENTE (financeiro paga primeiro)' },
+    { id: 'pagamento_data', label: 'Pagar até', tipo: 'data' },
+    { id: 'pagamento_pix', label: 'Pix (chave ou copia e cola)', col: 2 },
+    { id: 'pagamento_codigo_barras', label: 'Boleto: código de barras / linha digitável', col: 2 },
+    { id: 'pagamento_link', label: 'Link de pagamento (ex.: Mercado Livre)', col: 2 },
     { id: 'contato_fornecedor', label: 'Contato no fornecedor', secao: 'Contato para envio' },
     { id: 'email_fornecedor', label: 'E-mail', tipo: 'email' },
     { id: 'whatsapp_fornecedor', label: 'WhatsApp', tipo: 'tel' },
@@ -1205,6 +1213,7 @@ const cfg = {
     { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: r => ['enviado', 'recebido_parcial', 'aprovado'].includes(r.situacao) && r.data_entrega_prevista && r.data_entrega_prevista < hojeISO() },
     { id: 'nao_enviado', nome: 'Aprovado sem envio', cor: 'alerta', teste: r => r.situacao === 'aprovado' },
     { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista && r.origem !== 'tiny' },
+    { id: 'antecipado_incompleto', nome: 'Pagamento antecipado sem data ou sem Pix/boleto/link', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && r.pagamento_antecipado && (!r.pagamento_data || !(r.pagamento_pix || r.pagamento_codigo_barras || r.pagamento_link)) },
     { id: 'sem_forma', nome: 'Sem forma de pagamento (não vai para aprovação)', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && !r.forma_pagamento_id && r.origem !== 'tiny' },
     { id: 'aumento', nome: 'Preço acima da última compra', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && r.origem !== 'tiny' && (e.itens[r.id] || []).some(i => {
         const u = historico(i.produto_id, i.servico_id, false, r.id)[0]; return u && Number(i.valor_unitario) > Number(u.valor_unitario) + 0.005; }) },

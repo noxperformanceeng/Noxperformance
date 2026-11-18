@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611180852';
+const VERSAO_TELAS = '202611180942';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -261,7 +261,7 @@ async function iniciarTela() {
     });
   };
   contarTelas(); setInterval(contarTelas, 120000); window.addEventListener('nox:aprovacoes', contarTelas);
-  if (typeof ouvirMudancas === 'function') ouvirMudancas(['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra'], contarTelas, { auxiliar: true, mesmoOculto: true });
+  if (typeof ouvirMudancas === 'function') ouvirMudancas(['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'titulos_pagar'], contarTelas, { auxiliar: true, mesmoOculto: true });
   // Perguntas do Mercado Livre sem resposta: alerta forte em qualquer tela (faixa vermelha piscando, som,
   // aviso do computador e título da aba piscando). Some quando todas forem respondidas.
   // Som só para quem atende o ML (perfil Comercial: Caio e Kleyton); os demais veem só o aviso visual.

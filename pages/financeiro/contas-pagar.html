@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611180852">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611180942">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sub-ed th { text-align: left; font-size: 11.5px; color: var(--texto-suave); font-weight: 500; padding: 0 4px 4px; }
@@ -52,12 +52,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611180852"></script>
-<script src="../../assets/js/ui.js?v=202611180852"></script>
-<script src="../../assets/js/auth.js?v=202611180852"></script>
-<script src="../../assets/js/layout.js?v=202611180852"></script>
-<script src="../../assets/js/cadastro.js?v=202611180852"></script>
-<script src="../../assets/js/comprovante.js?v=202611180852"></script>
+<script src="../../assets/js/supabase.js?v=202611180942"></script>
+<script src="../../assets/js/ui.js?v=202611180942"></script>
+<script src="../../assets/js/auth.js?v=202611180942"></script>
+<script src="../../assets/js/layout.js?v=202611180942"></script>
+<script src="../../assets/js/cadastro.js?v=202611180942"></script>
+<script src="../../assets/js/comprovante.js?v=202611180942"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -591,9 +591,9 @@ const cfg = {
   subtitulo: 'Despesas e títulos por empresa. Compra de produto entra pelo pedido de compra / NF; aqui, manualmente, só despesas.',
   dicaBusca: 'fornecedor, documento, categoria, conta…', ordem: 'data_vencimento', revisao: false, porEmpresa: true,
   filtrosExtras: [
-    { id: 'grupo', label: 'Situação', padrao: 'abertos', opcoes: [{ v: 'abertos', n: 'Em aberto (a pagar)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'hoje', n: 'Vencem hoje' }, { v: 'programados', n: 'Programados' },
+    { id: 'grupo', label: 'Situação', padrao: 'abertos', opcoes: [{ v: 'abertos', n: 'Em aberto (a pagar)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'hoje', n: 'Vencem hoje' }, { v: 'urgentes', n: 'Urgentes' }, { v: 'programados', n: 'Programados' },
         { v: 'parcial', n: 'Pago parcial' }, { v: 'pago', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }],
-      teste: (r, v) => v === 'abertos' ? ABERTOS.includes(r.situacao) : v === 'vencidos' ? vencido(r) : v === 'hoje' ? ABERTOS.includes(r.situacao) && dias(r) === 0 : v === 'programados' ? r.situacao === 'programado' : r.situacao === v },
+      teste: (r, v) => v === 'abertos' ? ABERTOS.includes(r.situacao) : v === 'vencidos' ? vencido(r) : v === 'hoje' ? ABERTOS.includes(r.situacao) && dias(r) === 0 : v === 'urgentes' ? ABERTOS.includes(r.situacao) && r.urgente : v === 'programados' ? r.situacao === 'programado' : r.situacao === v },
     { id: 'prazo', label: 'Prazo (data prevista)', opcoes: FAIXAS.map(f => ({ v: f.v, n: f.n })), teste: (r, v) => faixa(r) === v },
     { id: 'tipo', label: 'Real ou projeção', opcoes: [{ v: 'real', n: 'Só reais' }, { v: 'projecao', n: 'Só projeções' }], teste: (r, v) => (v === 'projecao') === !!r.projecao },
     { id: 'conc', label: 'Conciliação', opcoes: [{ v: 'nao', n: 'Pago e não conciliado' }, { v: 'sim', n: 'Conciliado' }],
@@ -602,7 +602,7 @@ const cfg = {
   totais: ['valor', 'saldo'],
   valorTotal: (r, c) => r.situacao === 'cancelado' ? 0 : r[c],
   // Ordem padrão: o que ainda vai ser pago primeiro (pela data prevista); pagos depois, do mais recente
-  ordenarPor: { data_vencimento: r => (ABERTOS.includes(r.situacao) ? '0' + prevista(r) : '1' + (9e15 - Date.parse(r.data_pagamento || r.data_vencimento))) },
+  ordenarPor: { data_vencimento: r => (ABERTOS.includes(r.situacao) ? '0' + (r.urgente ? '0' : '1') + prevista(r) : '1' + (9e15 - Date.parse(r.data_pagamento || r.data_vencimento))) },
   periodos: [{ campo: 'data_vencimento', label: 'Vencimento' }, { campo: 'data_pagamento', label: 'Pagamento' }, { campo: 'data_emissao', label: 'Emissão' },
     { campo: 'data_competencia', label: 'Competência' }, { campo: 'data_programada', label: 'Programado para' }, { campo: 'criado_em', label: 'Lançamento no sistema' }],
   // Lista: vencimento (com o prazo), empresa, fornecedor (com a descrição), documento (com a parcela), valor, saldo, situação
@@ -620,7 +620,9 @@ const cfg = {
           : rhTotal(r) ? `<span class="texto-curto" title="Total do RH, pago pela Diretoria. O valor por colaborador fica só no RH.">RH · Diretoria <small class="tg neutro">total</small></span>`
           : r.origem_ref?.fornecedor_tiny ? `<span class="texto-curto sem-cadastro" title="Sem cadastro — nome no Tiny">${esc(r.origem_ref.fornecedor_tiny)}</span>` : '') + d; } },
     { id: 'documento', label: 'Documento', lista: true, placeholder: 'NF, boleto, guia, contrato',
-      listaHtml: r => (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '')
+      listaHtml: r => (r.urgente && ABERTOS.includes(r.situacao) ? '<span class="tg erro pisca" title="Marcado como urgente pelo comprador">URGENTE</span> ' : '')
+        + (r.origem_ref?.antecipado ? '<span class="tg alerta" title="Pedido de compra com pagamento antecipado: pagar antes da mercadoria chegar">PC · antecipado</span> ' : '')
+        + (r.origem === 'pedido_compra' && r.projecao ? '<span class="tg pc" title="Pedido de compra aprovado: previsão até chegar a NF">PC · aguardando NF</span> ' : '')
         + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '') },
     { id: 'descricao', label: 'Descrição / histórico', col: 2, ajuda: 'Nos títulos do Tiny: o histórico de lá.' },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
@@ -646,6 +648,9 @@ const cfg = {
     { id: 'forma_pagamento_id', label: 'Forma de pagamento', tipo: 'select', filtro: true, opcoes: () => FORMAS.map(f => ({ v: f.id, n: f.nome })) },
     { id: 'projecao', label: 'Projeção', tipo: 'bool', textoBool: 'Valor estimado', ajuda: 'Valor ainda estimado (ex.: conta de luz antes de chegar). Desmarque quando chegar a conta/boleto real.' },
     { id: 'codigo_barras', label: 'Código de barras / linha digitável', col: 4 },
+    { id: 'pix', label: 'Pix (chave ou copia e cola)', col: 2 },
+    { id: 'link_pagamento', label: 'Link de pagamento', col: 2 },
+    { id: 'urgente', label: 'Urgência', tipo: 'bool', textoBool: 'URGENTE (aparece primeiro na lista)' },
     { id: 'origem', label: 'Origem', tipo: 'select', opcoes: ORIGENS, padrao: 'manual', filtro: true, secao: 'Origem', oculto: r => !r.id },
     { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
   ],
