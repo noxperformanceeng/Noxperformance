@@ -60,7 +60,9 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
     const w = palavras(q.texto);
     // respostas que o vendedor CORRIGIU (a IA sugeriu outra coisa) valem mais: é onde a IA aprende
     const { data: hist } = await db.from('ml_perguntas').select('item_id, texto, resposta, sugestao, usou_sugestao').not('resposta', 'is', null).order('criada_em', { ascending: false }).limit(6000);
-    const corrigida = (h: { sugestao?: string | null; usou_sugestao?: boolean | null }) => !!h.sugestao && h.usou_sugestao === false;
+    // (ajuste pequeno, como pontuação ou maiúsculas, não conta como correção)
+    const corrigida = (h: { sugestao?: string | null; usou_sugestao?: boolean | null; resposta?: string | null }) =>
+      !!h.sugestao && h.usou_sugestao === false && parecida(palavras(h.sugestao), palavras(h.resposta ?? '')) < 0.85;
     const exemplos = (hist ?? []).map(h => ({ h, n: parecida(w, palavras(h.texto)) + (h.item_id === q.item_id ? 0.3 : 0) + (corrigida(h) ? 0.2 : 0) }))
       .filter(o => o.n > 0.25).sort((a, b) => b.n - a.n).slice(0, 15)
       .map(o => `P${o.h.item_id === q.item_id ? ' (mesmo anúncio)' : ''}: ${o.h.texto}\nR${corrigida(o.h) ? ' (CORRIGIDA pelo vendedor; a IA tinha sugerido: "' + String(o.h.sugestao).slice(0, 300) + '")' : ''}: ${o.h.resposta}`).join('\n\n');
