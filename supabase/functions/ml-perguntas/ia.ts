@@ -17,6 +17,7 @@ Como responder:
 - Compatibilidade ("serve no meu carro?"): a BASE DE COMPATIBILIDADE DA NOX é a fonte oficial e vale mais que tudo. Confira marca, modelo, ano, motor e potência (ex.: o mesmo carro pode ter kits diferentes para 116, 127 e 140 cv) e respeite as observações da base. Se o cliente não informou o que falta para decidir (ano, motor, potência), pergunte de forma educada. Fora da base, só afirme que serve se o carro/motor/ano estiver claramente no anúncio ou em resposta anterior da NOX para o mesmo caso. Se não servir e houver na lista "outros anúncios da NOX" um que sirva claramente, indique-o colocando o link dele na resposta. Se não houver certeza, escreva uma resposta prudente e marque alerta "compatibilidade".
 - Preço, desconto, pagamento à vista, atacado: escreva uma resposta neutra (sem prometer desconto) e marque alerta "preco".
 - Proibido pelo Mercado Livre: telefone, WhatsApp, e-mail, site ou redes sociais, combinar fora do ML, links que não sejam do Mercado Livre.
+- Respostas marcadas CORRIGIDA mostram o que a IA errou antes e como o vendedor respondeu: siga a resposta do vendedor.
 - Confiança: "alta" = está escrito no anúncio ou já respondemos igual; "media" = dedução razoável; "baixa" = falta informação.
 Responda chamando a ferramenta "sugerir_resposta".`;
 
@@ -29,10 +30,12 @@ const FERRAMENTA = {
       resposta: { type: 'string', description: 'Texto pronto para enviar ao cliente (até 600 caracteres).' },
       confianca: { type: 'string', enum: ['alta', 'media', 'baixa'] },
       alerta: { type: 'string', enum: ['nenhum', 'preco', 'compatibilidade'], description: 'Assunto que a pessoa precisa conferir com atenção.' },
+      assunto: { type: 'string', enum: ['compatibilidade', 'prazo_envio', 'frete', 'garantia', 'preco_desconto', 'medida_material', 'instalacao', 'estoque', 'outro'],
+        description: 'Assunto principal da pergunta do cliente.' },
       indicar_item: { type: 'string', description: 'MLB do outro anúncio indicado na resposta, ou vazio.' },
       motivo: { type: 'string', description: 'Em uma frase: de onde tirou a resposta (para o atendente conferir).' }
     },
-    required: ['resposta', 'confianca', 'alerta', 'motivo']
+    required: ['resposta', 'confianca', 'alerta', 'assunto', 'motivo']
   }
 };
 
@@ -55,10 +58,12 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
       .map((a: { name: string; value_name: string }) => `${a.name}: ${a.value_name}`).join('\n');
     // histórico: respostas parecidas (o mesmo anúncio pesa mais)
     const w = palavras(q.texto);
-    const { data: hist } = await db.from('ml_perguntas').select('item_id, texto, resposta').not('resposta', 'is', null).order('criada_em', { ascending: false }).limit(6000);
-    const exemplos = (hist ?? []).map(h => ({ h, n: parecida(w, palavras(h.texto)) + (h.item_id === q.item_id ? 0.3 : 0) }))
+    // respostas que o vendedor CORRIGIU (a IA sugeriu outra coisa) valem mais: é onde a IA aprende
+    const { data: hist } = await db.from('ml_perguntas').select('item_id, texto, resposta, sugestao, usou_sugestao').not('resposta', 'is', null).order('criada_em', { ascending: false }).limit(6000);
+    const corrigida = (h: { sugestao?: string | null; usou_sugestao?: boolean | null }) => !!h.sugestao && h.usou_sugestao === false;
+    const exemplos = (hist ?? []).map(h => ({ h, n: parecida(w, palavras(h.texto)) + (h.item_id === q.item_id ? 0.3 : 0) + (corrigida(h) ? 0.2 : 0) }))
       .filter(o => o.n > 0.25).sort((a, b) => b.n - a.n).slice(0, 15)
-      .map(o => `P${o.h.item_id === q.item_id ? ' (mesmo anúncio)' : ''}: ${o.h.texto}\nR: ${o.h.resposta}`).join('\n\n');
+      .map(o => `P${o.h.item_id === q.item_id ? ' (mesmo anúncio)' : ''}: ${o.h.texto}\nR${corrigida(o.h) ? ' (CORRIGIDA pelo vendedor; a IA tinha sugerido: "' + String(o.h.sugestao).slice(0, 300) + '")' : ''}: ${o.h.resposta}`).join('\n\n');
     // outros anúncios ativos que podem servir (mesmas palavras do carro/motor)
     const { data: itens } = await db.from('ml_itens').select('item_id, titulo, link, preco').eq('situacao', 'active');
     const outros = (itens ?? []).filter(i => i.item_id !== q.item_id).map(i => ({ i, n: parecida(w, palavras(i.titulo ?? '')) }))
@@ -110,7 +115,7 @@ ${q.texto}`;
     if (!s?.resposta) throw new Error('IA não devolveu resposta');
     await db.from('ml_perguntas').update({
       sugestao: String(s.resposta).slice(0, 2000), sugestao_confianca: s.confianca, sugestao_alerta: s.alerta === 'nenhum' ? null : s.alerta,
-      sugestao_motivo: s.motivo ?? null, sugestao_indicado: s.indicar_item || null, sugestao_em: new Date().toISOString(), sugestao_erro: null
+      sugestao_motivo: s.motivo ?? null, assunto: s.assunto ?? null, sugestao_indicado: s.indicar_item || null, sugestao_em: new Date().toISOString(), sugestao_erro: null
     }).eq('id', id);
     return { ok: true };
   } catch (e) {
