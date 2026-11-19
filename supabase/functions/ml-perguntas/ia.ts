@@ -6,7 +6,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 const PARADAS = new Set('o a os as de da do das dos e em no na nos nas um uma para pra pro com por que se eu meu minha voce vc tem ter esse essa este esta isso ola oi bom dia boa tarde noite amigo serve servir'.split(' '));
 const semAc = (t: string) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-// "2,5" vira "2.5" antes de limpar (senão a medida some); "pol", "polegadas" e " ficam de fora
+// "2,5" vira "2.5" antes de limpar (senão a medida some)
 const palavras = (t: string) => new Set(semAc(t).replace(/(\d),(\d)/g, '$1.$2').replace(/[^a-z0-9.\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !PARADAS.has(w)));
 function parecida(a: Set<string>, b: Set<string>) { let c = 0; a.forEach(w => { if (b.has(w)) c++; }); return c / Math.sqrt(Math.max(a.size, 1) * Math.max(b.size, 1)); }
 
