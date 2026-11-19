@@ -191,7 +191,7 @@ function desenhar() {
   $('#abas').querySelectorAll('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
   const lista = filtrados(), foco = document.activeElement?.dataset?.r, caret = document.activeElement?.selectionStart;
   $('#contagem').textContent = `${lista.length.toLocaleString('pt-BR')} pergunta${lista.length === 1 ? '' : 's'}`;
-  if (aba === 'ia') { $('#lista').innerHTML = painelIA(todas); $('#contagem').textContent = ''; return; }
+  if (aba === 'ia') { $('#lista').innerHTML = painelIA(todas); $('#contagem').textContent = ''; ligarRevisao(); return; }
   if (aba === 'aberta') {
     // mais antiga primeiro: quem espera há mais tempo vem antes
     const ord = [...lista].sort((a, b) => a.criada_em < b.criada_em ? -1 : 1);
@@ -217,15 +217,17 @@ function desenhar() {
 const ASSUNTOS = { compatibilidade: 'Compatibilidade', prazo_envio: 'Prazo e envio', frete: 'Frete', garantia: 'Garantia', preco_desconto: 'Preço e desconto',
   medida_material: 'Medida e material', instalacao: 'Instalação', estoque: 'Estoque', outro: 'Outros' };
 function semelhanca(a, b) { const x = palavras(a), y = palavras(b); if (!x.size || !y.size) return 0; let c = 0; x.forEach(w => { if (y.has(w)) c++; }); return c / Math.max(x.size, y.size); }
-const resultadoIA = q => q.usou_sugestao ? 'igual' : semelhanca(q.sugestao, q.resposta) >= 0.85 ? 'ajuste' : 'reescrita';
+// revisão do Paulo: "IA estava certa" conta como acerto mesmo que o vendedor tenha mudado
+const resultadoIA = q => q.usou_sugestao ? 'igual' : semelhanca(q.sugestao, q.resposta) >= 0.85 ? 'ajuste' : q.revisao === 'ia' ? 'ia_certa' : 'reescrita';
+const REVISAO = { vendedor: 'Vendedor certo', ia: 'IA estava certa', nenhum: 'Os dois errados' };
 const pct = (a, b) => b ? Math.round(a * 100 / b) + '%' : '—';
 function painelIA(todas) {
   const base = todas.filter(q => q.sugestao && q.resposta && q.resposta_origem !== 'ml').map(q => ({ ...q, res: resultadoIA(q) }));
   if (!base.length) return '<div class="cartao vazio">Ainda não há respostas enviadas a partir de sugestões da IA. Os números aparecem aqui conforme o Caio e o Kleyton forem respondendo.</div>';
-  const conta = l => ({ n: l.length, igual: l.filter(q => q.res === 'igual').length, ajuste: l.filter(q => q.res === 'ajuste').length });
+  const conta = l => ({ n: l.length, igual: l.filter(q => q.res === 'igual' || q.res === 'ia_certa').length, ajuste: l.filter(q => q.res === 'ajuste').length });
   const linhaNums = c => `<td class="num">${c.n}</td><td class="num">${c.igual} <small class="sub2">${pct(c.igual, c.n)}</small></td><td class="num">${c.ajuste} <small class="sub2">${pct(c.ajuste, c.n)}</small></td>
     <td class="num">${c.n - c.igual - c.ajuste} <small class="sub2">${pct(c.n - c.igual - c.ajuste, c.n)}</small></td><td class="num"><b>${pct(c.igual + c.ajuste, c.n)}</b></td>`;
-  const cab = primeira => `<tr><th>${primeira}</th><th class="num">Respondidas</th><th class="num">Sem mudança</th><th class="num">Pequeno ajuste</th><th class="num">Reescritas</th><th class="num">Acerto</th>`;
+  const cab = primeira => `<tr><th>${primeira}</th><th class="num">Respondidas</th><th class="num" title="Inclui as que o administrador marcou como IA estava certa">Sem mudança*</th><th class="num">Pequeno ajuste</th><th class="num">Reescritas</th><th class="num">Acerto</th>`;
   const limite = Date.now() - 28 * 864e5, rec = base.filter(q => Date.parse(q.respondida_em || q.criada_em) >= limite);
   const porAssunto = Object.keys(ASSUNTOS).concat('').map(k => ({ k, c: conta(rec.filter(q => (q.assunto || '') === k)) })).filter(x => x.c.n);
   const status = (k, c) => k === 'preco_desconto' ? '<span class="tg neutro">Sempre com alguém</span>'
@@ -233,18 +235,27 @@ function painelIA(todas) {
     : `<span class="tg neutro">Aprendendo${c.n < 30 ? ` (${c.n}/30 respostas)` : ''}</span>`;
   const semana = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
   const semanas = [...new Set(base.map(q => semana(q.respondida_em || q.criada_em)))].sort().reverse().slice(0, 12);
-  const correcoes = base.filter(q => q.res === 'reescrita').sort((a, b) => (b.respondida_em || '') < (a.respondida_em || '') ? -1 : 1).slice(0, 15);
+  // correções: as sem revisão primeiro (o Paulo decide quem estava certo; só a revisão vira exemplo forte para a IA)
+  const correcoes = base.filter(q => q.res === 'reescrita' || q.res === 'ia_certa')
+    .sort((a, b) => (!!a.revisao - !!b.revisao) || ((b.respondida_em || '') < (a.respondida_em || '') ? -1 : 1)).slice(0, 40);
+  const pend = base.filter(q => q.res === 'reescrita' && !q.revisao).length, adm = CTX?.admin;
+  const celRev = q => q.revisao
+    ? `<span class="tg ${q.revisao === 'vendedor' ? 'ok' : 'neutro'}">${REVISAO[q.revisao]}</span>${q.revisao_texto ? `<div class="resp-ml"><small>Certa: ${esc(q.revisao_texto)}</small></div>` : ''}${adm ? ` <button class="btn discreto fino" type="button" data-rev="${q.id}" data-v="">desfazer</button>` : ''}`
+    : adm ? `<div style="display:flex;flex-wrap:wrap;gap:4px"><button class="btn fino" type="button" data-rev="${q.id}" data-v="vendedor">Vendedor certo</button>
+        <button class="btn fino" type="button" data-rev="${q.id}" data-v="ia">IA estava certa</button>
+        <button class="btn fino" type="button" data-rev="${q.id}" data-v="nenhum">Os dois errados</button></div>` : '<span class="tg neutro">Aguardando revisão</span>';
   const t = conta(rec);
   return `<div class="cartao"><p class="sub" style="margin:0">Últimas 4 semanas: <b>${t.n}</b> respostas a partir de sugestões da IA · <b>${pct(t.igual + t.ajuste, t.n)}</b> de acerto
-      (enviadas sem mudança ou com pequeno ajuste). Um assunto fica "no ponto" com 30 respostas ou mais e 95% de acerto. Ligar a resposta automática é decisão do Paulo.</p></div>
+      (enviadas sem mudança, com pequeno ajuste ou marcadas "IA estava certa" na revisão). Um assunto fica "no ponto" com 30 respostas ou mais e 95% de acerto. Ligar a resposta automática é decisão do Paulo.</p></div>
     <div class="cartao tabela-rolagem"><h3>Por assunto · últimas 4 semanas</h3><table><thead>${cab('Assunto')}<th>Situação</th></tr></thead><tbody>
       ${porAssunto.map(x => `<tr><td>${esc(ASSUNTOS[x.k] || 'Sem assunto (antes da marcação)')}</td>${linhaNums(x.c)}<td>${x.k ? status(x.k, x.c) : ''}</td></tr>`).join('')}</tbody></table></div>
     <div class="cartao tabela-rolagem"><h3>Por semana</h3><table><thead>${cab('Semana de')}</tr></thead><tbody>
       ${semanas.map(s => `<tr><td>${s.split("-").reverse().join("/")}</td>${linhaNums(conta(base.filter(q => semana(q.respondida_em || q.criada_em) === s)))}</tr>`).join('')}</tbody></table></div>
-    <div class="cartao tabela-rolagem"><h3>Últimas correções dos vendedores</h3><p class="sub">Onde a IA errou: a resposta enviada passa a ser exemplo com mais peso nas próximas sugestões.</p>
-      <table><thead><tr><th>Data</th><th>Assunto</th><th>Pergunta</th><th>A IA sugeriu</th><th>O vendedor enviou</th></tr></thead><tbody>
-      ${correcoes.map(q => `<tr><td style="white-space:nowrap">${quando(q.respondida_em)}</td><td>${esc(ASSUNTOS[q.assunto] || '')}</td><td>${esc(q.texto)}</td>
-        <td class="resp-ml">${esc(q.sugestao)}</td><td class="resp-ml">${esc(q.resposta)}</td></tr>`).join('') || '<tr><td colspan="5">Nenhuma correção ainda.</td></tr>'}</tbody></table></div>`;
+    <div class="cartao tabela-rolagem"><h3>Quando o vendedor mudou a sugestão${pend ? ` · <span class="tg alerta">${pend} para revisar</span>` : ''}</h3>
+      <p class="sub">O vendedor também pode errar: só depois da revisão do administrador a resposta vira exemplo forte para a IA. As respostas até maio/2026 (do Paulo) já são a referência.</p>
+      <table><thead><tr><th>Data</th><th>Assunto</th><th>Pergunta</th><th>A IA sugeriu</th><th>O vendedor enviou</th><th>Revisão</th></tr></thead><tbody>
+      ${correcoes.map(q => `<tr><td style="white-space:nowrap">${quando(q.respondida_em)}${q.respondida_por && USU.get(q.respondida_por) ? `<br><small class="sub2">${esc(USU.get(q.respondida_por))}</small>` : ''}</td><td>${esc(ASSUNTOS[q.assunto] || '')}</td><td>${esc(q.texto)}</td>
+        <td class="resp-ml">${esc(q.sugestao)}</td><td class="resp-ml">${esc(q.resposta)}</td><td>${celRev(q)}</td></tr>`).join('') || '<tr><td colspan="6">Nenhuma correção ainda.</td></tr>'}</tbody></table></div>`;
 }
 
 // Resposta ao cliente sem CAPS LOCK (soa grosseiro): se o texto vier quase todo em maiúsculas, passa para
@@ -257,6 +268,19 @@ function semCaps(t) {
   return t.split(/(https?:\/\/\S+)/).map((parte, i) => i % 2 ? parte : parte.replace(/[\p{L}&]+[\p{L}\d&]*/gu, w =>
       /\d/.test(w) || SIGLAS.has(w.toUpperCase()) ? w : w.toLowerCase()).replace(/(^\s*|[.!?]\s+)(\p{L})/gu, (m, a, c) => a + c.toUpperCase()))
     .join('');
+}
+
+// revisão do administrador (quem estava certo quando o vendedor mudou a sugestão)
+function ligarRevisao() {
+  $('#lista').querySelectorAll('[data-rev]').forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.rev), v = b.dataset.v || null; let texto = null;
+    if (v === 'nenhum') { texto = prompt('Escreva a resposta certa (é ela que a IA vai aprender):'); if (!texto || !texto.trim()) return; texto = semCaps(texto.trim()); }
+    b.disabled = true;
+    const { error } = await db.rpc('ml_pergunta_revisar', { p_id: id, p_revisao: v, p_texto: texto });
+    if (error) { b.disabled = false; aviso(error.message, true); return; }
+    const q = PERG.find(p => p.id === id); if (q) { q.revisao = v; q.revisao_texto = v === 'nenhum' ? texto : null; }
+    aviso(v ? 'Revisão gravada: a IA passa a usar a resposta certa' : 'Revisão desfeita'); desenhar();
+  });
 }
 
 function ligarCartoes() {
