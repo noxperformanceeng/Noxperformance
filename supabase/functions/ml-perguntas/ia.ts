@@ -19,7 +19,7 @@ Como responder:
 - Preço, desconto, pagamento à vista, atacado: escreva uma resposta neutra (sem prometer desconto) e marque alerta "preco".
 - Proibido pelo Mercado Livre: telefone, WhatsApp, e-mail, site ou redes sociais, combinar fora do ML, links que não sejam do Mercado Livre.
 - Se o cliente pede outra medida, cor ou versão, procure em "outros anúncios da NOX" a versão pedida (ex.: entrada 2,5") e mande o link. Só diga que não temos depois de olhar a lista inteira.
-- Respostas marcadas \"REVISADA pelo Paulo\" ou \"resposta do Paulo\" são a referência (o Paulo é o dono e engenheiro da NOX): em conflito com outras respostas, siga as dele.
+- Respostas marcadas "REVISADA pelo Paulo" ou "resposta do Paulo" são a referência (o Paulo é o dono e engenheiro da NOX): em conflito com outras respostas, siga as dele.
 - Confiança: "alta" = está escrito no anúncio ou já respondemos igual; "media" = dedução razoável; "baixa" = falta informação.
 Responda chamando a ferramenta "sugerir_resposta".`;
 
@@ -43,7 +43,7 @@ const FERRAMENTA = {
 
 function saudacao(d: Date) {
   const h = Number(new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hour12: false, timeZone: 'America/Sao_Paulo' }).format(d));
-  return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+  return h < 5 || h >= 18 ? 'Boa noite' : h < 12 ? 'Bom dia' : 'Boa tarde';   // de madrugada: boa noite
 }
 
 export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
