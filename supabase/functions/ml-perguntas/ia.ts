@@ -79,13 +79,16 @@ ${q.texto}`;
       headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
         model: Deno.env.get('ANTHROPIC_MODELO') || 'claude-sonnet-5-5', max_tokens: 800,
-        system: REGRAS.replace('{SAUDACAO}', saudacao(new Date())), tools: [FERRAMENTA], tool_choice: { type: 'tool', name: 'sugerir_resposta' },
+        system: REGRAS.replace('{SAUDACAO}', saudacao(new Date())), tools: [FERRAMENTA], tool_choice: { type: 'auto' },   // este modelo não aceita forçar a ferramenta; as regras pedem para usá-la
         messages: [{ role: 'user', content: contexto }]
       })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`IA (${r.status}): ${j?.error?.message ?? ''}`);
-    const s = (j.content ?? []).find((c: { type: string }) => c.type === 'tool_use')?.input;
+    let s = (j.content ?? []).find((c: { type: string }) => c.type === 'tool_use')?.input;
+    // se respondeu em texto em vez de usar a ferramenta: vira sugestão de confiança baixa, para conferir
+    if (!s?.resposta) { const t = (j.content ?? []).filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('\n').trim();
+      if (t) s = { resposta: t, confianca: 'baixa', alerta: 'nenhum', motivo: 'A IA respondeu fora do formato: conferir' }; }
     if (!s?.resposta) throw new Error('IA não devolveu resposta');
     await db.from('ml_perguntas').update({
       sugestao: String(s.resposta).slice(0, 2000), sugestao_confianca: s.confianca, sugestao_alerta: s.alerta === 'nenhum' ? null : s.alerta,
