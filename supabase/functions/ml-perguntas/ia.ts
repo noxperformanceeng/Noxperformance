@@ -19,7 +19,7 @@ Como responder:
 - Preço, desconto, pagamento à vista, atacado: escreva uma resposta neutra (sem prometer desconto) e marque alerta "preco".
 - Proibido pelo Mercado Livre: telefone, WhatsApp, e-mail, site ou redes sociais, combinar fora do ML, links que não sejam do Mercado Livre.
 - Se o cliente pede outra medida, cor ou versão, procure em "outros anúncios da NOX" a versão pedida (ex.: entrada 2,5") e mande o link. Só diga que não temos depois de olhar a lista inteira.
-- Respostas marcadas CORRIGIDA mostram o que a IA errou antes e como o vendedor respondeu: siga a resposta do vendedor.
+- Respostas marcadas \"REVISADA pelo Paulo\" ou \"resposta do Paulo\" são a referência (o Paulo é o dono e engenheiro da NOX): em conflito com outras respostas, siga as dele.
 - Confiança: "alta" = está escrito no anúncio ou já respondemos igual; "media" = dedução razoável; "baixa" = falta informação.
 Responda chamando a ferramenta "sugerir_resposta".`;
 
@@ -60,14 +60,19 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
       .map((a: { name: string; value_name: string }) => `${a.name}: ${a.value_name}`).join('\n');
     // histórico: respostas parecidas (o mesmo anúncio pesa mais)
     const w = palavras(q.texto);
-    // respostas que o vendedor CORRIGIU (a IA sugeriu outra coisa) valem mais: é onde a IA aprende
-    const { data: hist } = await db.from('ml_perguntas').select('item_id, texto, resposta, sugestao, usou_sugestao').not('resposta', 'is', null).order('criada_em', { ascending: false }).limit(6000);
-    // (ajuste pequeno, como pontuação ou maiúsculas, não conta como correção)
-    const corrigida = (h: { sugestao?: string | null; usou_sugestao?: boolean | null; resposta?: string | null }) =>
-      !!h.sugestao && h.usou_sugestao === false && parecida(palavras(h.sugestao), palavras(h.resposta ?? '')) < 0.85;
-    const exemplos = (hist ?? []).map(h => ({ h, n: parecida(w, palavras(h.texto)) + (h.item_id === q.item_id ? 0.3 : 0) + (corrigida(h) ? 0.2 : 0) }))
+    // Pesos: respostas do Paulo (até maio/2026) e respostas revisadas por ele são a referência. Correção de vendedor
+    // sem revisão vale como exemplo comum (o vendedor também erra). Revisada "IA certa": vale a sugestão da IA;
+    // "os dois errados": vale o texto que o Paulo escreveu.
+    const { data: hist } = await db.from('ml_perguntas').select('item_id, texto, resposta, respondida_em, sugestao, revisao, revisao_texto')
+      .not('resposta', 'is', null).order('criada_em', { ascending: false }).limit(6000);
+    type H = { item_id: string; texto: string; resposta: string; respondida_em: string | null; sugestao: string | null; revisao: string | null; revisao_texto: string | null };
+    const certa = (h: H) => h.revisao === 'ia' ? h.sugestao : h.revisao === 'nenhum' ? h.revisao_texto : h.resposta;
+    const doPaulo = (h: H) => !!h.respondida_em && h.respondida_em < '2026-06-01';
+    const rotulo = (h: H) => h.revisao ? ' (REVISADA pelo Paulo: resposta certa)' : doPaulo(h) ? ' (resposta do Paulo: referência)' : '';
+    const exemplos = ((hist ?? []) as H[]).filter(h => certa(h))
+      .map(h => ({ h, n: parecida(w, palavras(h.texto)) + (h.item_id === q.item_id ? 0.3 : 0) + (h.revisao ? 0.3 : doPaulo(h) ? 0.25 : 0) }))
       .filter(o => o.n > 0.25).sort((a, b) => b.n - a.n).slice(0, 15)
-      .map(o => `P${o.h.item_id === q.item_id ? ' (mesmo anúncio)' : ''}: ${o.h.texto}\nR${corrigida(o.h) ? ' (CORRIGIDA pelo vendedor; a IA tinha sugerido: "' + String(o.h.sugestao).slice(0, 300) + '")' : ''}: ${o.h.resposta}`).join('\n\n');
+      .map(o => `P${o.h.item_id === q.item_id ? ' (mesmo anúncio)' : ''}: ${o.h.texto}\nR${rotulo(o.h)}: ${certa(o.h)}`).join('\n\n');
     // outros anúncios ativos que podem servir (mesmas palavras do carro/motor)
     const { data: itens } = await db.from('ml_itens').select('item_id, titulo, link, preco').eq('situacao', 'active');
     // ...e as outras versões do mesmo produto (título parecido com o deste anúncio: outras medidas, cores, entradas)
