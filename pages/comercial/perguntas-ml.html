@@ -79,7 +79,7 @@
      pela semelhança das palavras. Rascunhos ficam guardados mesmo quando a lista se atualiza sozinha.
    ===================================================================== */
 const $ = s => document.querySelector(s);
-const ABAS = [{ v: 'aberta', n: 'Sem resposta' }, { v: 'resp', n: 'Respondidas' }, { v: '', n: 'Todas' }];
+const ABAS = [{ v: 'aberta', n: 'Sem resposta' }, { v: 'resp', n: 'Respondidas' }, { v: '', n: 'Todas' }, { v: 'ia', n: '🤖 Aprendizado da IA' }];
 const ORIG = { sistema: 'Pelo sistema', automatica: 'Automática', ml: 'No próprio ML' };
 const SIT = { ANSWERED: 'Respondida', UNANSWERED: 'Sem resposta', CLOSED_UNANSWERED: 'Encerrada sem resposta', DELETED: 'Apagada pelo cliente',
   BANNED: 'Bloqueada pelo ML', DISABLED: 'Desativada', UNDER_REVIEW: 'Em análise no ML' };
@@ -186,10 +186,12 @@ function iaHtml(q) {
 function desenhar() {
   const todas = filtrados(true), n = { aberta: 0, resp: 0, '': todas.length };
   todas.forEach(q => { if (q.situacao === 'UNANSWERED') n.aberta++; if (q.resposta) n.resp++; });
+  n.ia = todas.filter(q => q.sugestao && q.resposta && q.resposta_origem !== 'ml').length;
   $('#abas').innerHTML = ABAS.map(a => `<button type="button" class="aba${a.v === aba ? ' ativa' : ''}" data-aba="${a.v}">${a.n} <span class="n">${n[a.v]}</span></button>`).join('');
   $('#abas').querySelectorAll('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
   const lista = filtrados(), foco = document.activeElement?.dataset?.r, caret = document.activeElement?.selectionStart;
   $('#contagem').textContent = `${lista.length.toLocaleString('pt-BR')} pergunta${lista.length === 1 ? '' : 's'}`;
+  if (aba === 'ia') { $('#lista').innerHTML = painelIA(todas); $('#contagem').textContent = ''; return; }
   if (aba === 'aberta') {
     // mais antiga primeiro: quem espera há mais tempo vem antes
     const ord = [...lista].sort((a, b) => a.criada_em < b.criada_em ? -1 : 1);
@@ -206,6 +208,43 @@ function desenhar() {
         <td style="white-space:nowrap">${q.resposta ? `${quando(q.respondida_em)}<br><small class="sub2">${esc(ORIG[q.resposta_origem] || '')}${q.respondida_por && USU.get(q.respondida_por) ? ' · ' + esc(USU.get(q.respondida_por)) : ''}</small>` : ''}</td></tr>`; }).join('')
     }</tbody></table></div>${lista.length > mostrar.length ? `<p class="sub">Mostrando as 500 mais recentes de ${lista.length.toLocaleString('pt-BR')}: use a busca ou o período para achar as outras (o relatório leva todas).</p>` : ''}`;
   }
+}
+
+/* ---------- Aprendizado da IA ----------
+   Só contam as perguntas que tiveram sugestão e foram respondidas pelo sistema (no app do ML não dá para comparar).
+   Sem mudança = enviou a sugestão como veio; pequeno ajuste = 85% ou mais das palavras iguais; o resto = reescrita.
+   Assunto "no ponto": 30+ respostas nas últimas 4 semanas com 95%+ sem mudança ou pequeno ajuste (preço nunca). */
+const ASSUNTOS = { compatibilidade: 'Compatibilidade', prazo_envio: 'Prazo e envio', frete: 'Frete', garantia: 'Garantia', preco_desconto: 'Preço e desconto',
+  medida_material: 'Medida e material', instalacao: 'Instalação', estoque: 'Estoque', outro: 'Outros' };
+function semelhanca(a, b) { const x = palavras(a), y = palavras(b); if (!x.size || !y.size) return 0; let c = 0; x.forEach(w => { if (y.has(w)) c++; }); return c / Math.max(x.size, y.size); }
+const resultadoIA = q => q.usou_sugestao ? 'igual' : semelhanca(q.sugestao, q.resposta) >= 0.85 ? 'ajuste' : 'reescrita';
+const pct = (a, b) => b ? Math.round(a * 100 / b) + '%' : '—';
+function painelIA(todas) {
+  const base = todas.filter(q => q.sugestao && q.resposta && q.resposta_origem !== 'ml').map(q => ({ ...q, res: resultadoIA(q) }));
+  if (!base.length) return '<div class="cartao vazio">Ainda não há respostas enviadas a partir de sugestões da IA. Os números aparecem aqui conforme o Caio e o Kleyton forem respondendo.</div>';
+  const conta = l => ({ n: l.length, igual: l.filter(q => q.res === 'igual').length, ajuste: l.filter(q => q.res === 'ajuste').length });
+  const linhaNums = c => `<td class="num">${c.n}</td><td class="num">${c.igual} <small class="sub2">${pct(c.igual, c.n)}</small></td><td class="num">${c.ajuste} <small class="sub2">${pct(c.ajuste, c.n)}</small></td>
+    <td class="num">${c.n - c.igual - c.ajuste} <small class="sub2">${pct(c.n - c.igual - c.ajuste, c.n)}</small></td><td class="num"><b>${pct(c.igual + c.ajuste, c.n)}</b></td>`;
+  const cab = primeira => `<tr><th>${primeira}</th><th class="num">Respondidas</th><th class="num">Sem mudança</th><th class="num">Pequeno ajuste</th><th class="num">Reescritas</th><th class="num">Acerto</th>`;
+  const limite = Date.now() - 28 * 864e5, rec = base.filter(q => Date.parse(q.respondida_em || q.criada_em) >= limite);
+  const porAssunto = Object.keys(ASSUNTOS).concat('').map(k => ({ k, c: conta(rec.filter(q => (q.assunto || '') === k)) })).filter(x => x.c.n);
+  const status = (k, c) => k === 'preco_desconto' ? '<span class="tg neutro">Sempre com alguém</span>'
+    : c.n >= 30 && (c.igual + c.ajuste) / c.n >= 0.95 ? '<span class="tg ok">No ponto para responder sozinha</span>'
+    : `<span class="tg neutro">Aprendendo${c.n < 30 ? ` (${c.n}/30 respostas)` : ''}</span>`;
+  const semana = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
+  const semanas = [...new Set(base.map(q => semana(q.respondida_em || q.criada_em)))].sort().reverse().slice(0, 12);
+  const correcoes = base.filter(q => q.res === 'reescrita').sort((a, b) => (b.respondida_em || '') < (a.respondida_em || '') ? -1 : 1).slice(0, 15);
+  const t = conta(rec);
+  return `<div class="cartao"><p class="sub" style="margin:0">Últimas 4 semanas: <b>${t.n}</b> respostas a partir de sugestões da IA · <b>${pct(t.igual + t.ajuste, t.n)}</b> de acerto
+      (enviadas sem mudança ou com pequeno ajuste). Um assunto fica "no ponto" com 30 respostas ou mais e 95% de acerto. Ligar a resposta automática é decisão do Paulo.</p></div>
+    <div class="cartao tabela-rolagem"><h3>Por assunto · últimas 4 semanas</h3><table><thead>${cab('Assunto')}<th>Situação</th></tr></thead><tbody>
+      ${porAssunto.map(x => `<tr><td>${esc(ASSUNTOS[x.k] || 'Sem assunto (antes da marcação)')}</td>${linhaNums(x.c)}<td>${x.k ? status(x.k, x.c) : ''}</td></tr>`).join('')}</tbody></table></div>
+    <div class="cartao tabela-rolagem"><h3>Por semana</h3><table><thead>${cab('Semana de')}</tr></thead><tbody>
+      ${semanas.map(s => `<tr><td>${s.split("-").reverse().join("/")}</td>${linhaNums(conta(base.filter(q => semana(q.respondida_em || q.criada_em) === s)))}</tr>`).join('')}</tbody></table></div>
+    <div class="cartao tabela-rolagem"><h3>Últimas correções dos vendedores</h3><p class="sub">Onde a IA errou: a resposta enviada passa a ser exemplo com mais peso nas próximas sugestões.</p>
+      <table><thead><tr><th>Data</th><th>Assunto</th><th>Pergunta</th><th>A IA sugeriu</th><th>O vendedor enviou</th></tr></thead><tbody>
+      ${correcoes.map(q => `<tr><td style="white-space:nowrap">${quando(q.respondida_em)}</td><td>${esc(ASSUNTOS[q.assunto] || '')}</td><td>${esc(q.texto)}</td>
+        <td class="resp-ml">${esc(q.sugestao)}</td><td class="resp-ml">${esc(q.resposta)}</td></tr>`).join('') || '<tr><td colspan="5">Nenhuma correção ainda.</td></tr>'}</tbody></table></div>`;
 }
 
 // Resposta ao cliente sem CAPS LOCK (soa grosseiro): se o texto vier quase todo em maiúsculas, passa para
