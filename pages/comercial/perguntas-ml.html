@@ -6,7 +6,7 @@
 <title>Perguntas do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611190030">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611190037">
 <style>
   .pq { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
   .pq img.ft { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--borda); }
@@ -65,10 +65,10 @@
   <div id="lista"><div class="cartao vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611190030"></script>
-<script src="../../assets/js/ui.js?v=202611190030"></script>
-<script src="../../assets/js/auth.js?v=202611190030"></script>
-<script src="../../assets/js/layout.js?v=202611190030"></script>
+<script src="../../assets/js/supabase.js?v=202611190037"></script>
+<script src="../../assets/js/ui.js?v=202611190037"></script>
+<script src="../../assets/js/auth.js?v=202611190037"></script>
+<script src="../../assets/js/layout.js?v=202611190037"></script>
 <script>
 /* =====================================================================
    Perguntas do Mercado Livre
@@ -92,7 +92,7 @@ const semAc = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLo
 const PARADAS = new Set('o a os as de da do das dos e em no na nos nas um uma para pra pro com por que se eu meu minha voce vc tem ter esse essa este esta isso ola oi bom dia boa tarde noite amigo serve servir'.split(' '));
 const palavras = t => new Set(semAc(t).replace(/(\d),(\d)/g, '$1.$2').replace(/[^a-z0-9.\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !PARADAS.has(w)));
 const espera = q => { const h = (Date.now() - Date.parse(q.criada_em)) / 36e5; return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} dias`; };
-function saudacao() { const h = new Date().getHours(); return (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + ' amigo, '; }
+function saudacao() { const h = new Date().getHours(); return (h < 12 ? 'Ótimo dia' : h < 18 ? 'Ótima tarde' : 'Ótima noite') + ', tudo bom? '; }
 
 async function carregar() {
   const [p, it, c, u] = await Promise.all([
