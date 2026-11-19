@@ -6,7 +6,8 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 const PARADAS = new Set('o a os as de da do das dos e em no na nos nas um uma para pra pro com por que se eu meu minha voce vc tem ter esse essa este esta isso ola oi bom dia boa tarde noite amigo serve servir'.split(' '));
 const semAc = (t: string) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-const palavras = (t: string) => new Set(semAc(t).replace(/[^a-z0-9.\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !PARADAS.has(w)));
+// "2,5" vira "2.5" antes de limpar (senão a medida some); "pol", "polegadas" e " ficam de fora
+const palavras = (t: string) => new Set(semAc(t).replace(/(\d),(\d)/g, '$1.$2').replace(/[^a-z0-9.\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !PARADAS.has(w)));
 function parecida(a: Set<string>, b: Set<string>) { let c = 0; a.forEach(w => { if (b.has(w)) c++; }); return c / Math.sqrt(Math.max(a.size, 1) * Math.max(b.size, 1)); }
 
 const REGRAS = `Você responde, em nome da NOX (fabricante de peças automotivas de performance em inox: intakes, defletores, ponteiras, abafadores), perguntas de clientes nos anúncios do Mercado Livre. Sua resposta vira uma SUGESTÃO que um atendente confere antes de enviar.
@@ -17,6 +18,7 @@ Como responder:
 - Compatibilidade ("serve no meu carro?"): a BASE DE COMPATIBILIDADE DA NOX é a fonte oficial e vale mais que tudo. Confira marca, modelo, ano, motor e potência (ex.: o mesmo carro pode ter kits diferentes para 116, 127 e 140 cv) e respeite as observações da base. Se o cliente não informou o que falta para decidir (ano, motor, potência), pergunte de forma educada. Fora da base, só afirme que serve se o carro/motor/ano estiver claramente no anúncio ou em resposta anterior da NOX para o mesmo caso. Se não servir e houver na lista "outros anúncios da NOX" um que sirva claramente, indique-o colocando o link dele na resposta. Se não houver certeza, escreva uma resposta prudente e marque alerta "compatibilidade".
 - Preço, desconto, pagamento à vista, atacado: escreva uma resposta neutra (sem prometer desconto) e marque alerta "preco".
 - Proibido pelo Mercado Livre: telefone, WhatsApp, e-mail, site ou redes sociais, combinar fora do ML, links que não sejam do Mercado Livre.
+- Se o cliente pede outra medida, cor ou versão, procure em "outros anúncios da NOX" a versão pedida (ex.: entrada 2,5") e mande o link. Só diga que não temos depois de olhar a lista inteira.
 - Respostas marcadas CORRIGIDA mostram o que a IA errou antes e como o vendedor respondeu: siga a resposta do vendedor.
 - Confiança: "alta" = está escrito no anúncio ou já respondemos igual; "media" = dedução razoável; "baixa" = falta informação.
 Responda chamando a ferramenta "sugerir_resposta".`;
@@ -68,8 +70,10 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
       .map(o => `P${o.h.item_id === q.item_id ? ' (mesmo anúncio)' : ''}: ${o.h.texto}\nR${corrigida(o.h) ? ' (CORRIGIDA pelo vendedor; a IA tinha sugerido: "' + String(o.h.sugestao).slice(0, 300) + '")' : ''}: ${o.h.resposta}`).join('\n\n');
     // outros anúncios ativos que podem servir (mesmas palavras do carro/motor)
     const { data: itens } = await db.from('ml_itens').select('item_id, titulo, link, preco').eq('situacao', 'active');
-    const outros = (itens ?? []).filter(i => i.item_id !== q.item_id).map(i => ({ i, n: parecida(w, palavras(i.titulo ?? '')) }))
-      .filter(o => o.n > 0).sort((a, b) => b.n - a.n).slice(0, 25)
+    // ...e as outras versões do mesmo produto (título parecido com o deste anúncio: outras medidas, cores, entradas)
+    const wt = palavras(item?.title ?? '');
+    const outros = (itens ?? []).filter(i => i.item_id !== q.item_id).map(i => { const ti = palavras(i.titulo ?? ''); return { i, n: parecida(w, ti) + 0.6 * parecida(wt, ti) }; })
+      .filter(o => o.n > 0).sort((a, b) => b.n - a.n).slice(0, 30)
       .map(o => `${o.i.item_id} | ${o.i.titulo} | ${o.i.link}`).join('\n');
     // base de compatibilidade: linhas do SKU deste anúncio + linhas do carro citado na pergunta
     const { data: anu } = await db.from('anuncios').select('sku').eq('anuncio_id', q.item_id);
