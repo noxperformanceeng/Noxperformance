@@ -14,7 +14,7 @@ const REGRAS = `Você responde, em nome da NOX (fabricante de peças automotivas
 Como responder:
 - Português do Brasil, curto e simpático, no estilo da casa: comece com "{SAUDACAO} amigo," e vá direto ao ponto (1 a 3 frases).
 - Baseie-se SÓ no anúncio (título, ficha técnica, descrição) e nas respostas que a NOX já deu a perguntas parecidas. Nunca invente medida, compatibilidade, prazo, estoque ou característica.
-- Compatibilidade ("serve no meu carro?"): só afirme que serve se o carro/motor/ano estiver claramente no anúncio ou em resposta anterior da NOX para o mesmo caso. Se não servir e houver na lista "outros anúncios da NOX" um que sirva claramente, indique-o colocando o link dele na resposta. Se não houver certeza, escreva uma resposta prudente e marque alerta "compatibilidade".
+- Compatibilidade ("serve no meu carro?"): a BASE DE COMPATIBILIDADE DA NOX é a fonte oficial e vale mais que tudo. Confira marca, modelo, ano, motor e potência (ex.: o mesmo carro pode ter kits diferentes para 116, 127 e 140 cv) e respeite as observações da base. Se o cliente não informou o que falta para decidir (ano, motor, potência), pergunte de forma educada. Fora da base, só afirme que serve se o carro/motor/ano estiver claramente no anúncio ou em resposta anterior da NOX para o mesmo caso. Se não servir e houver na lista "outros anúncios da NOX" um que sirva claramente, indique-o colocando o link dele na resposta. Se não houver certeza, escreva uma resposta prudente e marque alerta "compatibilidade".
 - Preço, desconto, pagamento à vista, atacado: escreva uma resposta neutra (sem prometer desconto) e marque alerta "preco".
 - Proibido pelo Mercado Livre: telefone, WhatsApp, e-mail, site ou redes sociais, combinar fora do ML, links que não sejam do Mercado Livre.
 - Confiança: "alta" = está escrito no anúncio ou já respondemos igual; "media" = dedução razoável; "baixa" = falta informação.
@@ -64,7 +64,25 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
     const outros = (itens ?? []).filter(i => i.item_id !== q.item_id).map(i => ({ i, n: parecida(w, palavras(i.titulo ?? '')) }))
       .filter(o => o.n > 0).sort((a, b) => b.n - a.n).slice(0, 25)
       .map(o => `${o.i.item_id} | ${o.i.titulo} | ${o.i.link}`).join('\n');
+    // base de compatibilidade: linhas do SKU deste anúncio + linhas do carro citado na pergunta
+    const { data: anu } = await db.from('anuncios').select('sku').eq('anuncio_id', q.item_id);
+    const skus = [...new Set((anu ?? []).map(a => String(a.sku ?? '').toUpperCase()).filter(Boolean))];
+    const { data: comp } = await db.from('compatibilidades').select('sku, marca, modelo, ano_inicial, ano_final, motorizacao, codigo_motor, combustivel, potencia, observacoes').eq('situacao', 'ativo');
+    const wq = palavras(q.texto + ' ' + (item?.title ?? ''));
+    // anúncios ativos desta conta por SKU (o SKU do anúncio pode ter sufixo, ex.: ITKFD068KN)
+    const { data: anCanal } = await db.from('anuncios').select('sku, anuncio_id').eq('canal_id', q.canal_id).not('sku', 'is', null);
+    const ativos = new Map((itens ?? []).map(i => [i.item_id, i.link]));
+    const linkDo = (sku: string) => (anCanal ?? []).filter(a => String(a.sku).toUpperCase().startsWith(sku) && ativos.has(a.anuncio_id)).map(a => `${a.anuncio_id} ${ativos.get(a.anuncio_id)}`)[0] ?? '';
+    const doSku = (c: { sku: string }) => c.sku.split('/').map((x: string) => x.trim()).filter(Boolean);
+    const compat = (comp ?? []).map(c => ({ c, n: (skus.some(k => doSku(c).some((x: string) => k.startsWith(x))) ? 1 : 0)
+        + parecida(wq, palavras(`${c.marca} ${c.modelo} ${c.motorizacao ?? ''} ${c.codigo_motor ?? ''}`)) }))
+      .filter(o => o.n > 0.2).sort((a, b) => b.n - a.n).slice(0, 40)
+      .map(({ c }) => [c.sku, c.marca, c.modelo, `${c.ano_inicial ?? '?'}-${c.ano_final ?? '?'}`, c.motorizacao, c.codigo_motor, c.combustivel, c.potencia, c.observacoes,
+        doSku(c).map(linkDo).filter(Boolean).map(l => 'anúncio: ' + l).join(' ; ')].map(v => v ?? '').join(' | ')).join('\n');
     const contexto = `ANÚNCIO DA PERGUNTA (${q.item_id})\nTítulo: ${item?.title ?? ''}\nPreço: ${item?.price ?? ''}\nFicha técnica:\n${ficha}\nDescrição:\n${String(desc?.plain_text ?? '').slice(0, 4000)}
+
+BASE DE COMPATIBILIDADE DA NOX — FONTE OFICIAL (SKU | marca | modelo | anos | motorização | código do motor | combustível | potência | observações | nosso anúncio desse SKU, para indicar)${skus.length ? `\nSKU deste anúncio: ${skus.join(', ')}` : ''}
+${compat || '(nada na base para este caso)'}
 
 RESPOSTAS QUE A NOX JÁ DEU A PERGUNTAS PARECIDAS
 ${exemplos || '(nenhuma)'}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compatibilidade · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611182053">
+</head>
+<body data-modulo="compatibilidade" data-titulo="Compatibilidade">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611182053"></script>
+<script src="../../assets/js/ui.js?v=202611182053"></script>
+<script src="../../assets/js/auth.js?v=202611182053"></script>
+<script src="../../assets/js/layout.js?v=202611182053"></script>
+<script src="../../assets/js/cadastro.js?v=202611182053"></script>
+<script>
+// Qual kit serve em qual carro. É a fonte oficial que a IA consulta para sugerir as respostas aos compradores.
+const LINHAS = ['Intake', 'Defletor', 'Downpipe', 'Ponteira', 'Abafador', 'Pressurização', 'Outro'].map(v => ({ v, n: v }));
+const ano = c => ({ id: c, label: c === 'ano_inicial' ? 'Ano inicial' : 'Ano final', tipo: 'numero', lista: true, listaHtml: r => esc(r[c] ?? '') });
+
+montarCadastro({
+  textoNovo: '+ Nova compatibilidade',
+  tabela: 'compatibilidades', modulo: 'compatibilidade', titulo: 'Compatibilidade', singular: 'compatibilidade', plural: 'compatibilidades',
+  subtitulo: 'Qual kit serve em qual carro. A IA das respostas do Mercado Livre usa esta base como fonte oficial: mantenha sempre atualizada.',
+  dicaBusca: 'carro, motor, ano, SKU…', ordem: 'marca', revisao: false,
+  textoBuscaExtra: r => [r.ano_inicial, r.ano_final].join(' '),
+  abas: { campo: 'situacao', padrao: 'ativo', opcoes: [{ v: 'ativo', n: 'Ativas' }, { v: 'inativo', n: 'Inativas' }, { v: '', n: 'Todas' }] },
+  campos: [
+    { id: 'sku', label: 'SKU', obrig: true, maiusculo: true, lista: true, ajuda: 'Mais de um kit para o mesmo carro: separe com " / " (ex.: ITKFD001-127 / ITKFD054-127).' },
+    { id: 'linha', label: 'Linha', tipo: 'select', opcoes: LINHAS, obrig: true, padrao: 'Intake', lista: true, filtro: true },
+    { id: 'marca', label: 'Marca', obrig: true, maiusculo: true, lista: true, filtro: true },
+    { id: 'modelo', label: 'Modelo', obrig: true, maiusculo: true, col: 2, lista: true },
+    ano('ano_inicial'), ano('ano_final'),
+    { id: 'motorizacao', label: 'Motorização', maiusculo: true, lista: true },
+    { id: 'codigo_motor', label: 'Código do motor', maiusculo: true, lista: true },
+    { id: 'combustivel', label: 'Combustível', maiusculo: true },
+    { id: 'potencia', label: 'Potência', maiusculo: true, lista: true },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 3, maiusculo: true, lista: true },
+    { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativa' }, { v: 'inativo', n: 'Inativa' }], obrig: true, padrao: 'ativo' }
+  ],
+  pendencias: [
+    { id: 'sem_produto', nome: 'SKU sem produto cadastrado', cor: 'neutro', teste: r => r.situacao === 'ativo' && !(r.produto_ids || []).length }
+  ],
+  validar: r => r.ano_inicial && r.ano_final && Number(r.ano_final) < Number(r.ano_inicial) ? 'O ano final é antes do ano inicial' : null,
+  acoesLote: [{ nome: 'Inativar', dados: { situacao: 'inativo' } }, { nome: 'Ativar', dados: { situacao: 'ativo' } }],
+  apagado: r => r.situacao === 'inativo'
+});
+</script>
+</body>
+</html>
