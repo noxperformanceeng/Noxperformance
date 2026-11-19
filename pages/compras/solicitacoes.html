@@ -123,11 +123,13 @@ const optCat = (tipo, sel) => `<option value="">— escolha o ${tipo === 'servic
   .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc((c.codigo ? c.codigo + ' · ' : '') + c.descricao + (c.pendente ? ' (cadastro aguardando aprovação)' : ''))}</option>`).join('');
 const linkCad = tipo => CTX.pode(tipo === 'servico' ? 'compras' : 'produtos', 'criar')
   ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/${tipo === 'servico' ? 'servicos' : 'produtos'}.html?novo=1" title="Não achou? Cadastre em outra aba; ao voltar, a lista é atualizada" style="white-space:nowrap">+ cadastrar</a>` : '';
+const ehAvulso = x => !x.produto_id && !x.servico_id && !!x.descricao;
 function linhaItem(x = {}, ped = false) {
-  const tipo = x.servico_id ? 'servico' : 'produto', p = x.pedido_id && PEDS[x.pedido_id];
+  const tipo = x.servico_id ? 'servico' : ehAvulso(x) ? 'avulso' : 'produto', p = x.pedido_id && PEDS[x.pedido_id], av = tipo === 'avulso';
   return `<tr data-id="${x.id || ''}">
-    <td style="width:96px"><select data-k="tipo" data-simples><option value="produto"${tipo === 'produto' ? ' selected' : ''}>Produto</option><option value="servico"${tipo === 'servico' ? ' selected' : ''}>Serviço</option></select></td>
-    <td style="min-width:260px"><div style="display:flex;gap:6px;align-items:center"><select data-k="item" style="flex:1;min-width:0">${optCat(tipo, x.produto_id || x.servico_id)}</select><span data-k="lk">${linkCad(tipo)}</span></div>
+    <td style="width:96px"><select data-k="tipo" data-simples><option value="produto"${tipo === 'produto' ? ' selected' : ''}>Produto</option><option value="servico"${tipo === 'servico' ? ' selected' : ''}>Serviço</option><option value="avulso"${av ? ' selected' : ''} title="Compra única que não vai para a fabricação: ventilador, produto de limpeza, utensílio…">Sem cadastro (avulso)</option></select></td>
+    <td style="min-width:260px"><div data-k="cadbox" style="display:${av ? 'none' : 'flex'};gap:6px;align-items:center"><select data-k="item" style="flex:1;min-width:0">${av ? '' : optCat(tipo, x.produto_id || x.servico_id)}</select><span data-k="lk">${av ? '' : linkCad(tipo)}</span></div>
+      <input data-k="descricao" placeholder="Descreva o item (ex.: ventilador de parede 50 cm)" value="${esc(av ? x.descricao : '')}"${av ? '' : ' hidden'}>
       <select data-k="peca" style="margin-top:3px"${ehServUsi(itemCat('servico', x.servico_id)) ? '' : ' hidden'}>${optPecas(x.peca_id)}</select>
       <input data-k="observacao" placeholder="Detalhe (opcional): medida, cor, aplicação…" value="${esc(x.observacao || '')}" style="margin-top:3px"></td>
     <td style="width:62px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
@@ -138,10 +140,13 @@ function linhaItem(x = {}, ped = false) {
 }
 function lerItens(m) {
   return [...m.querySelectorAll('#itens tbody tr')].map(tr => { const g = k => tr.querySelector(`[data-k=${k}]`), t = g('tipo').value, id = Number(g('item').value) || null;
+    if (t === 'avulso') return { produto_id: null, servico_id: null, peca_id: null, descricao: semCapsAvulso(g('descricao').value), unidade: g('unidade').value.trim() || 'UN',
+      quantidade: lerNumero(g('quantidade').value) || 0, urgencia: g('urgencia').value, observacao: g('observacao').value.trim() || null, avulso: true };
     return { produto_id: t === 'produto' ? id : null, servico_id: t === 'servico' ? id : null, peca_id: t === 'servico' && !g('peca').hidden ? Number(g('peca').value) || null : null, unidade: g('unidade').value.trim() || null,
       quantidade: lerNumero(g('quantidade').value) || 0, urgencia: g('urgencia').value, observacao: g('observacao').value.trim() || null }; })
-    .filter(i => i.produto_id || i.servico_id || i.observacao || i.peca_id);
+    .filter(i => i.produto_id || i.servico_id || i.observacao || i.peca_id || i.descricao);
 }
+const semCapsAvulso = v => String(v || '').trim().replace(/\s+/g, ' ');
 
 /* ---------- Aprovar / recusar / cancelar ---------- */
 async function decidir(r, aprovar) {
@@ -170,7 +175,7 @@ function abrirFila(soDe) {
     <div class="grade-campos"><div class="campo"><label>Empresa (CNPJ dos pedidos)</label><select id="fqEmp" data-simples>${CTX.empresas.map(e => `<option value="${e.id}"${e.id === (sols.find(r => r.empresa_id)?.empresa_id || CTX.empresa || CTX.empresas[0]?.id) ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div></div>
     <div class="sub-ed" style="max-height:52vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="fqTodos" title="Marcar todos"></th><th>Item</th><th class="num">Qtd</th><th>Un</th><th>Urgência</th><th>Precisa até</th><th>Solicitante</th></tr></thead><tbody>
     ${sols.filter(r => itensDe(r).some(pendente)).map(r => `<tr class="fila-grupo"><td colspan="7"><b>${esc(r.numero)}</b> <span class="sub">· ${esc(r.justificativa || '')}</span></td></tr>
-      ${itensDe(r).filter(pendente).map(i => `<tr><td><input type="checkbox" data-i="${i.id}"${soDe ? ' checked' : ''}></td><td>${esc((itemCat(i.servico_id ? 'servico' : 'produto', i.produto_id || i.servico_id)?.codigo || '') + ' ' + (i.descricao || ''))}${i.servico_id ? ' <span class="tg neutro">serviço</span>' : ''}${i.observacao ? `<div class="ro">${esc(i.observacao)}</div>` : ''}</td>
+      ${itensDe(r).filter(pendente).map(i => `<tr><td><input type="checkbox" data-i="${i.id}"${soDe ? ' checked' : ''}></td><td>${esc((itemCat(i.servico_id ? 'servico' : 'produto', i.produto_id || i.servico_id)?.codigo || '') + ' ' + (i.descricao || ''))}${i.servico_id ? ' <span class="tg neutro">serviço</span>' : ''}${ehAvulso(i) ? ' <span class="tg alerta">sem cadastro</span>' : ''}${i.observacao ? `<div class="ro">${esc(i.observacao)}</div>` : ''}</td>
         <td class="num">${num(i.quantidade)}</td><td>${esc(i.unidade || '')}</td><td>${tgUrg(i.urgencia) || 'Normal'}</td><td>${r.data_necessidade ? dataCurta(r.data_necessidade) : ''}</td><td>${esc(usu(r.solicitante_id))}</td></tr>`).join('')}`).join('')}
     </tbody></table></div>`}
     <div class="acoes"><button class="btn" id="fqN">Fechar</button>${ls.length ? '<button class="btn primario" id="fqS">Gerar cotação</button>' : ''}</div>`);
@@ -192,7 +197,7 @@ function abrirFila(soDe) {
 const cfg = {
   textoNovo: '+ Nova solicitação',
   tabela: 'solicitacoes_compra', modulo: 'solicitacoes_compra', titulo: 'Solicitações de compra', singular: 'solicitação', plural: 'solicitações',
-  subtitulo: 'Peça aqui o que precisa comprar: produto ou serviço do cadastro (digite para buscar), quantidade, urgência e para quê. A diretoria aprova, o comprador cota com os fornecedores e gera os pedidos de compra.',
+  subtitulo: 'Peça aqui o que precisa comprar: produto ou serviço do cadastro (digite para buscar) ou, se for compra única que não vai para a fabricação (ventilador, produto de limpeza…), "Sem cadastro (avulso)" com a descrição. Informe quantidade, urgência e para quê. A diretoria aprova, o comprador escolhe a empresa, cota com os fornecedores e gera os pedidos de compra.',
   dicaBusca: 'nº, item, justificativa, solicitante…', ordem: 'data_solicitacao', revisao: false, porEmpresa: false,
   abas: { campo: 'situacao', padrao: 'andamento', opcoes: [
     { v: 'andamento', n: 'Em andamento', teste: r => r.situacao === 'em_aprovacao' || r.situacao === 'recusado' || (r.situacao === 'aprovado' && itensDe(r).some(pendente)) },
@@ -211,8 +216,8 @@ const cfg = {
     { id: 'data_solicitacao', label: 'Data', tipo: 'data', somenteLeitura: true, lista: true, padrao: () => hojeISO() },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: SIT, somenteLeitura: true, lista: true, filtro: true, padrao: 'em_aprovacao',
       listaHtml: r => { const e = etapa(r); return `<span class="tg ${e.cor}">${esc(e.n)}</span>`; } },
-    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), padrao: ctx => ctx.empresa || null,
-      ajuda: 'Opcional: para qual empresa é a compra. O comprador pode trocar no pedido.' },
+    // quem pede não escolhe CNPJ: o comprador decide na cotação/pedido
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })), oculto: () => true },
     { id: 'data_necessidade', label: 'Precisa até', tipo: 'data', lista: true },
     { id: 'justificativa', label: 'Justificativa / necessidade', tipo: 'textarea', col: 2, obrig: true, lista: true,
       listaHtml: r => `<span class="texto-curto" style="max-width:260px" title="${esc(r.justificativa)}">${esc(r.justificativa)}</span>` },
@@ -292,7 +297,10 @@ const cfg = {
     box.addEventListener('click', e => { if (e.target.classList.contains('rm')) e.target.closest('tr').remove(); });
     box.addEventListener('change', e => {
       const tr = e.target.closest('tr'); if (!tr) return;
-      if (e.target.dataset.k === 'tipo') { const t = e.target.value; tr.querySelector('[data-k=item]').innerHTML = optCat(t); tr.querySelector('[data-k=lk]').innerHTML = linkCad(t); tr.querySelector('[data-k=unidade]').value = ''; }
+      if (e.target.dataset.k === 'tipo') { const t = e.target.value, av = t === 'avulso';
+        tr.querySelector('[data-k=item]').innerHTML = av ? '' : optCat(t); tr.querySelector('[data-k=lk]').innerHTML = av ? '' : linkCad(t);
+        tr.querySelector('[data-k=cadbox]').style.display = av ? 'none' : 'flex'; tr.querySelector('[data-k=descricao]').hidden = !av;
+        tr.querySelector('[data-k=unidade]').value = av ? 'UN' : ''; if (av) tr.querySelector('[data-k=descricao]').focus(); }
       if (e.target.dataset.k === 'item') { const c = itemCat(tr.querySelector('[data-k=tipo]').value, Number(e.target.value)); if (c?.unidade) tr.querySelector('[data-k=unidade]').value = c.unidade; }
       if (e.target.dataset.k === 'tipo' || e.target.dataset.k === 'item') { const c = itemCat(tr.querySelector('[data-k=tipo]').value, Number(tr.querySelector('[data-k=item]').value)); const pc = tr.querySelector('[data-k=peca]'); pc.hidden = !ehServUsi(c); if (pc.hidden) pc.value = ''; }
       conferirLinha(tr);
@@ -303,7 +311,8 @@ const cfg = {
   validar: (d, r) => {
     const its = lerItens(document.querySelector('.modal-fundo'));
     if (!its.length) return 'Inclua pelo menos um item';
-    if (its.some(i => !i.produto_id && !i.servico_id)) return 'Escolha o produto ou serviço do cadastro em cada item (se não existir, use "+ cadastrar")';
+    if (its.some(i => i.avulso && !i.descricao)) return 'Item sem cadastro: descreva o item';
+    if (its.some(i => !i.avulso && !i.produto_id && !i.servico_id)) return 'Escolha o produto ou serviço do cadastro em cada item. Se for compra única que não vai para a fabricação (ventilador, limpeza…), use Tipo = "Sem cadastro (avulso)"';
     if (its.some(i => !(i.quantidade > 0))) return 'Item com quantidade zerada';
     const errada = [...document.querySelectorAll('.modal-fundo #itens tbody tr')].find(tr => !conferirLinha(tr));
     if (errada) { errada.scrollIntoView({ block: 'center' }); return 'Há item pedido do jeito errado (em vermelho): veja a explicação no próprio item'; }
