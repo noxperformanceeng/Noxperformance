@@ -78,6 +78,17 @@ export async function shopeeGet(db: SupabaseClient, conta: ContaShopee, path: st
   throw new Error(`Shopee ${path}: muitas tentativas`);
 }
 
+// POST de loja assinado (mesma assinatura do GET; corpo em JSON) — ex.: enviar mensagem no chat
+export async function shopeePost(db: SupabaseClient, conta: ContaShopee, path: string, corpo: Record<string, unknown>) {
+  const token = await tokenValido(db, conta);
+  const ts = agora(), sign = await assinar(`${PARTNER_ID()}${path}${ts}${token}${conta.shop_id}`);
+  const q = new URLSearchParams({ partner_id: String(PARTNER_ID()), timestamp: String(ts), sign, access_token: token, shop_id: String(conta.shop_id) });
+  const r = await fetch(`${SHOPEE_API}${path}?${q}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(`Shopee ${path}: ${j.error ?? r.status} ${j.message ?? ''}`.trim());
+  return j.response ?? j;
+}
+
 const CAMPOS = 'buyer_user_id,buyer_username,estimated_shipping_fee,recipient_address,actual_shipping_fee,goods_to_declare,note,note_update_time,item_list,pay_time,dropshipper,dropshipper_phone,split_up,buyer_cancel_reason,cancel_by,cancel_reason,actual_shipping_fee_confirmed,buyer_cpf_id,fulfillment_flag,pickup_done_time,package_list,shipping_carrier,payment_method,total_amount,invoice_data,order_chargeable_weight_gram,return_request_due_date,edt';
 
 // busca o detalhe de até 50 vendas, o extrato (tarifas) de cada uma, guarda o bruto e processa

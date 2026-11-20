@@ -14,6 +14,7 @@ const MENU = [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html' },
     { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html' },
     { id: 'perguntas_ml',  nome: 'Perguntas do Mercado Livre', arquivo: 'pages/comercial/perguntas-ml.html' },
+    { id: 'chat_shopee',   nome: 'Chat da Shopee',   arquivo: 'pages/comercial/chat-shopee.html' },
     { id: 'compatibilidade', nome: 'Compatibilidade',   arquivo: 'pages/comercial/compatibilidade.html' },
     { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
@@ -564,14 +565,14 @@ function alertaPerguntasML(comSom) {
   const tocar = () => { SOM.tocar([[880, 0], [880, .28], [880, .56]], 'square', .25, .22); ultimoSom = Date.now(); };   // três bipes fortes
   const notificar = (q, n) => {
     try { if (window.Notification && Notification.permission === 'granted') {
-      const nt = new Notification(`Pergunta nova no ${contasPerg?.get(q.canal_id) || 'Mercado Livre'}${n > 1 ? ` (${n} esperando)` : ''}`, { body: q.texto, tag: 'nox-perguntas', requireInteraction: true });
+      const nt = new Notification(`${q.shopee ? 'Mensagem nova no chat da Shopee' : `Pergunta nova no ${contasPerg?.get(q.canal_id) || 'Mercado Livre'}`}${n > 1 ? ` (${n} esperando)` : ''}`, { body: q.texto, tag: 'nox-perguntas', requireInteraction: true });
       nt.onclick = () => { window.focus(); document.querySelector('#alertaPerg a')?.click(); nt.close(); };
     } } catch {}
   };
   const titulo = n => {
     clearInterval(piscaTitulo); piscaTitulo = null; document.title = tituloOrig;
     if (!n) return; let on = false;
-    piscaTitulo = setInterval(() => { on = !on; document.title = on ? `🔴 ${n} pergunta${n > 1 ? 's' : ''} no ML!` : tituloOrig; }, 900);
+    piscaTitulo = setInterval(() => { on = !on; document.title = on ? `🔴 ${n} cliente${n > 1 ? 's' : ''} esperando resposta!` : tituloOrig; }, 900);
   };
   let contasPerg = null;   // canal → nome da conta (ex.: Mercado Livre 30)
   const minutos = v => { const m = Math.round((Date.now() - Date.parse(v)) / 6e4); return m < 60 ? `${Math.max(1, m)} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
@@ -580,20 +581,26 @@ function alertaPerguntasML(comSom) {
     const { data, error } = await db.from('ml_perguntas').select('id, canal_id, texto, criada_em, resposta_pendente, resposta_erro')
       .eq('situacao', 'UNANSWERED').order('criada_em');
     if (error) return;
-    const abertas = (data || []).filter(q => !q.resposta_pendente || q.resposta_erro), n = abertas.length;
+    // chat da Shopee: conversas em que o comprador falou por último (só para quem vê o chat)
+    const { data: sc } = await db.from('shopee_conversas').select('id, canal_id, ultima_msg_texto, ultima_msg_em, resposta_pendente, resposta_erro').eq('aguardando', true);
+    const shopee = (sc || []).filter(c => !c.resposta_pendente || c.resposta_erro)
+      .map(c => ({ id: 'sp' + c.id, canal_id: c.canal_id, texto: c.ultima_msg_texto || 'mensagem', criada_em: c.ultima_msg_em, shopee: true }));
+    const nML = (data || []).filter(q => !q.resposta_pendente || q.resposta_erro).length;
+    const abertas = [...(data || []).filter(q => !q.resposta_pendente || q.resposta_erro), ...shopee].sort((a, b) => Date.parse(a.criada_em) - Date.parse(b.criada_em)), n = abertas.length;
     const novas = abertas.filter(q => !vistas.has(q.id)); abertas.forEach(q => vistas.add(q.id));
     titulo(n);
-    document.querySelectorAll('.menu a.item[data-mod="perguntas_ml"]').forEach(a => {
+    [['perguntas_ml', nML], ['chat_shopee', shopee.length]].forEach(([mod, k]) => document.querySelectorAll(`.menu a.item[data-mod="${mod}"]`).forEach(a => {
       a.querySelectorAll('.cont-perg').forEach(x => x.remove());
-      if (n) a.insertAdjacentHTML('beforeend', `<span class="cont-perg n-aprov pisca" title="${n} sem resposta">${n}</span>`);
-    });
+      if (k) a.insertAdjacentHTML('beforeend', `<span class="cont-perg n-aprov pisca" title="${k} sem resposta">${k}</span>`);
+    }));
     if (!n) { faixa.hidden = true; document.body.classList.remove('com-alerta-perg'); primeira = false; return; }
     const velha = abertas[0];
     const porConta = [...abertas.reduce((m, q) => m.set(q.canal_id, (m.get(q.canal_id) || 0) + 1), new Map())]
       .map(([c, k]) => `${k} no ${contasPerg.get(c) || 'ML'}`).join(' · ');
-    faixa.innerHTML = `<span class="sino">🔔</span><b>${n} pergunta${n > 1 ? 's' : ''} no Mercado Livre esperando resposta</b> <span class="ult">(${esc(porConta)})</span>
+    const oQue = !shopee.length ? `${n} pergunta${n > 1 ? 's' : ''} no Mercado Livre` : !nML ? `${n} conversa${n > 1 ? 's' : ''} no chat da Shopee` : `${n} clientes`;
+    faixa.innerHTML = `<span class="sino">🔔</span><b>${oQue} esperando resposta</b> <span class="ult">(${esc(porConta)})</span>
       <span class="ult">${esc(contasPerg.get(velha.canal_id) || '')}: “${esc(String(velha.texto).slice(0, 90))}${velha.texto.length > 90 ? '…' : ''}” · há ${minutos(velha.criada_em)}</span>
-      <a class="btn" href="${RAIZ}pages/comercial/perguntas-ml.html">Responder agora</a>
+      <a class="btn" href="${RAIZ}pages/comercial/${velha.shopee ? 'chat-shopee' : 'perguntas-ml'}.html">Responder agora</a>
 `;
     faixa.hidden = false; document.body.classList.add('com-alerta-perg');
     // som e aviso do computador: na hora, a cada pergunta nova; e de novo a cada 2 min enquanto ninguém responder

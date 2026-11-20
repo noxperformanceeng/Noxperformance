@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat da Shopee · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611192306">
+<style>
+  .chat { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 12px; align-items: start; }
+  @media (max-width: 860px) { .chat { grid-template-columns: 1fr; } }
+  .convs { max-height: calc(100vh - 230px); overflow: auto; padding: 0; }
+  .conv { padding: 10px 12px; border-bottom: 1px solid var(--linha); cursor: pointer; }
+  .conv:hover { background: var(--fundo-suave, #f6f7f8); }
+  .conv.sel { background: #fff4ec; border-left: 3px solid #ee4d2d; padding-left: 9px; }
+  .conv .nome { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  .conv .nome small { font-weight: 400; color: var(--texto-suave); white-space: nowrap; }
+  .conv .ult { font-size: 12.5px; color: var(--texto-suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv.esp .nome::before { content: '●'; color: #c62828; margin-right: 4px; }
+  .painel { padding: 0; display: flex; flex-direction: column; min-height: 420px; }
+  .painel .cab { padding: 10px 14px; border-bottom: 1px solid var(--linha); font-size: 13px; }
+  .painel .cab b { font-size: 15px; }
+  .msgs { padding: 12px 14px; max-height: calc(100vh - 470px); min-height: 200px; overflow: auto; display: flex; flex-direction: column; gap: 6px; background: #fafafa; }
+  .msg { max-width: 78%; padding: 7px 10px; border-radius: 10px; font-size: 13.5px; line-height: 1.35; white-space: pre-wrap; word-break: break-word; }
+  .msg small { display: block; font-size: 10.5px; opacity: .65; margin-top: 2px; }
+  .msg.cli { align-self: flex-start; background: #fff; border: 1px solid var(--linha); }
+  .msg.loja { align-self: flex-end; background: #ffe9e2; }
+  .resp { padding: 10px 14px; border-top: 1px solid var(--linha); }
+  .resp textarea { width: 100%; min-height: 84px; }
+  .ia { font-size: 12.5px; color: var(--texto-suave); margin-bottom: 6px; }
+  .conta-ml { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 4px; color: #fff; background: #ee4d2d; }
+</style>
+</head>
+<body data-modulo="chat_shopee" data-titulo="Chat da Shopee">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Chat da Shopee</h1>
+    <p class="sub">As conversas dos compradores da loja Shopee chegam sozinhas (a cada 3 minutos). Em vermelho, quem está esperando resposta. Quando dá, a resposta já vem escrita pela IA: confira, ajuste se precisar e clique em Enviar — vai direto para o chat da Shopee.</p></div>
+  </div>
+  <div class="barra-ferr">
+    <div class="abas" id="abas"></div>
+    <div class="ferr"><input id="fBusca" class="busca" type="search" placeholder="Buscar: comprador, mensagem, pedido…"></div>
+  </div>
+  <div class="chat">
+    <div class="cartao convs" id="convs"><div class="vazio" style="padding:14px">Carregando…</div></div>
+    <div class="cartao painel" id="painel"><div class="vazio" style="padding:14px">Escolha uma conversa.</div></div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611192306"></script>
+<script src="../../assets/js/ui.js?v=202611192306"></script>
+<script src="../../assets/js/auth.js?v=202611192306"></script>
+<script src="../../assets/js/layout.js?v=202611192306"></script>
+<script>
+/* =====================================================================
+   Chat da Shopee
+   · shopee-chat (a cada 3 min) grava conversas e mensagens novas e pede a sugestão da IA.
+   · Enviar: shopee_chat_responder grava o texto e o servidor envia à Shopee; a tela mostra "enviando"
+     e, em tempo real, a mensagem aparece na conversa (ou o erro da Shopee).
+   · Rascunhos ficam guardados por conversa mesmo quando a tela se atualiza sozinha.
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const ABAS = [{ v: 'esp', n: 'Aguardando resposta' }, { v: '', n: 'Todas' }];
+const ASSUNTOS = { compatibilidade: 'Compatibilidade', prazo_envio: 'Prazo e envio', frete: 'Frete', garantia: 'Garantia', preco_desconto: 'Preço e desconto',
+  medida_material: 'Medida e material', instalacao: 'Instalação', estoque: 'Estoque', pedido_pos_venda: 'Pedido / pós-venda', outro: 'Outros' };
+const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const semAc = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+let CTX = null, CONVS = [], MSGS = [], ANUN = new Map(), CANAIS = new Map(), aba = 'esp', sel = null;
+const RASC = new Map();   // rascunho por conversa
+
+function saudacao() { const h = new Date().getHours(); return (h < 12 ? 'Ótimo dia' : h < 18 ? 'Ótima tarde' : 'Ótima noite') + ', tudo bom? '; }
+const SIGLAS = new Set('NOX TSI TFSI GTI BMW VW GM AP RS KN K&N MAF SKU NF PIX CV UP THP TBI ECOBOOST EA888 OK'.split(' '));
+function semCaps(t) {   // resposta ao cliente sem CAPS LOCK (maiúscula só no começo das frases)
+  const letras = t.replace(/https?:\/\/\S+/g, '').match(/\p{L}/gu) || [];
+  const maius = letras.filter(c => c !== c.toLowerCase()).length;
+  if (letras.length < 8 || maius / letras.length < 0.6) return t;
+  return t.split(/(https?:\/\/\S+)/).map((parte, i) => i % 2 ? parte : parte.replace(/[\p{L}&]+[\p{L}\d&]*/gu, w =>
+      /\d/.test(w) || SIGLAS.has(w.toUpperCase()) ? w : w.toLowerCase()).replace(/(^\s*|[.!?]\s+)(\p{L})/gu, (m, a, c) => a + c.toUpperCase())).join('');
+}
+
+async function carregar() {
+  const [c, a, cv] = await Promise.all([
+    buscarTodos(() => db.from('shopee_conversas').select('*').order('ultima_msg_em', { ascending: false, nullsFirst: false })),
+    buscarTodos(() => db.from('anuncios').select('anuncio_id, canal_id, titulo, sku')),
+    db.from('canais_venda').select('id, nome, id_externo')
+  ]);
+  CONVS = c; ANUN = new Map(a.map(x => [x.anuncio_id, x])); CANAIS = new Map((cv.data || []).map(x => [x.id, x]));
+  if (sel) await carregarMsgs();
+  desenhar();
+}
+async function carregarMsgs() {
+  const { data, error } = await db.from('shopee_mensagens').select('*').eq('conversa_id', sel).order('enviada_em').limit(300);
+  if (!error) MSGS = data || [];
+}
+
+function filtradas() {
+  const b = semAc($('#fBusca').value).split(/\s+/).filter(Boolean);
+  return CONVS.filter(c => (!aba || c.aguardando) && b.every(w => semAc([c.comprador_nome, c.ultima_msg_texto, c.order_sn].join(' ')).includes(w)));
+}
+
+function desenhar() {
+  const n = { esp: CONVS.filter(c => c.aguardando).length, '': CONVS.length };
+  $('#abas').innerHTML = ABAS.map(x => `<button type="button" class="aba${aba === x.v ? ' ativa' : ''}" data-aba="${x.v}">${x.n} <span class="n">${n[x.v]}</span></button>`).join('');
+  $('#abas').querySelectorAll('button').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
+  const l = filtradas();
+  $('#convs').innerHTML = l.length ? l.map(c => `<div class="conv${c.id === sel ? ' sel' : ''}${c.aguardando ? ' esp' : ''}" data-c="${esc(c.id)}">
+      <div class="nome"><span>${esc(c.comprador_nome || 'Comprador')}</span><small>${quando(c.ultima_msg_em)}</small></div>
+      <div class="ult">${c.resposta_pendente && !c.resposta_erro ? '⏳ enviando… ' : ''}${c.sugestao ? '🤖 ' : ''}${esc(c.ultima_msg_texto || '')}</div></div>`).join('')
+    : `<div class="vazio" style="padding:14px">${aba ? 'Nenhuma conversa esperando resposta. 👍' : 'Nenhuma conversa ainda.'}</div>`;
+  $('#convs').querySelectorAll('[data-c]').forEach(d => d.onclick = async () => { guardarRascunho(); sel = d.dataset.c; await carregarMsgs(); desenhar(); });
+  painel();
+}
+
+function guardarRascunho() { const t = $('#txResp'); if (t && sel) RASC.set(sel, t.value); }
+
+function painel() {
+  const c = CONVS.find(x => x.id === sel);
+  if (!c) { $('#painel').innerHTML = '<div class="vazio" style="padding:14px">Escolha uma conversa.</div>'; return; }
+  const loja = CANAIS.get(c.canal_id), shop = loja?.id_externo, it = c.item_id && ANUN.get(c.item_id);
+  const link = id => shop ? `https://shopee.com.br/product/${shop}/${id}` : '';
+  const pode = CTX.pode('chat_shopee', 'alterar');
+  const rasc = RASC.has(c.id) ? RASC.get(c.id) : (c.sugestao || (c.aguardando ? saudacao() : ''));
+  $('#painel').innerHTML = `<div class="cab"><b>${esc(c.comprador_nome || 'Comprador')}</b> <span class="conta-ml">${esc(loja?.nome || 'Shopee')}</span>
+      ${c.order_sn ? ` · pedido <b>${esc(c.order_sn)}</b>` : ''}
+      ${c.item_id ? ` · anúncio: ${link(c.item_id) ? `<a href="${esc(link(c.item_id))}" target="_blank" rel="noopener">${esc(it?.titulo || c.item_id)}</a>` : esc(it?.titulo || c.item_id)}` : ''}
+      ${c.assunto ? ` · <span class="tg neutro">${esc(ASSUNTOS[c.assunto] || c.assunto)}</span>` : ''}</div>
+    <div class="msgs" id="msgs">${MSGS.map(m => `<div class="msg ${m.de_loja ? 'loja' : 'cli'}">${m.tipo === 'item' && m.conteudo?.item_id && link(m.conteudo.item_id)
+        ? `<a href="${esc(link(m.conteudo.item_id))}" target="_blank" rel="noopener">${esc(ANUN.get(String(m.conteudo.item_id))?.titulo || m.texto)}</a>` : esc(m.texto)}
+        <small>${m.de_loja ? (m.origem === 'sistema' ? 'Loja · pelo sistema' : 'Loja') : 'Comprador'} · ${quando(m.enviada_em)}</small></div>`).join('') || '<div class="vazio">Sem mensagens gravadas.</div>'}</div>
+    ${pode ? `<div class="resp">
+      ${c.sugestao ? `<div class="ia">🤖 Sugestão da IA · confiança <b>${esc(c.sugestao_confianca || '')}</b>${c.sugestao_alerta ? ` · <span class="tg alerta">conferir com atenção: ${c.sugestao_alerta === 'preco' ? 'preço/desconto' : 'compatibilidade'}</span>` : ''}${c.sugestao_motivo ? `<br>${esc(c.sugestao_motivo)}` : ''}</div>`
+        : c.sugestao_erro ? `<div class="ia">Sugestão da IA indisponível: ${esc(c.sugestao_erro)}</div>` : ''}
+      ${c.resposta_erro ? `<div class="aviso-erro" style="color:#c62828;font-size:13px;margin-bottom:6px">Não enviou: ${esc(c.resposta_erro)}</div>` : ''}
+      <textarea id="txResp" placeholder="Escreva a resposta ao comprador">${esc(rasc)}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap">
+        <button class="btn discreto fino" type="button" id="btnSug">Pedir sugestão da IA</button>
+        <button class="btn" type="button" id="btnEnviar"${c.resposta_pendente && !c.resposta_erro ? ' disabled' : ''}>${c.resposta_pendente && !c.resposta_erro ? 'Enviando…' : 'Enviar'}</button>
+      </div></div>` : ''}`;
+  const ms = $('#msgs'); ms.scrollTop = ms.scrollHeight;
+  if (!pode) return;
+  $('#txResp').oninput = () => RASC.set(c.id, $('#txResp').value);
+  $('#btnSug').onclick = async () => {
+    RASC.delete(c.id);
+    const { error } = await db.rpc('shopee_chat_sugerir', { p_id: c.id });
+    aviso(error ? error.message : 'Pedindo uma sugestão à IA: aparece em alguns segundos', !!error);
+  };
+  $('#btnEnviar').onclick = async () => {
+    const texto = semCaps($('#txResp').value.trim());
+    if (!texto || texto === saudacao().trim()) return aviso('Escreva a resposta', true);
+    if (/(whats|zap|wpp|\(\d{2}\)\s*\d|\b\d{4,5}-\d{4}\b|@[a-z0-9-]+\.[a-z]|instagram|facebook)/i.test(texto) && !confirm('A resposta parece ter telefone, e-mail ou rede social, o que a Shopee proíbe. Enviar mesmo assim?')) return;
+    $('#btnEnviar').disabled = true;
+    const { error } = await db.rpc('shopee_chat_responder', { p_id: c.id, p_texto: texto });
+    if (error) { $('#btnEnviar').disabled = false; return aviso(error.message, true); }
+    RASC.delete(c.id); aviso('Enviando para a Shopee…');
+  };
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  ligarBusca($('#fBusca'), desenhar);
+  window.addEventListener('aba-ativa', carregar);
+  await carregar();
+  if (!sel) { const p = filtradas()[0]; if (p) { sel = p.id; await carregarMsgs(); desenhar(); } }
+})();
+</script>
+</body>
+</html>
