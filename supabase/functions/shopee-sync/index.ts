@@ -2,7 +2,7 @@
 // Interno (cron/banco, chave x-nox-chave): {acao:'recentes'} = alteradas nas últimas 48 h; {acao:'periodo', canal_id, dias|de/ate}.
 // Tela (login, quem pode editar Canais de venda): {canal_id, de, ate} = busca o período (aaaa-mm-dd).
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { adminDb, buscarEGravarVendas, cors, listarVendas, ContaShopee } from '../_shared/shopee.ts';
+import { adminDb, buscarEGravarVendas, cors, listarVendas, shopeeGet, ContaShopee } from '../_shared/shopee.ts';
 
 const resp = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const seg = (d: string, fim = false) => Math.floor(Date.parse(`${d}T${fim ? '23:59:59' : '00:00:00'}-03:00`) / 1000);
@@ -20,6 +20,14 @@ Deno.serve(async req => {
   const { data: cfg } = await db.from('integracao_config').select('valor').eq('chave', 'chave_interna').maybeSingle();
   const corpo = await req.json().catch(() => ({}));
   if (cfg?.valor && req.headers.get('x-nox-chave') === cfg.valor) {
+    // teste de permissão do chat (Seller Chat API): devolve o que a Shopee respondeu, sem gravar nada
+    if (corpo.acao === 'teste_chat') {
+      const { data: c } = await db.from('shopee_contas').select('*').eq('situacao', 'ativo').limit(1).maybeSingle();
+      if (!c) return resp({ erro: 'sem loja autorizada' });
+      try { const r = await shopeeGet(db, c as ContaShopee, '/api/v2/sellerchat/get_conversation_list', { direction: 'latest', type: 'all', page_size: 5 });
+        return resp({ ok: true, conversas: (r?.conversations ?? []).length, mais: r?.page_result?.more ?? null }); }
+      catch (e) { return resp({ erro: String((e as Error).message ?? e) }); }
+    }
     const tarefa = (async () => {
       const { data: contas } = await db.from('shopee_contas').select('*').eq('situacao', 'ativo');
       for (const conta of (contas ?? []) as ContaShopee[]) {
