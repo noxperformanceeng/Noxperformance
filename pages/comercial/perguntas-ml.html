@@ -6,11 +6,13 @@
 <title>Perguntas do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611191342">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611192306">
 <style>
   .pq { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
   .pq img.ft { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--borda); }
   .pq .anun { font-size: 12.5px; color: var(--texto-suave); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .conta-ml { display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .3px; padding: 2px 8px; border-radius: 4px; color: #fff; background: #5b6770; }
+  .conta-ml.c1 { background: #2a7f86; } .conta-ml.c2 { background: #4a4f55; }
   .pq .anun a { color: inherit; } .pq .anun b { color: var(--texto); font-weight: 600; }
   .pq .txt { font-size: 15px; margin: 6px 0 4px; font-weight: 500; }
   .pq .quando { font-size: 12px; color: var(--texto-suave); }
@@ -65,10 +67,10 @@
   <div id="lista"><div class="cartao vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611191342"></script>
-<script src="../../assets/js/ui.js?v=202611191342"></script>
-<script src="../../assets/js/auth.js?v=202611191342"></script>
-<script src="../../assets/js/layout.js?v=202611191342"></script>
+<script src="../../assets/js/supabase.js?v=202611192306"></script>
+<script src="../../assets/js/ui.js?v=202611192306"></script>
+<script src="../../assets/js/auth.js?v=202611192306"></script>
+<script src="../../assets/js/layout.js?v=202611192306"></script>
 <script>
 /* =====================================================================
    Perguntas do Mercado Livre
@@ -88,6 +90,10 @@ const PEDIU = new Set();                 // perguntas em que se pediu nova suges
 const RASC = {}, IND = {};               // rascunho e anúncio indicado de cada pergunta (sobrevivem à atualização da lista)
 const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 const canalNome = id => CANAIS.find(c => c.id === id)?.nome || '';
+// conta do Mercado Livre da pergunta: nome do canal + apelido da conta no ML (ex.: MERCADO LIVRE 30 · NOXPEÇAS)
+let APELIDO = new Map();
+const contaNome = id => [canalNome(id), APELIDO.get(id)].filter(Boolean).join(' · ').toUpperCase();
+const contaTag = id => `<span class="conta-ml c${id}" title="Conta do Mercado Livre desta pergunta">${esc(contaNome(id) || 'CONTA ?')}</span>`;
 const semAc = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const PARADAS = new Set('o a os as de da do das dos e em no na nos nas um uma para pra pro com por que se eu meu minha voce vc tem ter esse essa este esta isso ola oi bom dia boa tarde noite amigo serve servir'.split(' '));
 const palavras = t => new Set(semAc(t).replace(/(\d),(\d)/g, '$1.$2').replace(/[^a-z0-9.\s]/g, ' ').split(/\s+/).filter(w => w.length > 1 && !PARADAS.has(w)));
@@ -99,11 +105,12 @@ async function carregar() {
     buscarTodos(() => db.from('ml_perguntas').select('*').order('criada_em', { ascending: false })),
     buscarTodos(() => db.from('ml_itens').select('item_id, canal_id, titulo, link, foto, preco, situacao')),
     db.from('canais_venda').select('id, nome, plataforma').order('nome'),
-    db.from('usuarios').select('id, nome')
-  ]);
+    db.from('usuarios').select('id, nome'),
+    db.rpc('ml_status').then(r => r, () => ({ data: [] }))
+  ]).then(([p, it, c, u, st]) => { APELIDO = new Map((st?.data || []).filter(x => x.nickname).map(x => [x.canal_id, x.nickname])); return [p, it, c, u]; });
   PERG = p; ITENS = new Map(it.map(x => [x.item_id, x])); CANAIS = c.data || []; USU = new Map((u.data || []).map(x => [x.id, x.nome]));
   const sel = $('#fConta'), v = sel.value;
-  sel.innerHTML = '<option value="">Todas</option>' + CANAIS.filter(x => PERG.some(q => q.canal_id === x.id)).map(x => `<option value="${x.id}">${esc(x.nome)}</option>`).join('');
+  sel.innerHTML = '<option value="">Todas</option>' + CANAIS.filter(x => PERG.some(q => q.canal_id === x.id)).map(x => `<option value="${x.id}">${esc(contaNome(x.id))}</option>`).join('');
   sel.value = v;
   desenhar();
 }
@@ -136,7 +143,7 @@ function parecidas(q) {
 
 function anuncioHtml(q) {
   const it = ITENS.get(q.item_id);
-  return `<div class="anun"><b>${esc(canalNome(q.canal_id))}</b> · ${it?.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.titulo || q.item_id)}</a>` : esc(it?.titulo || q.item_id)}
+  return `<div class="anun">${contaTag(q.canal_id)} ${it?.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.titulo || q.item_id)}</a>` : esc(it?.titulo || q.item_id)}
     <span>${esc(q.item_id)}</span>${it?.preco ? `<span>${Number(it.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>` : ''}</div>`;
 }
 
@@ -202,7 +209,7 @@ function desenhar() {
     const mostrar = lista.slice(0, 500);
     $('#lista').innerHTML = `<div class="cartao tabela-rolagem"><table><thead><tr><th>Data</th><th>Conta</th><th>Anúncio</th><th>Pergunta</th><th>Resposta</th><th>Respondida</th></tr></thead><tbody>${
       mostrar.map(q => { const it = ITENS.get(q.item_id); return `<tr>
-        <td style="white-space:nowrap">${quando(q.criada_em)}</td><td>${esc(canalNome(q.canal_id))}</td>
+        <td style="white-space:nowrap">${quando(q.criada_em)}</td><td>${contaTag(q.canal_id)}</td>
         <td>${it?.foto ? `<img class="mini" src="${esc(it.foto)}" alt="">` : ''}${it?.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc((it.titulo || q.item_id).slice(0, 60))}</a>` : esc(q.item_id)}</td>
         <td>${esc(q.texto)}</td><td class="resp-ml">${q.resposta ? esc(q.resposta) : `<span class="tg neutro">${esc(SIT[q.situacao] || q.situacao)}</span>`}</td>
         <td style="white-space:nowrap">${q.resposta ? `${quando(q.respondida_em)}<br><small class="sub2">${esc(ORIG[q.resposta_origem] || '')}${q.respondida_por && USU.get(q.respondida_por) ? ' · ' + esc(USU.get(q.respondida_por)) : ''}</small>` : ''}</td></tr>`; }).join('')
@@ -350,7 +357,7 @@ function ligarCartoes() {
   };
   botoesRelatorio('rel', () => ({ arquivo: 'perguntas_mercado_livre', titulo: 'Perguntas do Mercado Livre',
     colunas: ['Data', 'Conta', 'Anúncio', 'Título', 'Pergunta', 'Resposta', 'Situação', 'Respondida em', 'Respondida', 'Por'],
-    linhas: filtrados().map(q => [quando(q.criada_em), canalNome(q.canal_id), q.item_id, ITENS.get(q.item_id)?.titulo || '', q.texto, q.resposta || '',
+    linhas: filtrados().map(q => [quando(q.criada_em), contaNome(q.canal_id), q.item_id, ITENS.get(q.item_id)?.titulo || '', q.texto, q.resposta || '',
       SIT[q.situacao] || q.situacao, quando(q.respondida_em), ORIG[q.resposta_origem] || '', USU.get(q.respondida_por) || '']) }));
   window.addEventListener('aba-ativa', carregar);
   carregar();

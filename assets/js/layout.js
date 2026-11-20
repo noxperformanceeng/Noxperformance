@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611191342';
+const VERSAO_TELAS = '202611192306';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -564,7 +564,7 @@ function alertaPerguntasML(comSom) {
   const tocar = () => { SOM.tocar([[880, 0], [880, .28], [880, .56]], 'square', .25, .22); ultimoSom = Date.now(); };   // três bipes fortes
   const notificar = (q, n) => {
     try { if (window.Notification && Notification.permission === 'granted') {
-      const nt = new Notification(`Pergunta nova no Mercado Livre${n > 1 ? ` (${n} esperando)` : ''}`, { body: q.texto, tag: 'nox-perguntas', requireInteraction: true });
+      const nt = new Notification(`Pergunta nova no ${contasPerg?.get(q.canal_id) || 'Mercado Livre'}${n > 1 ? ` (${n} esperando)` : ''}`, { body: q.texto, tag: 'nox-perguntas', requireInteraction: true });
       nt.onclick = () => { window.focus(); document.querySelector('#alertaPerg a')?.click(); nt.close(); };
     } } catch {}
   };
@@ -573,9 +573,11 @@ function alertaPerguntasML(comSom) {
     if (!n) return; let on = false;
     piscaTitulo = setInterval(() => { on = !on; document.title = on ? `🔴 ${n} pergunta${n > 1 ? 's' : ''} no ML!` : tituloOrig; }, 900);
   };
+  let contasPerg = null;   // canal → nome da conta (ex.: Mercado Livre 30)
   const minutos = v => { const m = Math.round((Date.now() - Date.parse(v)) / 6e4); return m < 60 ? `${Math.max(1, m)} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
   async function conferir() {
-    const { data, error } = await db.from('ml_perguntas').select('id, texto, criada_em, resposta_pendente, resposta_erro')
+    if (!contasPerg) { const { data: cv } = await db.from('canais_venda').select('id, nome'); contasPerg = new Map((cv || []).map(c => [c.id, c.nome])); }
+    const { data, error } = await db.from('ml_perguntas').select('id, canal_id, texto, criada_em, resposta_pendente, resposta_erro')
       .eq('situacao', 'UNANSWERED').order('criada_em');
     if (error) return;
     const abertas = (data || []).filter(q => !q.resposta_pendente || q.resposta_erro), n = abertas.length;
@@ -587,8 +589,10 @@ function alertaPerguntasML(comSom) {
     });
     if (!n) { faixa.hidden = true; document.body.classList.remove('com-alerta-perg'); primeira = false; return; }
     const velha = abertas[0];
-    faixa.innerHTML = `<span class="sino">🔔</span><b>${n} pergunta${n > 1 ? 's' : ''} no Mercado Livre esperando resposta</b>
-      <span class="ult">“${esc(String(velha.texto).slice(0, 90))}${velha.texto.length > 90 ? '…' : ''}” · há ${minutos(velha.criada_em)}</span>
+    const porConta = [...abertas.reduce((m, q) => m.set(q.canal_id, (m.get(q.canal_id) || 0) + 1), new Map())]
+      .map(([c, k]) => `${k} no ${contasPerg.get(c) || 'ML'}`).join(' · ');
+    faixa.innerHTML = `<span class="sino">🔔</span><b>${n} pergunta${n > 1 ? 's' : ''} no Mercado Livre esperando resposta</b> <span class="ult">(${esc(porConta)})</span>
+      <span class="ult">${esc(contasPerg.get(velha.canal_id) || '')}: “${esc(String(velha.texto).slice(0, 90))}${velha.texto.length > 90 ? '…' : ''}” · há ${minutos(velha.criada_em)}</span>
       <a class="btn" href="${RAIZ}pages/comercial/perguntas-ml.html">Responder agora</a>
 `;
     faixa.hidden = false; document.body.classList.add('com-alerta-perg');
