@@ -42,7 +42,7 @@ async function lerMensagens(db: Db, conta: ContaShopee, conversa: string, conhec
 async function sync(db: Db) {
   const log: unknown[] = [];
   for (const conta of await contas(db)) {
-    const r = await shopeeGet(db, conta, '/api/v2/sellerchat/get_conversation_list', { direction: 'latest', type: 'all', page_size: 30 });
+    const r = await shopeeGet(db, conta, '/api/v2/sellerchat/get_conversation_list', { direction: 'older', type: 'all', page_size: 30 });
     const convs = (r?.conversations ?? []) as Record<string, any>[];
     const ids = convs.map(c => String(c.conversation_id));
     const { data: ja } = await db.from('shopee_conversas').select('id, ultima_msg_id').in('id', ids);
@@ -105,7 +105,7 @@ async function enviar(db: Db, id: string) {
 
 async function amostra(db: Db) {
   const conta = (await contas(db))[0]; if (!conta) return { erro: 'sem loja' };
-  const r = await shopeeGet(db, conta, '/api/v2/sellerchat/get_conversation_list', { direction: 'latest', type: 'all', page_size: 3 });
+  const r = await shopeeGet(db, conta, '/api/v2/sellerchat/get_conversation_list', { direction: 'older', type: 'all', page_size: 3 });
   const c = (r?.conversations ?? [])[0]; if (!c) return { conversas: 0, chaves_resposta: Object.keys(r ?? {}) };
   const m = await shopeeGet(db, conta, '/api/v2/sellerchat/get_message', { conversation_id: String(c.conversation_id), page_size: 5 });
   const ms = (m?.messages ?? []) as Record<string, any>[];
