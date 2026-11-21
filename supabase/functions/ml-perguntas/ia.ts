@@ -19,6 +19,8 @@ Como responder:
 - Preço, desconto, pagamento à vista, atacado: escreva uma resposta neutra (sem prometer desconto) e marque alerta "preco".
 - Proibido pelo Mercado Livre: telefone, WhatsApp, e-mail, site ou redes sociais, combinar fora do ML, links que não sejam do Mercado Livre.
 - Se o cliente pede outra medida, cor ou versão, procure em "outros anúncios da NOX" a versão pedida (ex.: entrada 2,5") e mande o link. Só diga que não temos depois de olhar a lista inteira.
+- Pergunta em anúncio de INTAKE COM FILTRO: indique sempre o anúncio de intake COM FILTRO ESPORTIVO que serve no carro do cliente, mesmo quando não existe a versão com defletor para esse carro (não troque por kit sem filtro, a menos que ele peça só sem filtro, e aí mande também a opção com filtro). Se para o carro houver anúncio com filtro NOX e com filtro K&N (KN no título ou no SKU), mande OS DOIS links para o cliente escolher, dizendo qual é qual.
+- Entre anúncios que servem igualmente, prefira SEMPRE os marcados [FULL] na lista (entrega mais rápida). Só mande um sem FULL se não houver equivalente FULL.
 - Respostas marcadas "REVISADA pelo Paulo" ou "resposta do Paulo" são a referência (o Paulo é o dono e engenheiro da NOX): em conflito com outras respostas, siga as dele.
 - Confiança: "alta" = está escrito no anúncio ou já respondemos igual; "media" = dedução razoável; "baixa" = falta informação.
 Responda chamando a ferramenta "sugerir_resposta".`;
@@ -74,12 +76,11 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
       .filter(o => o.n > 0.25).sort((a, b) => b.n - a.n).slice(0, 15)
       .map(o => `P${o.h.item_id === q.item_id ? ' (mesmo anúncio)' : ''}: ${o.h.texto}\nR${rotulo(o.h)}: ${certa(o.h)}`).join('\n\n');
     // outros anúncios ativos que podem servir (mesmas palavras do carro/motor)
-    const { data: itens } = await db.from('ml_itens').select('item_id, titulo, link, preco').eq('situacao', 'active');
+    const { data: itens } = await db.from('ml_itens').select('item_id, titulo, link, preco').eq('situacao', 'active').eq('canal_id', q.canal_id);   // só da mesma conta
     // ...e as outras versões do mesmo produto (título parecido com o deste anúncio: outras medidas, cores, entradas)
     const wt = palavras(item?.title ?? '');
-    const outros = (itens ?? []).filter(i => i.item_id !== q.item_id).map(i => { const ti = palavras(i.titulo ?? ''); return { i, n: parecida(w, ti) + 0.6 * parecida(wt, ti) }; })
-      .filter(o => o.n > 0).sort((a, b) => b.n - a.n).slice(0, 30)
-      .map(o => `${o.i.item_id} | ${o.i.titulo} | ${o.i.link}`).join('\n');
+    const outrosRank = (itens ?? []).filter(i => i.item_id !== q.item_id).map(i => { const ti = palavras(i.titulo ?? ''); return { i, n: parecida(w, ti) + 0.6 * parecida(wt, ti) }; })
+      .filter(o => o.n > 0).sort((a, b) => b.n - a.n).slice(0, 30);
     // base de compatibilidade: linhas do SKU deste anúncio + linhas do carro citado na pergunta
     const { data: anu } = await db.from('anuncios').select('sku').eq('anuncio_id', q.item_id);
     const skus = [...new Set((anu ?? []).map(a => String(a.sku ?? '').toUpperCase()).filter(Boolean))];
@@ -88,14 +89,25 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
     // anúncios ativos desta conta por SKU (o SKU do anúncio pode ter sufixo, ex.: ITKFD068KN)
     const { data: anCanal } = await db.from('anuncios').select('sku, anuncio_id').eq('canal_id', q.canal_id).not('sku', 'is', null);
     const ativos = new Map((itens ?? []).map(i => [i.item_id, i.link]));
-    const linkDo = (sku: string) => (anCanal ?? []).filter(a => String(a.sku).toUpperCase().startsWith(sku) && ativos.has(a.anuncio_id)).map(a => `${a.anuncio_id} ${ativos.get(a.anuncio_id)}`)[0] ?? '';
+    const linkDo = (sku: string) => (anCanal ?? []).filter(a => String(a.sku).toUpperCase().startsWith(sku) && ativos.has(a.anuncio_id)).map(a => `${a.anuncio_id}${full.has(a.anuncio_id) ? ' [FULL]' : ''} SKU ${a.sku} ${ativos.get(a.anuncio_id)}`).join(' ; ');   // todas as versões (filtro NOX e K&N)
     const doSku = (c: { sku: string }) => c.sku.split('/').map((x: string) => x.trim()).filter(Boolean);
-    const compat = (comp ?? []).map(c => ({ c, n: (skus.some(k => doSku(c).some((x: string) => k.startsWith(x))) ? 1 : 0)
+    const compatRank = (comp ?? []).map(c => ({ c, n: (skus.some(k => doSku(c).some((x: string) => k.startsWith(x))) ? 1 : 0)
         + parecida(wq, palavras(`${c.marca} ${c.modelo} ${c.motorizacao ?? ''} ${c.codigo_motor ?? ''}`)) }))
-      .filter(o => o.n > 0.2).sort((a, b) => b.n - a.n).slice(0, 40)
+      .filter(o => o.n > 0.2).sort((a, b) => b.n - a.n).slice(0, 40);
+    const idsCompat = compatRank.flatMap(({ c }) => doSku(c).flatMap(sku => (anCanal ?? []).filter(a => String(a.sku).toUpperCase().startsWith(sku) && ativos.has(a.anuncio_id)).map(a => a.anuncio_id)));
+    // quais estão no FULL (o ML informa no envio do anúncio) e o SKU (identifica filtro K&N: sufixo KN)
+    const full = new Set<string>(), idsFull = [...new Set([q.item_id, ...outrosRank.map(o => o.i.item_id), ...idsCompat])];
+    for (let k = 0; k < idsFull.length; k += 20) {
+      const r = await mlGet(token, `/items?ids=${idsFull.slice(k, k + 20).join(',')}&attributes=id,shipping`).catch(() => null);
+      (r ?? []).forEach((x: { code: number; body: { id: string; shipping?: { logistic_type?: string } } }) => { if (x.code === 200 && x.body.shipping?.logistic_type === 'fulfillment') full.add(x.body.id); });
+    }
+    const { data: skusOutros } = await db.from('anuncios').select('anuncio_id, sku').in('anuncio_id', idsFull);
+    const skuDe = new Map((skusOutros ?? []).map(a => [a.anuncio_id, a.sku]));
+    const outros = outrosRank.map(o => `${o.i.item_id}${full.has(o.i.item_id) ? ' [FULL]' : ''} | ${o.i.titulo} | SKU ${skuDe.get(o.i.item_id) ?? '-'} | ${o.i.link}`).join('\n');
+    const compat = compatRank
       .map(({ c }) => [c.sku, c.marca, c.modelo, `${c.ano_inicial ?? '?'}-${c.ano_final ?? '?'}`, c.motorizacao, c.codigo_motor, c.combustivel, c.potencia, c.observacoes,
         doSku(c).map(linkDo).filter(Boolean).map(l => 'anúncio: ' + l).join(' ; ')].map(v => v ?? '').join(' | ')).join('\n');
-    const contexto = `ANÚNCIO DA PERGUNTA (${q.item_id})\nTítulo: ${item?.title ?? ''}\nPreço: ${item?.price ?? ''}\nFicha técnica:\n${ficha}\nDescrição:\n${String(desc?.plain_text ?? '').slice(0, 4000)}
+    const contexto = `ANÚNCIO DA PERGUNTA (${q.item_id})\nTítulo: ${item?.title ?? ''}${full.has(q.item_id) ? ' [FULL]' : ''}\nPreço: ${item?.price ?? ''}\nFicha técnica:\n${ficha}\nDescrição:\n${String(desc?.plain_text ?? '').slice(0, 4000)}
 
 BASE DE COMPATIBILIDADE DA NOX — FONTE OFICIAL (SKU | marca | modelo | anos | motorização | código do motor | combustível | potência | observações | nosso anúncio desse SKU, para indicar)${skus.length ? `\nSKU deste anúncio: ${skus.join(', ')}` : ''}
 ${compat || '(nada na base para este caso)'}
@@ -103,7 +115,7 @@ ${compat || '(nada na base para este caso)'}
 RESPOSTAS QUE A NOX JÁ DEU A PERGUNTAS PARECIDAS
 ${exemplos || '(nenhuma)'}
 
-OUTROS ANÚNCIOS DA NOX QUE PODEM SERVIR (MLB | título | link)
+OUTROS ANÚNCIOS DA NOX NESTA CONTA QUE PODEM SERVIR (MLB [FULL = no Full] | título | SKU | link)
 ${outros || '(nenhum)'}
 
 PERGUNTA DO CLIENTE (${new Date(q.criada_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })})
@@ -112,7 +124,7 @@ ${q.texto}`;
       method: 'POST',
       headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: Deno.env.get('ANTHROPIC_MODELO') || 'claude-sonnet-5-5', max_tokens: 800,
+        model: Deno.env.get('ANTHROPIC_MODELO') || 'claude-sonnet-5-5', max_tokens: 2000,
         system: REGRAS.replace('{SAUDACAO}', saudacao(new Date())), tools: [FERRAMENTA], tool_choice: { type: 'auto' },   // este modelo não aceita forçar a ferramenta; as regras pedem para usá-la
         messages: [{ role: 'user', content: contexto }]
       })
@@ -123,7 +135,7 @@ ${q.texto}`;
     // se respondeu em texto em vez de usar a ferramenta: vira sugestão de confiança baixa, para conferir
     if (!s?.resposta) { const t = (j.content ?? []).filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('\n').trim();
       if (t) s = { resposta: t, confianca: 'baixa', alerta: 'nenhum', motivo: 'A IA respondeu fora do formato: conferir' }; }
-    if (!s?.resposta) throw new Error('IA não devolveu resposta');
+    if (!s?.resposta) throw new Error(`IA não devolveu resposta (${j.stop_reason ?? 'sem motivo'})`);
     await db.from('ml_perguntas').update({
       sugestao: String(s.resposta).slice(0, 2000), sugestao_confianca: s.confianca, sugestao_alerta: s.alerta === 'nenhum' ? null : s.alerta,
       sugestao_motivo: s.motivo ?? null, assunto: s.assunto ?? null, sugestao_indicado: s.indicar_item || null, sugestao_em: new Date().toISOString(), sugestao_erro: null

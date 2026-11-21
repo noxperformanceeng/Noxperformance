@@ -92,7 +92,7 @@ CONVERSA COM O COMPRADOR${c.comprador_nome ? ` (${c.comprador_nome})` : ''} — 
 ${conversa}`;
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: Deno.env.get('ANTHROPIC_MODELO') || 'claude-sonnet-5-5', max_tokens: 800,
+      body: JSON.stringify({ model: Deno.env.get('ANTHROPIC_MODELO') || 'claude-sonnet-5-5', max_tokens: 2000,
         system: REGRAS.replace('{SAUDACAO}', saudacao(new Date())), tools: [FERRAMENTA], tool_choice: { type: 'auto' },
         messages: [{ role: 'user', content: contexto }] })
     });
@@ -101,7 +101,7 @@ ${conversa}`;
     let s = (j.content ?? []).find((x: { type: string }) => x.type === 'tool_use')?.input;
     if (!s?.resposta) { const t = (j.content ?? []).filter((x: { type: string }) => x.type === 'text').map((x: { text: string }) => x.text).join('\n').trim();
       if (t) s = { resposta: t, confianca: 'baixa', alerta: 'nenhum', motivo: 'A IA respondeu fora do formato: conferir' }; }
-    if (!s?.resposta) throw new Error('IA não devolveu resposta');
+    if (!s?.resposta) throw new Error(`IA não devolveu resposta (${j.stop_reason ?? 'sem motivo'})`);
     await db.from('shopee_conversas').update({ sugestao: String(s.resposta).slice(0, 2000), sugestao_confianca: s.confianca, sugestao_alerta: s.alerta === 'nenhum' ? null : s.alerta,
       sugestao_motivo: s.motivo ?? null, assunto: s.assunto ?? null, sugestao_msg_id: ultimaComprador.id, sugestao_em: new Date().toISOString(), sugestao_erro: null }).eq('id', id);
     return { ok: true };
