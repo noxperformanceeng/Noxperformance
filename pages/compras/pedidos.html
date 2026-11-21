@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611211219">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611212005">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611211219"></script>
-<script src="../../assets/js/ui.js?v=202611211219"></script>
-<script src="../../assets/js/auth.js?v=202611211219"></script>
-<script src="../../assets/js/layout.js?v=202611211219"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611211219"></script>
-<script src="../../assets/js/cadastro.js?v=202611211219"></script>
+<script src="../../assets/js/supabase.js?v=202611212005"></script>
+<script src="../../assets/js/ui.js?v=202611212005"></script>
+<script src="../../assets/js/auth.js?v=202611212005"></script>
+<script src="../../assets/js/layout.js?v=202611212005"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611212005"></script>
+<script src="../../assets/js/cadastro.js?v=202611212005"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -429,6 +429,40 @@ function trocarPorConjunto(tr) {
   recalcular();
   abrirConjunto({ produto: pid, quantidade: q });
   aviso(`${prod(pid)?.codigo || 'Este item'} é um conjunto: escolha as peças e o fornecedor da pintura (sai em OC separada)`);
+}
+
+// Assinatura/contrato mensal: N linhas iguais (mesma descrição, para casar com a solicitação aprovada), uma por mês.
+// Cada linha tem a data da cobrança como entrega prevista: a projeção no contas a pagar sai mês a mês.
+// Todo mês: entrada da fatura/invoice daquele mês (no lugar da NF) → vira título real.
+function abrirAssinatura(pai) {
+  const somaMes = (iso, k) => { const [a, mm, d] = iso.split('-').map(Number), x = new Date(Date.UTC(a, mm - 1 + k, 1)), ult = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + 1, 0)).getUTCDate();
+    return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(Math.min(d, ult)).padStart(2, '0')}`; };
+  const catSoft = CATS.find(c => /SOFTWARE E LICEN/i.test(c.nome))?.id || '';
+  const vazia = [...pai.querySelectorAll('#itens > table > tbody > tr:not(.hist-precos)')].find(tr => !tr.dataset.tipo && !tr.querySelector('[data-k=produto_id]')?.value && !tr.querySelector('[data-k=descricao]')?.value.trim());
+  const m = abrirModal(`<h2>Assinatura mensal</h2>
+    <p class="sub" style="margin:0 0 8px">Para sistema, software ou contrato que cobra todo mês. Cria uma linha por mês neste pedido: aprova uma vez e, a cada mês, é só dar a entrada da fatura/invoice daquele mês.
+      Se veio de uma solicitação, use <b>a mesma descrição</b> do item da solicitação.</p>
+    <div class="grade-campos">
+      <div class="campo l2"><label>Descrição</label><input id="asD" placeholder="ex.: ASSINATURA SUPABASE PRO (SISTEMA DE GESTÃO)" value="${esc(vazia ? '' : '')}"></div>
+      <div class="campo"><label>Valor por mês (R$)</label><input id="asV" inputmode="decimal" placeholder="0,00"></div>
+      <div class="campo"><label>Primeira cobrança</label><input id="asP" type="date" value="${hojeISO()}"></div>
+      <div class="campo"><label>Quantos meses</label><input id="asN" inputmode="numeric" value="12"></div>
+      <div class="campo l2"><label>Categoria financeira</label><select id="asC">${optCats(catSoft)}</select></div>
+    </div>
+    <div class="acoes"><button class="btn" id="asX">Fechar</button><button class="btn primario" id="asOk">Incluir as linhas</button></div>`);
+  m.querySelector('#asX').onclick = () => m.remove();
+  m.querySelector('#asOk').onclick = () => {
+    const d = m.querySelector('#asD').value.trim().toUpperCase(), v = lerNumero(m.querySelector('#asV').value) || 0, p0 = m.querySelector('#asP').value,
+      n = Math.round(lerNumero(m.querySelector('#asN').value) || 0), c = Number(m.querySelector('#asC').value) || null;
+    if (!d) return aviso('Escreva a descrição', true);
+    if (!(v > 0)) return aviso('Informe o valor por mês', true);
+    if (!p0) return aviso('Informe a data da primeira cobrança', true);
+    if (!(n >= 1 && n <= 36)) return aviso('Quantos meses: de 1 a 36', true);
+    const tb = pai.querySelector('#itens > table > tbody'); vazia?.remove();
+    for (let k = 0; k < n; k++) tb.insertAdjacentHTML('beforeend', linhaProduto({ descricao: d, unidade: 'MÊS', quantidade: 1, valor_unitario: v, categoria_financeira_id: c, data_entrega_prevista: somaMes(p0, k) }));
+    recalcular(); m.remove();
+    aviso(`${n} meses incluídos (${reais(v * n)} no total). Salve o pedido e envie para aprovação`);
+  };
 }
 
 function abrirConjunto(pre = {}) {
@@ -1051,6 +1085,64 @@ function abrirEscala() {
 /* ---------- Alertas (topo da tela) ---------- */
 /* ---------- Sugestão de compra (produtos abaixo do estoque mínimo) ---------- */
 let SUG = [];
+
+/* ---------- Aguardando compra: itens de solicitações aprovadas que ainda não viraram pedido nem estão em cotação ---------- */
+let FILA = [];
+async function carregarFila() {
+  if (!CTX.pode('compras', 'criar')) { FILA = []; return; }
+  const { data: sols } = await db.from('solicitacoes_compra').select('id, numero, justificativa, solicitante_id, data_necessidade').eq('situacao', 'aprovado');
+  const ids = (sols || []).map(x => x.id); if (!ids.length) { FILA = []; return; }
+  const { data: its } = await db.from('solicitacoes_compra_itens').select('id, solicitacao_id, produto_id, servico_id, peca_id, descricao, quantidade, unidade, urgencia, observacao, pedido_id, cotacao_id').in('solicitacao_id', ids);
+  const pids = [...new Set((its || []).map(i => i.pedido_id).filter(Boolean))], cids = [...new Set((its || []).map(i => i.cotacao_id).filter(Boolean))];
+  const [pe, co] = await Promise.all([pids.length ? db.from('pedidos_compra').select('id, situacao').in('id', pids) : { data: [] },
+    cids.length ? db.from('cotacoes_compra').select('id, situacao').in('id', cids) : { data: [] }]);
+  const ped = Object.fromEntries((pe.data || []).map(x => [x.id, x.situacao])), cot = Object.fromEntries((co.data || []).map(x => [x.id, x.situacao]));
+  const solDe = Object.fromEntries((sols || []).map(x => [x.id, x]));
+  FILA = (its || []).filter(i => (!i.pedido_id || ped[i.pedido_id] === 'cancelado') && !(i.cotacao_id && cot[i.cotacao_id] === 'aberta'))
+    .map(i => ({ ...i, sol: solDe[i.solicitacao_id] })).sort((a, b) => a.solicitacao_id - b.solicitacao_id || a.id - b.id);
+}
+const nomeItemFila = i => i.produto_id ? `${prod(i.produto_id)?.codigo || ''} ${prod(i.produto_id)?.descricao || ''}`.trim()
+  : i.servico_id ? (serv(i.servico_id)?.nome || 'Serviço') + (i.descricao ? ' · ' + i.descricao : '') : i.peca_id ? 'Usinagem · ' + (prod(i.peca_id)?.codigo || '') : (i.descricao || '') + ' (sem cadastro)';
+function abrirFila() {
+  const urg = u => ['alta', 'urgente'].includes(u) ? `<span class="tg erro">${esc(u)}</span>` : '';
+  const m = abrirModal(`<h2>Aguardando compra</h2>
+    <p class="sub" style="margin:0 0 8px">Itens de solicitações já aprovadas. Marque os itens e escolha: <b>Gerar pedido direto</b> (quando já sabe de quem comprar, ex.: assinatura de sistema, fornecedor único) ou <b>Gerar cotação</b> (para comparar preços de vários fornecedores).</p>
+    ${!FILA.length ? '<p class="sub">Nada aguardando compra. ✓</p>' : `
+    <div class="sub-ed" style="max-height:46vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="flT" title="Marcar todos"></th><th>Solicitação</th><th>Item</th><th class="num">Qtd</th><th>Precisa até</th><th>Pedido por</th></tr></thead><tbody>
+      ${FILA.map(i => `<tr><td><input type="checkbox" data-i="${i.id}"></td><td><b>${esc(i.sol?.numero || '')}</b>${i.sol?.justificativa ? `<div class="ro">${esc(i.sol.justificativa)}</div>` : ''}</td>
+        <td>${esc(nomeItemFila(i))} ${urg(i.urgencia)}${i.observacao ? `<div class="ro">${esc(i.observacao)}</div>` : ''}</td><td class="num">${num(i.quantidade)} ${esc(i.unidade || '')}</td>
+        <td>${i.sol?.data_necessidade ? dataCurta(i.sol.data_necessidade) : ''}</td><td>${esc(USU.find(u => u.id === i.sol?.solicitante_id)?.nome || '')}</td></tr>`).join('')}</tbody></table></div>
+    <div class="grade-campos" style="margin-top:8px">
+      <div class="campo"><label>Empresa (CNPJ)</label><select id="flE" data-simples>${CTX.empresas.map(e => `<option value="${e.id}"${e.id === CTX.empresa ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div>
+      <div class="campo l2"><label>Fornecedor (só para o pedido direto)</label><select id="flF"><option value="">— escolha —</option>${FORN.filter(f => f.situacao === 'ativo').sort((a, b) => nomeComFantasia(a).localeCompare(nomeComFantasia(b))).map(f => `<option value="${f.id}">${esc(nomeComFantasia(f))}</option>`).join('')}</select></div>
+    </div>`}
+    <div class="acoes"><button class="btn" id="flN">Fechar</button>${FILA.length ? `${CTX.pode('cotacoes_compra', 'criar') ? '<button class="btn" id="flC">Gerar cotação</button>' : ''}<button class="btn primario" id="flP">Gerar pedido direto</button>` : ''}</div>`);
+  m.querySelector('.modal').style.maxWidth = '980px';
+  const q = s => m.querySelector(s), marcados = () => [...m.querySelectorAll('[data-i]:checked')].map(c => Number(c.dataset.i));
+  q('#flN').onclick = () => m.remove();
+  q('#flT')?.addEventListener('change', e => m.querySelectorAll('[data-i]').forEach(c => c.checked = e.target.checked));
+  q('#flP')?.addEventListener('click', async () => {
+    const ids = marcados(), f = Number(q('#flF').value) || null, emp = Number(q('#flE').value) || null;
+    if (!ids.length) return aviso('Marque pelo menos um item', true);
+    if (!f) return aviso('Escolha o fornecedor do pedido', true);
+    q('#flP').disabled = true;
+    const { data, error } = await db.rpc('solicitacao_compra_gerar_pedido', { p_itens: ids, p_fornecedor: f, p_empresa: emp });
+    if (error) { q('#flP').disabled = false; return aviso('Não gerou: ' + error.message, true); }
+    m.remove(); aviso('Pedido criado em rascunho, com a solicitação vinculada · confira preço e pagamento e envie para aprovação');
+    await cfg.recarregar();
+    location.href = location.pathname + '?abrir=' + data;
+  });
+  q('#flC')?.addEventListener('click', async () => {
+    const ids = marcados(), emp = Number(q('#flE').value) || null;
+    if (!ids.length) return aviso('Marque pelo menos um item', true);
+    q('#flC').disabled = true;
+    const { data, error } = await db.rpc('cotacao_criar', { p_itens: ids, p_empresa: emp });
+    if (error) { q('#flC').disabled = false; return aviso('Não gerou: ' + error.message, true); }
+    m.remove(); aviso('Cotação criada · abrindo para lançar os preços dos fornecedores');
+    window.top.postMessage({ nox: 'abrir', url: RAIZ + 'pages/compras/cotacoes.html?abrir=' + data }, location.origin);
+    cfg.recarregar();
+  });
+}
 function abrirSugestao() {
   const semInv = SUG.some(x => !x.inventariado);
   const grupos = {}; SUG.forEach(x => (grupos[x.fornecedor_id || 0] ||= []).push(x));
@@ -1094,6 +1186,7 @@ function desenharAlertas(linhas) {
   const ls = linhas.filter(r => (!emp || r.empresa_id === emp) && r.origem !== 'tiny');   // ordens do Tiny ficam fora dos alertas
   const a = [
     { aba: 'minha', n: ls.filter(possoAprovar).length, t: 'aguardando a sua aprovação', cls: 'erro' },
+    { acao: 'fila', n: FILA.length, t: 'item(ns) de solicitação aprovada aguardando compra', cls: 'erro' },
     { acao: 'sugestao', n: SUG.length, t: 'produto(s) abaixo do mínimo ou faltando para vendas · sugestão de compra', cls: 'alerta' },
     ...(possoLiberar() ? [{ aba: 'liberar', n: ls.filter(r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length).length, t: 'com item sem cadastro para liberar', cls: 'erro' }] : []),
     { aba: 'recusados', n: ls.filter(r => r.situacao === 'recusado').length, t: 'recusado(s) para ajustar', cls: 'erro' },
@@ -1104,6 +1197,7 @@ function desenharAlertas(linhas) {
   ].filter(x => x.n);
   box.innerHTML = a.map(x => `<button type="button" class="${x.cls}" ${x.acao ? `data-acao="${x.acao}"` : `data-aba="${x.aba}"`}><b>${x.n}</b> ${esc(x.t)}</button>`).join('');
   box.querySelector('[data-acao=sugestao]')?.addEventListener('click', abrirSugestao);
+  box.querySelector('[data-acao=fila]')?.addEventListener('click', abrirFila);
   if (CTX.pode('compras', 'criar') && !document.getElementById('btnSugestao')) {
     const novo = document.getElementById('cNovo'), b = document.createElement('button');
     b.className = 'btn'; b.id = 'btnSugestao'; b.textContent = 'Sugestão de compra'; b.onclick = abrirSugestao;
@@ -1211,7 +1305,7 @@ const cfg = {
     ex = { itens, eventos, recebimentos, titulos, todosItens: it, porId: Object.fromEntries(linhas.map(r => [r.id, r])) };
     return ex;
   },
-  depoisCarregar: linhas => { desenharAlertas(linhas);
+  depoisCarregar: linhas => { desenharAlertas(linhas); carregarFila().then(() => desenharAlertas(linhas)).catch(() => {});
     // ?sugestao=1 (vindo da página inicial): abre a sugestão de compra uma vez
     if (!window.__sugAberta && new URLSearchParams(location.search).get('sugestao') && SUG.length) { window.__sugAberta = true; abrirSugestao(); } },
   colunasExtras: [
@@ -1250,7 +1344,7 @@ const cfg = {
     const box = document.createElement('div');
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th title="IPI % do item">IPI %</th><th>Categoria</th><th title="Entrega prevista de cada item. Vazio: vale a do pedido">Entrega</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
-        ${editavel && podeEd ? `<div class="itens-acoes"><button type="button" class="btn fino" id="addItem">+ Item</button>${CONJ.size ? '<button type="button" class="btn fino" id="addConj" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}<span class="itens-links">${CTX.pode('produtos', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${linkServ()}</span></div>` : ''}
+        ${editavel && podeEd ? `<div class="itens-acoes"><button type="button" class="btn fino" id="addItem">+ Item</button><button type="button" class="btn fino" id="addAssin" title="Assinatura ou contrato mensal (sistema, software, aluguel de equipamento…): cria uma linha por mês, cada uma com a data da cobrança. Aprovado uma vez; todo mês só se dá a entrada da fatura/invoice daquele mês">+ Assinatura mensal</button>${CONJ.size ? '<button type="button" class="btn fino" id="addConj" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}<span class="itens-links">${CTX.pode('produtos', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${linkServ()}</span></div>` : ''}
         <div id="matBox" style="margin-top:8px"></div>
         <div class="tot-ped" id="totPed"></div></div>`;
     box.addEventListener('click', e => { const b = e.target.closest('[data-hist]'); if (b) { e.preventDefault(); mostrarHistorico(b.closest('tr')); } });
@@ -1259,6 +1353,7 @@ const cfg = {
     if (editavel && podeEd) {
       m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaProduto({ data_entrega_prevista: m.querySelector('#f_data_entrega_prevista')?.value })); };
       m.querySelector('#addConj')?.addEventListener('click', () => abrirConjunto());
+      m.querySelector('#addAssin').onclick = () => abrirAssinatura(m);
       box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { const tr = e.target.closest('tr'); if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove(); tr.remove(); recalcular(); } });
       box.addEventListener('change', e => { if (e.target.dataset.k === 'tipo_linha') { aoMudarTipo(e.target.closest('tr')); return recalcular(); } if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else if (CONJ.has(Number(e.target.value))) trocarPorConjunto(tr); else aoEscolherProduto(tr); } recalcular(); });
       box.addEventListener('input', recalcular);

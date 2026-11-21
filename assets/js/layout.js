@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611211219';
+const VERSAO_TELAS = '202611212005';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -562,6 +562,9 @@ function alertaPerguntasML(comSom) {
   const tituloOrig = document.title;
   const faixa = document.createElement('div'); faixa.id = 'alertaPerg'; faixa.className = 'alerta-perg nao-imprimir'; faixa.hidden = true;
   document.body.appendChild(faixa);
+  // altura real da faixa (1 ou 2 linhas): o resto da tela desce exatamente isso e encolhe para caber na janela
+  const medirFaixa = () => requestAnimationFrame(() => { if (!faixa.hidden) document.documentElement.style.setProperty('--alerta-h', faixa.offsetHeight + 'px'); });
+  window.addEventListener('resize', medirFaixa);
   const tocar = () => { SOM.tocar([[880, 0], [880, .28], [880, .56]], 'square', .25, .22); ultimoSom = Date.now(); };   // três bipes fortes
   const notificar = (q, n) => {
     try { if (window.Notification && Notification.permission === 'granted') {
@@ -602,7 +605,7 @@ function alertaPerguntasML(comSom) {
       <span class="ult">${esc(contasPerg.get(velha.canal_id) || '')}: “${esc(String(velha.texto).slice(0, 90))}${velha.texto.length > 90 ? '…' : ''}” · há ${minutos(velha.criada_em)}</span>
       <a class="btn" href="${RAIZ}pages/comercial/${velha.shopee ? 'chat-shopee' : 'perguntas-ml'}.html">Responder agora</a>
 `;
-    faixa.hidden = false; document.body.classList.add('com-alerta-perg');
+    faixa.hidden = false; document.body.classList.add('com-alerta-perg'); medirFaixa();
     // som e aviso do computador: na hora, a cada pergunta nova; e de novo a cada 2 min enquanto ninguém responder
     if (novas.length && !primeira) notificar(novas[novas.length - 1], n);
     if (comSom && (novas.length && !primeira || Date.now() - ultimoSom > 2 * 6e4)) tocar();
