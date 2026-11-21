@@ -6,7 +6,7 @@
 <title>Chat da Shopee · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611201545">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611211209">
 <style>
   .chat { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 12px; align-items: start; }
   @media (max-width: 860px) { .chat { grid-template-columns: 1fr; } }
@@ -47,10 +47,10 @@
   </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611201545"></script>
-<script src="../../assets/js/ui.js?v=202611201545"></script>
-<script src="../../assets/js/auth.js?v=202611201545"></script>
-<script src="../../assets/js/layout.js?v=202611201545"></script>
+<script src="../../assets/js/supabase.js?v=202611211209"></script>
+<script src="../../assets/js/ui.js?v=202611211209"></script>
+<script src="../../assets/js/auth.js?v=202611211209"></script>
+<script src="../../assets/js/layout.js?v=202611211209"></script>
 <script>
 /* =====================================================================
    Chat da Shopee
@@ -69,14 +69,6 @@ let CTX = null, CONVS = [], MSGS = [], ANUN = new Map(), CANAIS = new Map(), aba
 const RASC = new Map();   // rascunho por conversa
 
 function saudacao() { const h = new Date().getHours(); return (h < 12 ? 'Ótimo dia' : h < 18 ? 'Ótima tarde' : 'Ótima noite') + ', tudo bom? '; }
-const SIGLAS = new Set('NOX TSI TFSI GTI BMW VW GM AP RS KN K&N MAF SKU NF PIX CV UP THP TBI ECOBOOST EA888 OK'.split(' '));
-function semCaps(t) {   // resposta ao cliente sem CAPS LOCK (maiúscula só no começo das frases)
-  const letras = t.replace(/https?:\/\/\S+/g, '').match(/\p{L}/gu) || [];
-  const maius = letras.filter(c => c !== c.toLowerCase()).length;
-  if (letras.length < 8 || maius / letras.length < 0.6) return t;
-  return t.split(/(https?:\/\/\S+)/).map((parte, i) => i % 2 ? parte : parte.replace(/[\p{L}&]+[\p{L}\d&]*/gu, w =>
-      /\d/.test(w) || SIGLAS.has(w.toUpperCase()) ? w : w.toLowerCase()).replace(/(^\s*|[.!?]\s+)(\p{L})/gu, (m, a, c) => a + c.toUpperCase())).join('');
-}
 
 async function carregar() {
   const [c, a, cv] = await Promise.all([

@@ -6,7 +6,7 @@
 <title>Perguntas do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611201545">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611211209">
 <style>
   .pq { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
   .pq img.ft { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--borda); }
@@ -67,10 +67,10 @@
   <div id="lista"><div class="cartao vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611201545"></script>
-<script src="../../assets/js/ui.js?v=202611201545"></script>
-<script src="../../assets/js/auth.js?v=202611201545"></script>
-<script src="../../assets/js/layout.js?v=202611201545"></script>
+<script src="../../assets/js/supabase.js?v=202611211209"></script>
+<script src="../../assets/js/ui.js?v=202611211209"></script>
+<script src="../../assets/js/auth.js?v=202611211209"></script>
+<script src="../../assets/js/layout.js?v=202611211209"></script>
 <script>
 /* =====================================================================
    Perguntas do Mercado Livre
@@ -265,17 +265,6 @@ function painelIA(todas) {
         <td class="resp-ml">${esc(q.sugestao)}</td><td class="resp-ml">${esc(q.resposta)}</td><td>${celRev(q)}</td></tr>`).join('') || '<tr><td colspan="6">Nenhuma correção ainda.</td></tr>'}</tbody></table></div>`;
 }
 
-// Resposta ao cliente sem CAPS LOCK (soa grosseiro): se o texto vier quase todo em maiúsculas, passa para
-// minúsculas com a 1ª letra de cada frase maiúscula. Links, códigos com número (EA111, N20, 1.4) e siglas ficam como estão.
-const SIGLAS = new Set('NOX TSI TFSI GTI BMW VW GM AP RS KN K&N MAF ML MLB SKU NF PIX CV UP THP TBI ECOBOOST EA888 OK'.split(' '));
-function semCaps(t) {
-  const letras = t.replace(/https?:\/\/\S+/g, '').match(/\p{L}/gu) || [];
-  const maius = letras.filter(c => c !== c.toLowerCase()).length;
-  if (letras.length < 8 || maius / letras.length < 0.6) return t;   // escrito normal: não mexe
-  return t.split(/(https?:\/\/\S+)/).map((parte, i) => i % 2 ? parte : parte.replace(/[\p{L}&]+[\p{L}\d&]*/gu, w =>
-      /\d/.test(w) || SIGLAS.has(w.toUpperCase()) ? w : w.toLowerCase()).replace(/(^\s*|[.!?]\s+)(\p{L})/gu, (m, a, c) => a + c.toUpperCase()))
-    .join('');
-}
 
 // revisão do administrador (quem estava certo quando o vendedor mudou a sugestão)
 function ligarRevisao() {
