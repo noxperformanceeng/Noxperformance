@@ -690,7 +690,11 @@ body.embutido:not([data-emp="0"]) .empresa-chips .ec-info { color: var(--emp-cor
 @keyframes alerta-perg { 0%, 100% { background: #c0262d; } 50% { background: #e0353d; } }
 @media (prefers-reduced-motion: reduce) { .alerta-perg, .alerta-perg .sino { animation: none; } }
 .alerta-perg[hidden] { display: none; }   /* sem pergunta esperando: some de vez (o display:flex acima vencia o hidden) */
-body.com-alerta-perg { padding-top: 52px; }
+/* Com a faixa vermelha no topo, o resto da tela desce exatamente a altura dela (a faixa pode ter 1 ou 2 linhas):
+   o sistema encolhe para caber na janela, senão o rodapé das janelas e telas fica escondido embaixo */
+body.com-alerta-perg { padding-top: var(--alerta-h, 52px); }
+body.com-alerta-perg .principal.shell { height: calc(100vh - var(--alerta-h, 52px)); }
+body.com-alerta-perg .menu { top: var(--alerta-h, 52px); }
 .menu .cont-perg { margin-left: auto; }
 .alerta-vendas { position: fixed; right: 16px; bottom: 16px; z-index: 9998; display: flex; flex-direction: column; gap: 10px; width: 340px; max-width: calc(100vw - 32px); }
 .alerta-vendas .venda { background: #1e8e4e; color: #fff; border-radius: 10px; padding: 10px 14px; box-shadow: 0 6px 18px rgba(0,0,0,.28); font-size: 14px; animation: venda-entra .35s ease-out, venda-pulsa 1.4s ease-in-out 3; }
