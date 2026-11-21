@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611211219">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611211924">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611211219"></script>
-<script src="../../assets/js/ui.js?v=202611211219"></script>
-<script src="../../assets/js/auth.js?v=202611211219"></script>
-<script src="../../assets/js/layout.js?v=202611211219"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611211219"></script>
-<script src="../../assets/js/cadastro.js?v=202611211219"></script>
+<script src="../../assets/js/supabase.js?v=202611211924"></script>
+<script src="../../assets/js/ui.js?v=202611211924"></script>
+<script src="../../assets/js/auth.js?v=202611211924"></script>
+<script src="../../assets/js/layout.js?v=202611211924"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611211924"></script>
+<script src="../../assets/js/cadastro.js?v=202611211924"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -429,6 +429,40 @@ function trocarPorConjunto(tr) {
   recalcular();
   abrirConjunto({ produto: pid, quantidade: q });
   aviso(`${prod(pid)?.codigo || 'Este item'} é um conjunto: escolha as peças e o fornecedor da pintura (sai em OC separada)`);
+}
+
+// Assinatura/contrato mensal: N linhas iguais (mesma descrição, para casar com a solicitação aprovada), uma por mês.
+// Cada linha tem a data da cobrança como entrega prevista: a projeção no contas a pagar sai mês a mês.
+// Todo mês: entrada da fatura/invoice daquele mês (no lugar da NF) → vira título real.
+function abrirAssinatura(pai) {
+  const somaMes = (iso, k) => { const [a, mm, d] = iso.split('-').map(Number), x = new Date(Date.UTC(a, mm - 1 + k, 1)), ult = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + 1, 0)).getUTCDate();
+    return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(Math.min(d, ult)).padStart(2, '0')}`; };
+  const catSoft = CATS.find(c => /SOFTWARE E LICEN/i.test(c.nome))?.id || '';
+  const vazia = [...pai.querySelectorAll('#itens > table > tbody > tr:not(.hist-precos)')].find(tr => !tr.dataset.tipo && !tr.querySelector('[data-k=produto_id]')?.value && !tr.querySelector('[data-k=descricao]')?.value.trim());
+  const m = abrirModal(`<h2>Assinatura mensal</h2>
+    <p class="sub" style="margin:0 0 8px">Para sistema, software ou contrato que cobra todo mês. Cria uma linha por mês neste pedido: aprova uma vez e, a cada mês, é só dar a entrada da fatura/invoice daquele mês.
+      Se veio de uma solicitação, use <b>a mesma descrição</b> do item da solicitação.</p>
+    <div class="grade-campos">
+      <div class="campo l2"><label>Descrição</label><input id="asD" placeholder="ex.: ASSINATURA SUPABASE PRO (SISTEMA DE GESTÃO)" value="${esc(vazia ? '' : '')}"></div>
+      <div class="campo"><label>Valor por mês (R$)</label><input id="asV" inputmode="decimal" placeholder="0,00"></div>
+      <div class="campo"><label>Primeira cobrança</label><input id="asP" type="date" value="${hojeISO()}"></div>
+      <div class="campo"><label>Quantos meses</label><input id="asN" inputmode="numeric" value="12"></div>
+      <div class="campo l2"><label>Categoria financeira</label><select id="asC">${optCats(catSoft)}</select></div>
+    </div>
+    <div class="acoes"><button class="btn" id="asX">Fechar</button><button class="btn primario" id="asOk">Incluir as linhas</button></div>`);
+  m.querySelector('#asX').onclick = () => m.remove();
+  m.querySelector('#asOk').onclick = () => {
+    const d = m.querySelector('#asD').value.trim().toUpperCase(), v = lerNumero(m.querySelector('#asV').value) || 0, p0 = m.querySelector('#asP').value,
+      n = Math.round(lerNumero(m.querySelector('#asN').value) || 0), c = Number(m.querySelector('#asC').value) || null;
+    if (!d) return aviso('Escreva a descrição', true);
+    if (!(v > 0)) return aviso('Informe o valor por mês', true);
+    if (!p0) return aviso('Informe a data da primeira cobrança', true);
+    if (!(n >= 1 && n <= 36)) return aviso('Quantos meses: de 1 a 36', true);
+    const tb = pai.querySelector('#itens > table > tbody'); vazia?.remove();
+    for (let k = 0; k < n; k++) tb.insertAdjacentHTML('beforeend', linhaProduto({ descricao: d, unidade: 'MÊS', quantidade: 1, valor_unitario: v, categoria_financeira_id: c, data_entrega_prevista: somaMes(p0, k) }));
+    recalcular(); m.remove();
+    aviso(`${n} meses incluídos (${reais(v * n)} no total). Salve o pedido e envie para aprovação`);
+  };
 }
 
 function abrirConjunto(pre = {}) {
@@ -1250,7 +1284,7 @@ const cfg = {
     const box = document.createElement('div');
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">Itens</div><table><thead><tr><th>Item (produto ou serviço)</th><th>Un</th><th>Qtd</th><th>Unitário (R$)</th><th>Desconto</th><th title="IPI % do item">IPI %</th><th>Categoria</th><th title="Entrega prevista de cada item. Vazio: vale a do pedido">Entrega</th><th class="num">Total</th>${mostrarRec ? '<th class="num">Recebido</th>' : ''}<th></th></tr></thead>
         <tbody>${((r.id && ex.itens[r.id]) || []).map(x => linhaItem(x, mostrarRec)).join('') || (r.id ? '' : linhaItem())}</tbody></table>
-        ${editavel && podeEd ? `<div class="itens-acoes"><button type="button" class="btn fino" id="addItem">+ Item</button>${CONJ.size ? '<button type="button" class="btn fino" id="addConj" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}<span class="itens-links">${CTX.pode('produtos', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${linkServ()}</span></div>` : ''}
+        ${editavel && podeEd ? `<div class="itens-acoes"><button type="button" class="btn fino" id="addItem">+ Item</button><button type="button" class="btn fino" id="addAssin" title="Assinatura ou contrato mensal (sistema, software, aluguel de equipamento…): cria uma linha por mês, cada uma com a data da cobrança. Aprovado uma vez; todo mês só se dá a entrada da fatura/invoice daquele mês">+ Assinatura mensal</button>${CONJ.size ? '<button type="button" class="btn fino" id="addConj" title="Escolha o conjunto pronto (ex.: DF-002): entram as peças de corte e dobra, com aviso de estoque">+ Conjunto (DF)</button>' : ''}<span class="itens-links">${CTX.pode('produtos', 'criar') ? `<a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/produtos.html?novo=1">+ cadastrar produto</a>` : ''}${linkServ()}</span></div>` : ''}
         <div id="matBox" style="margin-top:8px"></div>
         <div class="tot-ped" id="totPed"></div></div>`;
     box.addEventListener('click', e => { const b = e.target.closest('[data-hist]'); if (b) { e.preventDefault(); mostrarHistorico(b.closest('tr')); } });
@@ -1259,6 +1293,7 @@ const cfg = {
     if (editavel && podeEd) {
       m.querySelector('#addItem').onclick = () => { m.querySelector('#itens tbody').insertAdjacentHTML('beforeend', linhaProduto({ data_entrega_prevista: m.querySelector('#f_data_entrega_prevista')?.value })); };
       m.querySelector('#addConj')?.addEventListener('click', () => abrirConjunto());
+      m.querySelector('#addAssin').onclick = () => abrirAssinatura(m);
       box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { const tr = e.target.closest('tr'); if (tr.nextElementSibling?.classList.contains('hist-precos')) tr.nextElementSibling.remove(); tr.remove(); recalcular(); } });
       box.addEventListener('change', e => { if (e.target.dataset.k === 'tipo_linha') { aoMudarTipo(e.target.closest('tr')); return recalcular(); } if (e.target.dataset.k === 'servico_id') return aoEscolherServ(e.target.closest('tr')); if (e.target.dataset.k === 'uso_consumo') travarCategoria(e.target.closest('tr')); if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'); if (tr.dataset.tipo === 'servico_usinagem') aoEscolherServico(tr, true); else if (CONJ.has(Number(e.target.value))) trocarPorConjunto(tr); else aoEscolherProduto(tr); } recalcular(); });
       box.addEventListener('input', recalcular);
