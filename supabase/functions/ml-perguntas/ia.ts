@@ -20,8 +20,9 @@ Como responder:
 - Proibido pelo Mercado Livre: telefone, WhatsApp, e-mail, site ou redes sociais, combinar fora do ML, links que não sejam do Mercado Livre.
 - Se o cliente pede outra medida, cor ou versão, procure em "outros anúncios da NOX" a versão pedida (ex.: entrada 2,5") e mande o link. Só diga que não temos depois de olhar a lista inteira.
 - PONTEIRA ("serve no meu carro?", "precisa de adaptação?"): a ponteira da NOX é UNIVERSAL. Responda sempre que ela é universal e pode ser instalada sim no carro do cliente, e que a instalação deve ser feita por um profissional. Não peça medidas nem diga que não dá para garantir; confiança "alta" e alerta "nenhum".
-- INTAKE (qualquer pergunta sobre kit de intake, em anúncio com ou sem filtro): mande SEMPRE os links do kit COM FILTRO para o carro do cliente: o com filtro NOX e o com filtro K&N/RS, os dois quando existirem, dizendo qual é qual (lista "VERSÕES COM FILTRO" e "outros anúncios"). O link do kit SEM filtro só vai se o cliente EXIGIR sem filtro (pedir claramente "sem filtro"); aí mande o sem filtro. Se não existe versão com defletor para o carro, diga isso e indique os kits com filtro.
-- Entre anúncios que servem igualmente, prefira SEMPRE os marcados [FULL] na lista (entrega mais rápida). Só mande um sem FULL se não houver equivalente FULL.
+- Quando o anúncio da pergunta não serve no carro do cliente, NÃO explique o porquê (não cite adaptação, outra linha, outro modelo): vá direto ao kit certo ("Para o seu <carro> o kit certo é este: <link>").
+- INTAKE (resposta simples, opção demais faz o cliente desistir): no MÁXIMO 2 links: o kit COM FILTRO NOX e o kit COM FILTRO K&N (quando existir), os dois na versão CAMPEÃ DE VENDAS (maior "vendas" na lista; em empate, a [FULL]). Diga qual link é qual. As outras variações (outra medida de entrada, ex. 3", ou sem filtro) cite só em meia frase, SEM link (ex.: "Também temos na versão 3\" e sem filtro, é só pedir!"). O link do kit SEM filtro só vai se o cliente EXIGIR sem filtro: aí mande o sem filtro campeão de vendas. Se não existe versão com defletor para o carro, diga isso em poucas palavras.
+- Entre anúncios equivalentes (mesmo produto em contas ou anúncios diferentes), mande o campeão de vendas, preferindo o [FULL]. Pode usar anúncio de qualquer conta da NOX.
 - Respostas marcadas "REVISADA pelo Paulo" ou "resposta do Paulo" são a referência (o Paulo é o dono e engenheiro da NOX): em conflito com outras respostas, siga as dele.
 - Confiança: "alta" = está escrito no anúncio ou já respondemos igual; "media" = dedução razoável; "baixa" = falta informação.
 Responda chamando a ferramenta "sugerir_resposta".`;
@@ -77,7 +78,9 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
       .filter(o => o.n > 0.25).sort((a, b) => b.n - a.n).slice(0, 15)
       .map(o => `P${o.h.item_id === q.item_id ? ' (mesmo anúncio)' : ''}: ${o.h.texto}\nR${rotulo(o.h)}: ${certa(o.h)}`).join('\n\n');
     // outros anúncios ativos que podem servir (mesmas palavras do carro/motor)
-    const { data: itens } = await db.from('ml_itens').select('item_id, titulo, link, preco').eq('situacao', 'active').eq('canal_id', q.canal_id);   // só da mesma conta
+    // o banco entrega no máximo 1.000 linhas por consulta: lê em páginas
+    const todas = async <T,>(f: (de: number, ate: number) => PromiseLike<{ data: T[] | null }>) => { const out: T[] = []; for (let de = 0; ; de += 1000) { const { data } = await f(de, de + 999); out.push(...(data ?? [])); if ((data ?? []).length < 1000) return out; } };
+    const itens = await todas<{ item_id: string; titulo: string; link: string; preco: number }>((de, ate) => db.from('ml_itens').select('item_id, titulo, link, preco').eq('situacao', 'active').order('item_id').range(de, ate));   // anúncios de todas as contas da NOX (o Paulo prefere o melhor link, de qualquer conta)
     // ...e as outras versões do mesmo produto (título parecido com o deste anúncio: outras medidas, cores, entradas)
     const wt = palavras(item?.title ?? '');
     const outrosRank = (itens ?? []).filter(i => i.item_id !== q.item_id).map(i => { const ti = palavras(i.titulo ?? ''); return { i, n: parecida(w, ti) + 0.6 * parecida(wt, ti) }; })
@@ -88,9 +91,9 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
     const { data: comp } = await db.from('compatibilidades').select('sku, marca, modelo, ano_inicial, ano_final, motorizacao, codigo_motor, combustivel, potencia, observacoes').eq('situacao', 'ativo');
     const wq = palavras(q.texto + ' ' + (item?.title ?? ''));
     // anúncios ativos desta conta por SKU (o SKU do anúncio pode ter sufixo, ex.: ITKFD068KN)
-    const { data: anCanal } = await db.from('anuncios').select('sku, anuncio_id').eq('canal_id', q.canal_id).not('sku', 'is', null);
+    const anCanal = await todas<{ sku: string; anuncio_id: string }>((de, ate) => db.from('anuncios').select('sku, anuncio_id').not('sku', 'is', null).order('id').range(de, ate));
     const ativos = new Map((itens ?? []).map(i => [i.item_id, i.link]));
-    const linkDo = (sku: string) => (anCanal ?? []).filter(a => String(a.sku).toUpperCase().startsWith(sku) && ativos.has(a.anuncio_id)).map(a => `${a.anuncio_id}${full.has(a.anuncio_id) ? ' [FULL]' : ''} SKU ${a.sku} ${ativos.get(a.anuncio_id)}`).join(' ; ');   // todas as versões (filtro NOX e K&N)
+    const linkDo = (sku: string) => (anCanal ?? []).filter(a => String(a.sku).toUpperCase().startsWith(sku) && ativos.has(a.anuncio_id)).map(a => `${a.anuncio_id}${full.has(a.anuncio_id) ? ' [FULL]' : ''}${vend(a.anuncio_id)} SKU ${a.sku} ${ativos.get(a.anuncio_id)}`).join(' ; ');   // todas as versões (filtro NOX e K&N)
     const doSku = (c: { sku: string }) => c.sku.split('/').map((x: string) => x.trim()).filter(Boolean);
     const compatRank = (comp ?? []).map(c => ({ c, n: (skus.some(k => doSku(c).some((x: string) => k.startsWith(x))) ? 1 : 0)
         + parecida(wq, palavras(`${c.marca} ${c.modelo} ${c.motorizacao ?? ''} ${c.codigo_motor ?? ''}`)) }))
@@ -109,14 +112,23 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
     const carro = (t: string) => new Set([...palavras(t.replace(/s\/\s*filtro|sem filtro|k&n/gi, ' '))].filter(x => !GEN.has(x) && x !== 's'));
     const comFiltro = (t: string) => /filtro/i.test(t) && !/s\/\s*filtro|sem filtro/i.test(t);
     const carroDoAnuncio = carro(item?.title ?? '');
-    const versoesFiltro = (itens ?? []).filter(i => i.item_id !== q.item_id && comFiltro(i.titulo ?? '') && carroDoAnuncio.size && parecida(carroDoAnuncio, carro(i.titulo ?? '')) >= 0.75).slice(0, 8);
+    const versoesFiltro = (itens ?? []).filter(i => i.item_id !== q.item_id && comFiltro(i.titulo ?? '') && carroDoAnuncio.size && parecida(carroDoAnuncio, carro(i.titulo ?? '')) >= 0.75).slice(0, 14);
     const semFull = versoesFiltro.map(i => i.item_id).filter(x => !idsFull.includes(x));
     if (semFull.length) {
       const r = await mlGet(token, `/items?ids=${semFull.join(',')}&attributes=id,shipping`).catch(() => null);
       (r ?? []).forEach((x: { code: number; body: { id: string; shipping?: { logistic_type?: string } } }) => { if (x.code === 200 && x.body.shipping?.logistic_type === 'fulfillment') full.add(x.body.id); });
     }
-    const filtroTxt = versoesFiltro.map(i => `${i.item_id}${full.has(i.item_id) ? ' [FULL]' : ''} | ${i.titulo} | ${/k&n|\bkn\b|\brs\b/i.test(i.titulo ?? '') ? 'filtro K&N/RS' : 'filtro NOX'} | ${i.link}`).join('\n');
-    const outros = outrosRank.map(o => `${o.i.item_id}${full.has(o.i.item_id) ? ' [FULL]' : ''} | ${o.i.titulo} | SKU ${skuDe.get(o.i.item_id) ?? '-'} | ${o.i.link}`).join('\n');
+    // vendas de cada anúncio candidato nos últimos 180 dias (o "campeão de vendas" de cada versão)
+    const idsVenda = [...new Set([...idsFull, ...versoesFiltro.map(i => i.item_id)])];
+    const vendas = new Map<string, number>();
+    for (let k = 0; k < idsVenda.length; k += 100) {
+      const { data: vs } = await db.from('pedidos_venda_itens').select('anuncio_id, quantidade, pedidos_venda!inner(data_pedido, situacao)')
+        .in('anuncio_id', idsVenda.slice(k, k + 100)).gte('pedidos_venda.data_pedido', new Date(Date.now() - 180 * 864e5).toISOString()).neq('pedidos_venda.situacao', 'cancelado');
+      (vs ?? []).forEach((v: { anuncio_id: string; quantidade: number }) => vendas.set(v.anuncio_id, (vendas.get(v.anuncio_id) ?? 0) + Number(v.quantidade || 0)));
+    }
+    const vend = (id: string) => ` | vendas ${vendas.get(id) ?? 0}`;
+    const filtroTxt = versoesFiltro.map(i => `${i.item_id}${full.has(i.item_id) ? ' [FULL]' : ''}${vend(i.item_id)} | ${i.titulo} | ${/k&n|\bkn\b|\brs\b/i.test(i.titulo ?? '') ? 'filtro K&N/RS' : 'filtro NOX'} | ${i.link}`).join('\n');
+    const outros = outrosRank.map(o => `${o.i.item_id}${full.has(o.i.item_id) ? ' [FULL]' : ''}${vend(o.i.item_id)} | ${o.i.titulo} | SKU ${skuDe.get(o.i.item_id) ?? '-'} | ${o.i.link}`).join('\n');
     const compat = compatRank
       .map(({ c }) => [c.sku, c.marca, c.modelo, `${c.ano_inicial ?? '?'}-${c.ano_final ?? '?'}`, c.motorizacao, c.codigo_motor, c.combustivel, c.potencia, c.observacoes,
         doSku(c).map(linkDo).filter(Boolean).map(l => 'anúncio: ' + l).join(' ; ')].map(v => v ?? '').join(' | ')).join('\n');
@@ -128,10 +140,10 @@ ${compat || '(nada na base para este caso)'}
 RESPOSTAS QUE A NOX JÁ DEU A PERGUNTAS PARECIDAS
 ${exemplos || '(nenhuma)'}
 
-VERSÕES COM FILTRO PARA O MESMO CARRO DESTE ANÚNCIO (MLB [FULL] | título | tipo de filtro | link)
+VERSÕES COM FILTRO PARA O MESMO CARRO DESTE ANÚNCIO (MLB [FULL] | vendas 180 dias | título | tipo de filtro | link)
 ${filtroTxt || '(nenhuma)'}
 
-OUTROS ANÚNCIOS DA NOX NESTA CONTA QUE PODEM SERVIR (MLB [FULL = no Full] | título | SKU | link)
+OUTROS ANÚNCIOS DA NOX QUE PODEM SERVIR (MLB [FULL = no Full] | vendas 180 dias | título | SKU | link)
 ${outros || '(nenhum)'}
 
 PERGUNTA DO CLIENTE (${new Date(q.criada_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })})
