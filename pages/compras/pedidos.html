@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611211924">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611211957">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -49,12 +49,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611211924"></script>
-<script src="../../assets/js/ui.js?v=202611211924"></script>
-<script src="../../assets/js/auth.js?v=202611211924"></script>
-<script src="../../assets/js/layout.js?v=202611211924"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611211924"></script>
-<script src="../../assets/js/cadastro.js?v=202611211924"></script>
+<script src="../../assets/js/supabase.js?v=202611211957"></script>
+<script src="../../assets/js/ui.js?v=202611211957"></script>
+<script src="../../assets/js/auth.js?v=202611211957"></script>
+<script src="../../assets/js/layout.js?v=202611211957"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611211957"></script>
+<script src="../../assets/js/cadastro.js?v=202611211957"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -1085,6 +1085,64 @@ function abrirEscala() {
 /* ---------- Alertas (topo da tela) ---------- */
 /* ---------- Sugestão de compra (produtos abaixo do estoque mínimo) ---------- */
 let SUG = [];
+
+/* ---------- Aguardando compra: itens de solicitações aprovadas que ainda não viraram pedido nem estão em cotação ---------- */
+let FILA = [];
+async function carregarFila() {
+  if (!CTX.pode('compras', 'criar')) { FILA = []; return; }
+  const { data: sols } = await db.from('solicitacoes_compra').select('id, numero, justificativa, solicitante_id, data_necessidade').eq('situacao', 'aprovado');
+  const ids = (sols || []).map(x => x.id); if (!ids.length) { FILA = []; return; }
+  const { data: its } = await db.from('solicitacoes_compra_itens').select('id, solicitacao_id, produto_id, servico_id, peca_id, descricao, quantidade, unidade, urgencia, observacao, pedido_id, cotacao_id').in('solicitacao_id', ids);
+  const pids = [...new Set((its || []).map(i => i.pedido_id).filter(Boolean))], cids = [...new Set((its || []).map(i => i.cotacao_id).filter(Boolean))];
+  const [pe, co] = await Promise.all([pids.length ? db.from('pedidos_compra').select('id, situacao').in('id', pids) : { data: [] },
+    cids.length ? db.from('cotacoes_compra').select('id, situacao').in('id', cids) : { data: [] }]);
+  const ped = Object.fromEntries((pe.data || []).map(x => [x.id, x.situacao])), cot = Object.fromEntries((co.data || []).map(x => [x.id, x.situacao]));
+  const solDe = Object.fromEntries((sols || []).map(x => [x.id, x]));
+  FILA = (its || []).filter(i => (!i.pedido_id || ped[i.pedido_id] === 'cancelado') && !(i.cotacao_id && cot[i.cotacao_id] === 'aberta'))
+    .map(i => ({ ...i, sol: solDe[i.solicitacao_id] })).sort((a, b) => a.solicitacao_id - b.solicitacao_id || a.id - b.id);
+}
+const nomeItemFila = i => i.produto_id ? `${prod(i.produto_id)?.codigo || ''} ${prod(i.produto_id)?.descricao || ''}`.trim()
+  : i.servico_id ? (serv(i.servico_id)?.nome || 'Serviço') + (i.descricao ? ' · ' + i.descricao : '') : i.peca_id ? 'Usinagem · ' + (prod(i.peca_id)?.codigo || '') : (i.descricao || '') + ' (sem cadastro)';
+function abrirFila() {
+  const urg = u => ['alta', 'urgente'].includes(u) ? `<span class="tg erro">${esc(u)}</span>` : '';
+  const m = abrirModal(`<h2>Aguardando compra</h2>
+    <p class="sub" style="margin:0 0 8px">Itens de solicitações já aprovadas. Marque os itens e escolha: <b>Gerar pedido direto</b> (quando já sabe de quem comprar, ex.: assinatura de sistema, fornecedor único) ou <b>Gerar cotação</b> (para comparar preços de vários fornecedores).</p>
+    ${!FILA.length ? '<p class="sub">Nada aguardando compra. ✓</p>' : `
+    <div class="sub-ed" style="max-height:46vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="flT" title="Marcar todos"></th><th>Solicitação</th><th>Item</th><th class="num">Qtd</th><th>Precisa até</th><th>Pedido por</th></tr></thead><tbody>
+      ${FILA.map(i => `<tr><td><input type="checkbox" data-i="${i.id}"></td><td><b>${esc(i.sol?.numero || '')}</b>${i.sol?.justificativa ? `<div class="ro">${esc(i.sol.justificativa)}</div>` : ''}</td>
+        <td>${esc(nomeItemFila(i))} ${urg(i.urgencia)}${i.observacao ? `<div class="ro">${esc(i.observacao)}</div>` : ''}</td><td class="num">${num(i.quantidade)} ${esc(i.unidade || '')}</td>
+        <td>${i.sol?.data_necessidade ? dataCurta(i.sol.data_necessidade) : ''}</td><td>${esc(USU.find(u => u.id === i.sol?.solicitante_id)?.nome || '')}</td></tr>`).join('')}</tbody></table></div>
+    <div class="grade-campos" style="margin-top:8px">
+      <div class="campo"><label>Empresa (CNPJ)</label><select id="flE" data-simples>${CTX.empresas.map(e => `<option value="${e.id}"${e.id === CTX.empresa ? ' selected' : ''}>${esc(e.nome)}</option>`).join('')}</select></div>
+      <div class="campo l2"><label>Fornecedor (só para o pedido direto)</label><select id="flF"><option value="">— escolha —</option>${FORN.filter(f => f.situacao === 'ativo').sort((a, b) => nomeComFantasia(a).localeCompare(nomeComFantasia(b))).map(f => `<option value="${f.id}">${esc(nomeComFantasia(f))}</option>`).join('')}</select></div>
+    </div>`}
+    <div class="acoes"><button class="btn" id="flN">Fechar</button>${FILA.length ? `${CTX.pode('cotacoes_compra', 'criar') ? '<button class="btn" id="flC">Gerar cotação</button>' : ''}<button class="btn primario" id="flP">Gerar pedido direto</button>` : ''}</div>`);
+  m.querySelector('.modal').style.maxWidth = '980px';
+  const q = s => m.querySelector(s), marcados = () => [...m.querySelectorAll('[data-i]:checked')].map(c => Number(c.dataset.i));
+  q('#flN').onclick = () => m.remove();
+  q('#flT')?.addEventListener('change', e => m.querySelectorAll('[data-i]').forEach(c => c.checked = e.target.checked));
+  q('#flP')?.addEventListener('click', async () => {
+    const ids = marcados(), f = Number(q('#flF').value) || null, emp = Number(q('#flE').value) || null;
+    if (!ids.length) return aviso('Marque pelo menos um item', true);
+    if (!f) return aviso('Escolha o fornecedor do pedido', true);
+    q('#flP').disabled = true;
+    const { data, error } = await db.rpc('solicitacao_compra_gerar_pedido', { p_itens: ids, p_fornecedor: f, p_empresa: emp });
+    if (error) { q('#flP').disabled = false; return aviso('Não gerou: ' + error.message, true); }
+    m.remove(); aviso('Pedido criado em rascunho, com a solicitação vinculada · confira preço e pagamento e envie para aprovação');
+    await cfg.recarregar();
+    location.href = location.pathname + '?abrir=' + data;
+  });
+  q('#flC')?.addEventListener('click', async () => {
+    const ids = marcados(), emp = Number(q('#flE').value) || null;
+    if (!ids.length) return aviso('Marque pelo menos um item', true);
+    q('#flC').disabled = true;
+    const { data, error } = await db.rpc('cotacao_criar', { p_itens: ids, p_empresa: emp });
+    if (error) { q('#flC').disabled = false; return aviso('Não gerou: ' + error.message, true); }
+    m.remove(); aviso('Cotação criada · abrindo para lançar os preços dos fornecedores');
+    window.top.postMessage({ nox: 'abrir', url: RAIZ + 'pages/compras/cotacoes.html?abrir=' + data }, location.origin);
+    cfg.recarregar();
+  });
+}
 function abrirSugestao() {
   const semInv = SUG.some(x => !x.inventariado);
   const grupos = {}; SUG.forEach(x => (grupos[x.fornecedor_id || 0] ||= []).push(x));
@@ -1128,6 +1186,7 @@ function desenharAlertas(linhas) {
   const ls = linhas.filter(r => (!emp || r.empresa_id === emp) && r.origem !== 'tiny');   // ordens do Tiny ficam fora dos alertas
   const a = [
     { aba: 'minha', n: ls.filter(possoAprovar).length, t: 'aguardando a sua aprovação', cls: 'erro' },
+    { acao: 'fila', n: FILA.length, t: 'item(ns) de solicitação aprovada aguardando compra', cls: 'erro' },
     { acao: 'sugestao', n: SUG.length, t: 'produto(s) abaixo do mínimo ou faltando para vendas · sugestão de compra', cls: 'alerta' },
     ...(possoLiberar() ? [{ aba: 'liberar', n: ls.filter(r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length).length, t: 'com item sem cadastro para liberar', cls: 'erro' }] : []),
     { aba: 'recusados', n: ls.filter(r => r.situacao === 'recusado').length, t: 'recusado(s) para ajustar', cls: 'erro' },
@@ -1138,6 +1197,7 @@ function desenharAlertas(linhas) {
   ].filter(x => x.n);
   box.innerHTML = a.map(x => `<button type="button" class="${x.cls}" ${x.acao ? `data-acao="${x.acao}"` : `data-aba="${x.aba}"`}><b>${x.n}</b> ${esc(x.t)}</button>`).join('');
   box.querySelector('[data-acao=sugestao]')?.addEventListener('click', abrirSugestao);
+  box.querySelector('[data-acao=fila]')?.addEventListener('click', abrirFila);
   if (CTX.pode('compras', 'criar') && !document.getElementById('btnSugestao')) {
     const novo = document.getElementById('cNovo'), b = document.createElement('button');
     b.className = 'btn'; b.id = 'btnSugestao'; b.textContent = 'Sugestão de compra'; b.onclick = abrirSugestao;
@@ -1245,7 +1305,7 @@ const cfg = {
     ex = { itens, eventos, recebimentos, titulos, todosItens: it, porId: Object.fromEntries(linhas.map(r => [r.id, r])) };
     return ex;
   },
-  depoisCarregar: linhas => { desenharAlertas(linhas);
+  depoisCarregar: linhas => { desenharAlertas(linhas); carregarFila().then(() => desenharAlertas(linhas)).catch(() => {});
     // ?sugestao=1 (vindo da página inicial): abre a sugestão de compra uma vez
     if (!window.__sugAberta && new URLSearchParams(location.search).get('sugestao') && SUG.length) { window.__sugAberta = true; abrirSugestao(); } },
   colunasExtras: [
