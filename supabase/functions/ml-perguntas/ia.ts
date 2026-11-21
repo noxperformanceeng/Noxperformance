@@ -20,7 +20,7 @@ Como responder:
 - Proibido pelo Mercado Livre: telefone, WhatsApp, e-mail, site ou redes sociais, combinar fora do ML, links que não sejam do Mercado Livre.
 - Se o cliente pede outra medida, cor ou versão, procure em "outros anúncios da NOX" a versão pedida (ex.: entrada 2,5") e mande o link. Só diga que não temos depois de olhar a lista inteira.
 - PONTEIRA ("serve no meu carro?", "precisa de adaptação?"): a ponteira da NOX é UNIVERSAL. Responda sempre que ela é universal e pode ser instalada sim no carro do cliente, e que a instalação deve ser feita por um profissional. Não peça medidas nem diga que não dá para garantir; confiança "alta" e alerta "nenhum".
-- Pergunta em anúncio de INTAKE COM FILTRO: indique sempre o anúncio de intake COM FILTRO ESPORTIVO que serve no carro do cliente, mesmo quando não existe a versão com defletor para esse carro (não troque por kit sem filtro, a menos que ele peça só sem filtro, e aí mande também a opção com filtro). Se para o carro houver anúncio com filtro NOX e com filtro K&N (KN no título ou no SKU), mande OS DOIS links para o cliente escolher, dizendo qual é qual.
+- INTAKE (qualquer pergunta sobre kit de intake, em anúncio com ou sem filtro): mande SEMPRE os links do kit COM FILTRO para o carro do cliente: o com filtro NOX e o com filtro K&N/RS, os dois quando existirem, dizendo qual é qual (lista "VERSÕES COM FILTRO" e "outros anúncios"). O link do kit SEM filtro só vai se o cliente EXIGIR sem filtro (pedir claramente "sem filtro"); aí mande o sem filtro. Se não existe versão com defletor para o carro, diga isso e indique os kits com filtro.
 - Entre anúncios que servem igualmente, prefira SEMPRE os marcados [FULL] na lista (entrega mais rápida). Só mande um sem FULL se não houver equivalente FULL.
 - Respostas marcadas "REVISADA pelo Paulo" ou "resposta do Paulo" são a referência (o Paulo é o dono e engenheiro da NOX): em conflito com outras respostas, siga as dele.
 - Confiança: "alta" = está escrito no anúncio ou já respondemos igual; "media" = dedução razoável; "baixa" = falta informação.
@@ -104,6 +104,18 @@ export async function sugerir(db: SupabaseClient, conta: Conta, id: number) {
     }
     const { data: skusOutros } = await db.from('anuncios').select('anuncio_id, sku').in('anuncio_id', idsFull);
     const skuDe = new Map((skusOutros ?? []).map(a => [a.anuncio_id, a.sku]));
+    // versões COM FILTRO (NOX e K&N/RS) do mesmo carro do anúncio: título com "filtro" e sem "s/ filtro", mesmas palavras do carro
+    const GEN = new Set('intake filtro esportivo kn rs nox noxp pecas sem kit'.split(' '));
+    const carro = (t: string) => new Set([...palavras(t.replace(/s\/\s*filtro|sem filtro|k&n/gi, ' '))].filter(x => !GEN.has(x) && x !== 's'));
+    const comFiltro = (t: string) => /filtro/i.test(t) && !/s\/\s*filtro|sem filtro/i.test(t);
+    const carroDoAnuncio = carro(item?.title ?? '');
+    const versoesFiltro = (itens ?? []).filter(i => i.item_id !== q.item_id && comFiltro(i.titulo ?? '') && carroDoAnuncio.size && parecida(carroDoAnuncio, carro(i.titulo ?? '')) >= 0.75).slice(0, 8);
+    const semFull = versoesFiltro.map(i => i.item_id).filter(x => !idsFull.includes(x));
+    if (semFull.length) {
+      const r = await mlGet(token, `/items?ids=${semFull.join(',')}&attributes=id,shipping`).catch(() => null);
+      (r ?? []).forEach((x: { code: number; body: { id: string; shipping?: { logistic_type?: string } } }) => { if (x.code === 200 && x.body.shipping?.logistic_type === 'fulfillment') full.add(x.body.id); });
+    }
+    const filtroTxt = versoesFiltro.map(i => `${i.item_id}${full.has(i.item_id) ? ' [FULL]' : ''} | ${i.titulo} | ${/k&n|\bkn\b|\brs\b/i.test(i.titulo ?? '') ? 'filtro K&N/RS' : 'filtro NOX'} | ${i.link}`).join('\n');
     const outros = outrosRank.map(o => `${o.i.item_id}${full.has(o.i.item_id) ? ' [FULL]' : ''} | ${o.i.titulo} | SKU ${skuDe.get(o.i.item_id) ?? '-'} | ${o.i.link}`).join('\n');
     const compat = compatRank
       .map(({ c }) => [c.sku, c.marca, c.modelo, `${c.ano_inicial ?? '?'}-${c.ano_final ?? '?'}`, c.motorizacao, c.codigo_motor, c.combustivel, c.potencia, c.observacoes,
@@ -115,6 +127,9 @@ ${compat || '(nada na base para este caso)'}
 
 RESPOSTAS QUE A NOX JÁ DEU A PERGUNTAS PARECIDAS
 ${exemplos || '(nenhuma)'}
+
+VERSÕES COM FILTRO PARA O MESMO CARRO DESTE ANÚNCIO (MLB [FULL] | título | tipo de filtro | link)
+${filtroTxt || '(nenhuma)'}
 
 OUTROS ANÚNCIOS DA NOX NESTA CONTA QUE PODEM SERVIR (MLB [FULL = no Full] | título | SKU | link)
 ${outros || '(nenhum)'}
