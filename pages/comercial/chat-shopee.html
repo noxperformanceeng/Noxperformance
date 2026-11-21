@@ -6,7 +6,7 @@
 <title>Chat da Shopee · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611211209">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611211213">
 <style>
   .chat { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 12px; align-items: start; }
   @media (max-width: 860px) { .chat { grid-template-columns: 1fr; } }
@@ -47,10 +47,10 @@
   </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611211209"></script>
-<script src="../../assets/js/ui.js?v=202611211209"></script>
-<script src="../../assets/js/auth.js?v=202611211209"></script>
-<script src="../../assets/js/layout.js?v=202611211209"></script>
+<script src="../../assets/js/supabase.js?v=202611211213"></script>
+<script src="../../assets/js/ui.js?v=202611211213"></script>
+<script src="../../assets/js/auth.js?v=202611211213"></script>
+<script src="../../assets/js/layout.js?v=202611211213"></script>
 <script>
 /* =====================================================================
    Chat da Shopee
@@ -123,7 +123,7 @@ function painel() {
       ${c.sugestao ? `<div class="ia">🤖 Sugestão da IA · confiança <b>${esc(c.sugestao_confianca || '')}</b>${c.sugestao_alerta ? ` · <span class="tg alerta">conferir com atenção: ${c.sugestao_alerta === 'preco' ? 'preço/desconto' : 'compatibilidade'}</span>` : ''}${c.sugestao_motivo ? `<br>${esc(c.sugestao_motivo)}` : ''}</div>`
         : c.sugestao_erro ? `<div class="ia">Sugestão da IA indisponível: ${esc(c.sugestao_erro)}</div>` : ''}
       ${c.resposta_erro ? `<div class="aviso-erro" style="color:#c62828;font-size:13px;margin-bottom:6px">Não enviou: ${esc(c.resposta_erro)}</div>` : ''}
-      <textarea id="txResp" placeholder="Escreva a resposta ao comprador">${esc(rasc)}</textarea>
+      <textarea id="txResp" data-livre placeholder="Escreva a resposta ao comprador">${esc(rasc)}</textarea>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap">
         <button class="btn discreto fino" type="button" id="btnSug">Pedir sugestão da IA</button>
         <button class="btn" type="button" id="btnEnviar"${c.resposta_pendente && !c.resposta_erro ? ' disabled' : ''}>${c.resposta_pendente && !c.resposta_erro ? 'Enviando…' : 'Enviar'}</button>

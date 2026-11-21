@@ -6,7 +6,7 @@
 <title>Perguntas do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611211209">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611211213">
 <style>
   .pq { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
   .pq img.ft { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--borda); }
@@ -67,10 +67,10 @@
   <div id="lista"><div class="cartao vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611211209"></script>
-<script src="../../assets/js/ui.js?v=202611211209"></script>
-<script src="../../assets/js/auth.js?v=202611211209"></script>
-<script src="../../assets/js/layout.js?v=202611211209"></script>
+<script src="../../assets/js/supabase.js?v=202611211213"></script>
+<script src="../../assets/js/ui.js?v=202611211213"></script>
+<script src="../../assets/js/auth.js?v=202611211213"></script>
+<script src="../../assets/js/layout.js?v=202611211213"></script>
 <script>
 /* =====================================================================
    Perguntas do Mercado Livre
@@ -161,7 +161,7 @@ function cartaoAberta(q) {
       ${anteriores.length ? `<div class="antes"><i>Este cliente já perguntou neste anúncio:</i>${anteriores.map(a => `<div>• ${esc(a.texto)}${a.resposta ? ` <i>→ ${esc(a.resposta)}</i>` : ''}</div>`).join('')}</div>` : ''}
       ${!pode ? '' : envi ? `<div class="estado">Enviando a resposta ao Mercado Livre… <i>${esc(q.resposta_pendente)}</i></div>` : `
       ${iaHtml(q)}
-      <textarea data-r="${q.id}" maxlength="2000" placeholder="Escreva a resposta…">${esc(RASC[q.id] ?? q.sugestao ?? saudacao())}</textarea>
+      <textarea data-r="${q.id}" data-livre maxlength="2000" placeholder="Escreva a resposta…">${esc(RASC[q.id] ?? q.sugestao ?? saudacao())}</textarea>
       ${sug.length ? `<div class="sug"><span>Respostas parecidas:</span>${sug.map(o => `<button type="button" data-sug="${o.x.id}" title="${esc(`P: ${o.x.texto}\nR: ${o.x.resposta}`)}">${esc(o.x.resposta)}</button>`).join('')}</div>` : ''}
       <div class="acoes">
         <div class="ind"><input data-ind="${q.id}" placeholder="Indicar outro anúncio: digite o carro ou produto…" autocomplete="off"><div class="res" hidden></div></div>
