@@ -6,7 +6,7 @@
 <title>Perguntas do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611211213">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611211216">
 <style>
   .pq { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
   .pq img.ft { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--borda); }
@@ -49,7 +49,10 @@
     <div><button class="btn fino" style="white-space:nowrap" type="button" id="btnBuscar" title="Confere agora se há perguntas novas no Mercado Livre">Buscar perguntas agora</button></div>
   </div>
   <div class="barra-ferr">
-    <div class="abas" id="abas"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="abas" id="abas"></div>
+      <div class="abas contas-ml" id="contasMl" title="Escolha a conta que quer responder"></div>
+    </div>
     <div class="ferr">
       <input id="fBusca" class="busca" type="search" placeholder="Buscar: pergunta, resposta, anúncio, MLB…" title="Palavras em qualquer ordem">
       <button class="btn fino" type="button" id="btnFiltros">Filtros<span class="nfilt" id="nFiltros"></span></button>
@@ -67,10 +70,10 @@
   <div id="lista"><div class="cartao vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611211213"></script>
-<script src="../../assets/js/ui.js?v=202611211213"></script>
-<script src="../../assets/js/auth.js?v=202611211213"></script>
-<script src="../../assets/js/layout.js?v=202611211213"></script>
+<script src="../../assets/js/supabase.js?v=202611211216"></script>
+<script src="../../assets/js/ui.js?v=202611211216"></script>
+<script src="../../assets/js/auth.js?v=202611211216"></script>
+<script src="../../assets/js/layout.js?v=202611211216"></script>
 <script>
 /* =====================================================================
    Perguntas do Mercado Livre
@@ -91,7 +94,7 @@ const RASC = {}, IND = {};               // rascunho e anúncio indicado de cada
 const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 const canalNome = id => CANAIS.find(c => c.id === id)?.nome || '';
 // conta do Mercado Livre da pergunta: nome do canal + apelido da conta no ML (ex.: MERCADO LIVRE 30 · NOXPEÇAS)
-let APELIDO = new Map();
+let APELIDO = new Map(), CONTA_URL = new URLSearchParams(location.search).get('conta');
 const contaNome = id => [canalNome(id), APELIDO.get(id)].filter(Boolean).join(' · ').toUpperCase();
 const contaTag = id => `<span class="conta-ml c${id}" title="Conta do Mercado Livre desta pergunta">${esc(contaNome(id) || 'CONTA ?')}</span>`;
 const semAc = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -109,7 +112,7 @@ async function carregar() {
     db.rpc('ml_status').then(r => r, () => ({ data: [] }))
   ]).then(([p, it, c, u, st]) => { APELIDO = new Map((st?.data || []).filter(x => x.nickname).map(x => [x.canal_id, x.nickname])); return [p, it, c, u]; });
   PERG = p; ITENS = new Map(it.map(x => [x.item_id, x])); CANAIS = c.data || []; USU = new Map((u.data || []).map(x => [x.id, x.nome]));
-  const sel = $('#fConta'), v = sel.value;
+  const sel = $('#fConta'), v = CONTA_URL ?? sel.value; CONTA_URL = null;   // ?conta=ID: veio da faixa de alerta
   sel.innerHTML = '<option value="">Todas</option>' + CANAIS.filter(x => PERG.some(q => q.canal_id === x.id)).map(x => `<option value="${x.id}">${esc(contaNome(x.id))}</option>`).join('');
   sel.value = v;
   desenhar();
@@ -196,6 +199,12 @@ function desenhar() {
   n.ia = todas.filter(q => q.sugestao && q.resposta && q.resposta_origem !== 'ml').length;
   $('#abas').innerHTML = ABAS.map(a => `<button type="button" class="aba${a.v === aba ? ' ativa' : ''}" data-aba="${a.v}">${a.n} <span class="n">${n[a.v]}</span></button>`).join('');
   $('#abas').querySelectorAll('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
+  // botões por conta (ML 30, ML 37…): o número é o de perguntas sem resposta
+  const contaSel = $('#fConta').value, abertasPor = new Map();
+  PERG.forEach(q => { if (q.situacao === 'UNANSWERED') abertasPor.set(q.canal_id, (abertasPor.get(q.canal_id) || 0) + 1); });
+  const contasCom = CANAIS.filter(x => PERG.some(q => q.canal_id === x.id));
+  $('#contasMl').innerHTML = contasCom.length < 2 ? '' : [{ id: '', nome: 'Todas as contas' }, ...contasCom].map(x => `<button type="button" class="aba${String(x.id) === contaSel ? ' ativa' : ''}" data-conta="${x.id}">${esc(x.id ? canalNome(x.id) : x.nome)}${x.id && abertasPor.get(x.id) ? ` <span class="n" title="sem resposta">${abertasPor.get(x.id)}</span>` : ''}</button>`).join('');
+  $('#contasMl').querySelectorAll('[data-conta]').forEach(b => b.onclick = () => { $('#fConta').value = b.dataset.conta; desenhar(); });
   const lista = filtrados(), foco = document.activeElement?.dataset?.r, caret = document.activeElement?.selectionStart;
   $('#contagem').textContent = `${lista.length.toLocaleString('pt-BR')} pergunta${lista.length === 1 ? '' : 's'}`;
   if (aba === 'ia') { $('#lista').innerHTML = painelIA(todas); $('#contagem').textContent = ''; ligarRevisao(); return; }
