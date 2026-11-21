@@ -510,3 +510,14 @@ document.addEventListener('click', ev => {
   const n = decodeURIComponent(a.getAttribute('href').split('#copiar=')[1] || ''); if (!n) return;
   navigator.clipboard?.writeText(n).then(() => aviso(`Número ${n} copiado: cole na busca da plataforma`), () => {});
 }, true);
+
+// Resposta ao cliente sem CAPS LOCK (soa grosseiro): palavra toda em MAIÚSCULAS vira minúscula e a 1ª letra de cada
+// frase (início, depois de . ! ? ou quebra de linha) fica maiúscula. Ficam como estão: links, códigos com número
+// (EA111, N20, 1.4, HB20), siglas conhecidas e palavras já escritas com só a inicial maiúscula (Astra, Golf).
+const SIGLAS_CLIENTE = new Set('NOX TSI TFSI GTI AMG BMW VW GM JAC AP RS SP RJ MG PR SC KN K&N MAF ML MLB SKU NF NFE PIX CV HP CC ABS UP THP TBI ECOBOOST CNPJ CPF OK'.split(' '));
+function semCaps(t) {
+  return String(t ?? '').split(/(https?:\/\/\S+)/).map((parte, i) => i % 2 ? parte : parte
+      .replace(/[\p{L}&]+[\p{L}\d&]*/gu, w => /\d/.test(w) || SIGLAS_CLIENTE.has(w.toUpperCase()) || w !== w.toUpperCase() ? w : w.toLowerCase())
+      .replace(/(^\s*|[.!?]\s+|\n\s*)(\p{L})/gu, (m, a, c) => a + c.toUpperCase()))
+    .join('');
+}

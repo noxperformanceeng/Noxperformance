@@ -6,9 +6,11 @@
 <title>Perguntas do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611201545">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611211219">
 <style>
-  .pq { display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .pq { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  /* nada pode alargar o cartão: texto longo, link e respostas parecidas quebram a linha dentro dele */
+  .pq > * { min-width: 0; } .pq .txt, .pq .ia, .pq .ia span, .pq .anun, .pq .antes, .resp-ml { overflow-wrap: anywhere; }
   .pq img.ft { width: 64px; height: 64px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--borda); }
   .pq .anun { font-size: 12.5px; color: var(--texto-suave); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .conta-ml { display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .3px; padding: 2px 8px; border-radius: 4px; color: #fff; background: #5b6770; }
@@ -49,7 +51,10 @@
     <div><button class="btn fino" style="white-space:nowrap" type="button" id="btnBuscar" title="Confere agora se há perguntas novas no Mercado Livre">Buscar perguntas agora</button></div>
   </div>
   <div class="barra-ferr">
-    <div class="abas" id="abas"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="abas" id="abas"></div>
+      <div class="abas contas-ml" id="contasMl" title="Escolha a conta que quer responder"></div>
+    </div>
     <div class="ferr">
       <input id="fBusca" class="busca" type="search" placeholder="Buscar: pergunta, resposta, anúncio, MLB…" title="Palavras em qualquer ordem">
       <button class="btn fino" type="button" id="btnFiltros">Filtros<span class="nfilt" id="nFiltros"></span></button>
@@ -67,10 +72,10 @@
   <div id="lista"><div class="cartao vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611201545"></script>
-<script src="../../assets/js/ui.js?v=202611201545"></script>
-<script src="../../assets/js/auth.js?v=202611201545"></script>
-<script src="../../assets/js/layout.js?v=202611201545"></script>
+<script src="../../assets/js/supabase.js?v=202611211219"></script>
+<script src="../../assets/js/ui.js?v=202611211219"></script>
+<script src="../../assets/js/auth.js?v=202611211219"></script>
+<script src="../../assets/js/layout.js?v=202611211219"></script>
 <script>
 /* =====================================================================
    Perguntas do Mercado Livre
@@ -91,7 +96,7 @@ const RASC = {}, IND = {};               // rascunho e anúncio indicado de cada
 const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 const canalNome = id => CANAIS.find(c => c.id === id)?.nome || '';
 // conta do Mercado Livre da pergunta: nome do canal + apelido da conta no ML (ex.: MERCADO LIVRE 30 · NOXPEÇAS)
-let APELIDO = new Map();
+let APELIDO = new Map(), CONTA_URL = new URLSearchParams(location.search).get('conta');
 const contaNome = id => [canalNome(id), APELIDO.get(id)].filter(Boolean).join(' · ').toUpperCase();
 const contaTag = id => `<span class="conta-ml c${id}" title="Conta do Mercado Livre desta pergunta">${esc(contaNome(id) || 'CONTA ?')}</span>`;
 const semAc = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -109,7 +114,7 @@ async function carregar() {
     db.rpc('ml_status').then(r => r, () => ({ data: [] }))
   ]).then(([p, it, c, u, st]) => { APELIDO = new Map((st?.data || []).filter(x => x.nickname).map(x => [x.canal_id, x.nickname])); return [p, it, c, u]; });
   PERG = p; ITENS = new Map(it.map(x => [x.item_id, x])); CANAIS = c.data || []; USU = new Map((u.data || []).map(x => [x.id, x.nome]));
-  const sel = $('#fConta'), v = sel.value;
+  const sel = $('#fConta'), v = CONTA_URL ?? sel.value; CONTA_URL = null;   // ?conta=ID: veio da faixa de alerta
   sel.innerHTML = '<option value="">Todas</option>' + CANAIS.filter(x => PERG.some(q => q.canal_id === x.id)).map(x => `<option value="${x.id}">${esc(contaNome(x.id))}</option>`).join('');
   sel.value = v;
   desenhar();
@@ -161,7 +166,7 @@ function cartaoAberta(q) {
       ${anteriores.length ? `<div class="antes"><i>Este cliente já perguntou neste anúncio:</i>${anteriores.map(a => `<div>• ${esc(a.texto)}${a.resposta ? ` <i>→ ${esc(a.resposta)}</i>` : ''}</div>`).join('')}</div>` : ''}
       ${!pode ? '' : envi ? `<div class="estado">Enviando a resposta ao Mercado Livre… <i>${esc(q.resposta_pendente)}</i></div>` : `
       ${iaHtml(q)}
-      <textarea data-r="${q.id}" maxlength="2000" placeholder="Escreva a resposta…">${esc(RASC[q.id] ?? q.sugestao ?? saudacao())}</textarea>
+      <textarea data-r="${q.id}" data-livre maxlength="2000" placeholder="Escreva a resposta…">${esc(RASC[q.id] ?? q.sugestao ?? saudacao())}</textarea>
       ${sug.length ? `<div class="sug"><span>Respostas parecidas:</span>${sug.map(o => `<button type="button" data-sug="${o.x.id}" title="${esc(`P: ${o.x.texto}\nR: ${o.x.resposta}`)}">${esc(o.x.resposta)}</button>`).join('')}</div>` : ''}
       <div class="acoes">
         <div class="ind"><input data-ind="${q.id}" placeholder="Indicar outro anúncio: digite o carro ou produto…" autocomplete="off"><div class="res" hidden></div></div>
@@ -196,6 +201,12 @@ function desenhar() {
   n.ia = todas.filter(q => q.sugestao && q.resposta && q.resposta_origem !== 'ml').length;
   $('#abas').innerHTML = ABAS.map(a => `<button type="button" class="aba${a.v === aba ? ' ativa' : ''}" data-aba="${a.v}">${a.n} <span class="n">${n[a.v]}</span></button>`).join('');
   $('#abas').querySelectorAll('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
+  // botões por conta (ML 30, ML 37…): o número é o de perguntas sem resposta
+  const contaSel = $('#fConta').value, abertasPor = new Map();
+  PERG.forEach(q => { if (q.situacao === 'UNANSWERED') abertasPor.set(q.canal_id, (abertasPor.get(q.canal_id) || 0) + 1); });
+  const contasCom = CANAIS.filter(x => PERG.some(q => q.canal_id === x.id));
+  $('#contasMl').innerHTML = contasCom.length < 2 ? '' : [{ id: '', nome: 'Todas as contas' }, ...contasCom].map(x => `<button type="button" class="aba${String(x.id) === contaSel ? ' ativa' : ''}" data-conta="${x.id}">${esc(x.id ? canalNome(x.id) : x.nome)}${x.id && abertasPor.get(x.id) ? ` <span class="n" title="sem resposta">${abertasPor.get(x.id)}</span>` : ''}</button>`).join('');
+  $('#contasMl').querySelectorAll('[data-conta]').forEach(b => b.onclick = () => { $('#fConta').value = b.dataset.conta; desenhar(); });
   const lista = filtrados(), foco = document.activeElement?.dataset?.r, caret = document.activeElement?.selectionStart;
   $('#contagem').textContent = `${lista.length.toLocaleString('pt-BR')} pergunta${lista.length === 1 ? '' : 's'}`;
   if (aba === 'ia') { $('#lista').innerHTML = painelIA(todas); $('#contagem').textContent = ''; ligarRevisao(); return; }
@@ -265,17 +276,6 @@ function painelIA(todas) {
         <td class="resp-ml">${esc(q.sugestao)}</td><td class="resp-ml">${esc(q.resposta)}</td><td>${celRev(q)}</td></tr>`).join('') || '<tr><td colspan="6">Nenhuma correção ainda.</td></tr>'}</tbody></table></div>`;
 }
 
-// Resposta ao cliente sem CAPS LOCK (soa grosseiro): se o texto vier quase todo em maiúsculas, passa para
-// minúsculas com a 1ª letra de cada frase maiúscula. Links, códigos com número (EA111, N20, 1.4) e siglas ficam como estão.
-const SIGLAS = new Set('NOX TSI TFSI GTI BMW VW GM AP RS KN K&N MAF ML MLB SKU NF PIX CV UP THP TBI ECOBOOST EA888 OK'.split(' '));
-function semCaps(t) {
-  const letras = t.replace(/https?:\/\/\S+/g, '').match(/\p{L}/gu) || [];
-  const maius = letras.filter(c => c !== c.toLowerCase()).length;
-  if (letras.length < 8 || maius / letras.length < 0.6) return t;   // escrito normal: não mexe
-  return t.split(/(https?:\/\/\S+)/).map((parte, i) => i % 2 ? parte : parte.replace(/[\p{L}&]+[\p{L}\d&]*/gu, w =>
-      /\d/.test(w) || SIGLAS.has(w.toUpperCase()) ? w : w.toLowerCase()).replace(/(^\s*|[.!?]\s+)(\p{L})/gu, (m, a, c) => a + c.toUpperCase()))
-    .join('');
-}
 
 // revisão do administrador (quem estava certo quando o vendedor mudou a sugestão)
 function ligarRevisao() {

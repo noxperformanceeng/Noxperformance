@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611201545';
+const VERSAO_TELAS = '202611211219';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -566,7 +566,7 @@ function alertaPerguntasML(comSom) {
   const notificar = (q, n) => {
     try { if (window.Notification && Notification.permission === 'granted') {
       const nt = new Notification(`${q.shopee ? 'Mensagem nova no chat da Shopee' : `Pergunta nova no ${contasPerg?.get(q.canal_id) || 'Mercado Livre'}`}${n > 1 ? ` (${n} esperando)` : ''}`, { body: q.texto, tag: 'nox-perguntas', requireInteraction: true });
-      nt.onclick = () => { window.focus(); document.querySelector('#alertaPerg a')?.click(); nt.close(); };
+      nt.onclick = () => { window.focus(); document.querySelector('#alertaPerg a.btn')?.click(); nt.close(); };
     } } catch {}
   };
   const titulo = n => {
@@ -596,9 +596,9 @@ function alertaPerguntasML(comSom) {
     if (!n) { faixa.hidden = true; document.body.classList.remove('com-alerta-perg'); primeira = false; return; }
     const velha = abertas[0];
     const porConta = [...abertas.reduce((m, q) => m.set(q.canal_id, (m.get(q.canal_id) || 0) + 1), new Map())]
-      .map(([c, k]) => `${k} no ${contasPerg.get(c) || 'ML'}`).join(' · ');
+      .map(([c, k]) => `<a href="${RAIZ}pages/comercial/${abertas.find(q => q.canal_id === c)?.shopee ? 'chat-shopee.html' : 'perguntas-ml.html?conta=' + c}" title="Responder só esta conta">${k} no ${esc(contasPerg.get(c) || 'ML')}</a>`).join(' · ');
     const oQue = !shopee.length ? `${n} pergunta${n > 1 ? 's' : ''} no Mercado Livre` : !nML ? `${n} conversa${n > 1 ? 's' : ''} no chat da Shopee` : `${n} clientes`;
-    faixa.innerHTML = `<span class="sino">🔔</span><b>${oQue} esperando resposta</b> <span class="ult">(${esc(porConta)})</span>
+    faixa.innerHTML = `<span class="sino">🔔</span><b>${oQue} esperando resposta</b> <span class="ult contas-faixa">(${porConta})</span>
       <span class="ult">${esc(contasPerg.get(velha.canal_id) || '')}: “${esc(String(velha.texto).slice(0, 90))}${velha.texto.length > 90 ? '…' : ''}” · há ${minutos(velha.criada_em)}</span>
       <a class="btn" href="${RAIZ}pages/comercial/${velha.shopee ? 'chat-shopee' : 'perguntas-ml'}.html">Responder agora</a>
 `;
