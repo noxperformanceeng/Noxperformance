@@ -6,7 +6,7 @@
 <title>Painel do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611212215">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611212256">
 <style>
   .kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -48,10 +48,10 @@
   <div id="corpo"><div class="vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611212215"></script>
-<script src="../../assets/js/ui.js?v=202611212215"></script>
-<script src="../../assets/js/auth.js?v=202611212215"></script>
-<script src="../../assets/js/layout.js?v=202611212215"></script>
+<script src="../../assets/js/supabase.js?v=202611212256"></script>
+<script src="../../assets/js/ui.js?v=202611212256"></script>
+<script src="../../assets/js/auth.js?v=202611212256"></script>
+<script src="../../assets/js/layout.js?v=202611212256"></script>
 <script>
 /* =====================================================================
    Painel do Mercado Livre (só leitura)
@@ -60,7 +60,7 @@
    · Curva ABC: rpc painel_ml_curva_abc(p_dias, p_canal), calculada sobre os pedidos de venda.
    ===================================================================== */
 const $ = s => document.querySelector(s);
-const ABAS = [{ v: 'anuncios', n: 'Anúncios' }, { v: 'abc', n: 'Curva ABC' }, { v: 'ads', n: 'Campanhas de ADS' }, { v: 'relatorio', n: 'Relatório da IA' }];
+const ABAS = [{ v: 'avisos', n: 'Avisos' }, { v: 'anuncios', n: 'Anúncios' }, { v: 'abc', n: 'Curva ABC' }, { v: 'ads', n: 'Campanhas de ADS' }, { v: 'relatorio', n: 'Relatório da IA' }];
 const RAPIDOS = [
   { v: '', n: 'Todos', f: () => true },
   { v: 'semvenda', n: 'Muita visita, nenhuma venda', f: x => x.visitas >= 60 && !x.vendas_qtd },
@@ -86,7 +86,7 @@ const PROMO = { DEAL: 'Campanha', MARKETPLACE_CAMPAIGN: 'Campanha ML', PRICE_DIS
   VOLUME: 'Leve mais', SELLER_CAMPAIGN: 'Campanha própria', SMART: 'Co-participação', PRE_NEGOTIATED: 'Pré-negociada', UNHEALTHY_STOCK: 'Estoque parado', SELLER_COUPON_CAMPAIGN: 'Cupom' };
 
 let CTX = null, CANAIS = new Map(), SEMANAS = [], LINHAS = [], ANT = new Map(), DIA = [], RELS = [], ABC = null;
-let canalAbc = '', aba = 'anuncios', rapido = '', busca = '', ordem = { campo: 'vendas_valor', asc: false }, diasAbc = 90, relSel = null;
+let AVISOS = [], verResolvidos = false, canalAbc = '', aba = new URLSearchParams(location.search).get('aba') || 'anuncios', rapido = '', busca = '', ordem = { campo: 'vendas_valor', asc: false }, diasAbc = 90, relSel = null;
 
 async function carregarSemanas() {
   const { data } = await db.from('ml_anuncio_semana').select('semana').order('semana', { ascending: false }).limit(1);
@@ -104,6 +104,8 @@ async function carregar() {
     db.from('ml_conta_dia').select('*').order('dia', { ascending: false }).limit(20),
     db.from('ml_relatorios').select('semana, texto, criado_em').order('semana', { ascending: false }).limit(12),
   ]);
+  const { data: av } = await db.from('ml_avisos').select('*').order('criado_em', { ascending: false }).limit(200);
+  AVISOS = av || [];
   CANAIS = new Map((cs || []).map(c => [c.id, c.nome]));
   SEMANAS = sems; RELS = rels || [];
   const ult = new Map(); for (const d of dia || []) if (!ult.has(d.canal_id)) ult.set(d.canal_id, d);
@@ -124,7 +126,7 @@ async function carregarSemana() {
     buscarTodos(() => db.from('ml_anuncio_semana').select(campos).eq('semana', s).order('item_id')),
     buscarTodos(() => db.from('ml_anuncio_semana').select('item_id, canal_id, visitas, vendas_qtd, vendas_valor, ads_custo, ads_receita').eq('semana', somaDias(s, -7)).order('item_id')),
   ]);
-  const num = x => { for (const k of ['preco', 'vendas_qtd', 'vendas_valor', 'ads_custo', 'ads_receita', 'ads_cliques', 'ads_impressoes']) x[k] = Number(x[k] || 0); if (x.qualidade != null) x.qualidade = Number(x.qualidade); x.visitas = x.visitas == null || Number(x.visitas) < 0 ? null : Number(x.visitas);   // -1 = ainda não lida no ML return x; };
+  const num = x => { for (const k of ['preco', 'vendas_qtd', 'vendas_valor', 'ads_custo', 'ads_receita', 'ads_cliques', 'ads_impressoes']) x[k] = Number(x[k] || 0); if (x.qualidade != null) x.qualidade = Number(x.qualidade); x.visitas = x.visitas == null || Number(x.visitas) < 0 ? null : Number(x.visitas); /* -1 = ainda não lida no ML */ return x; };
   ANT = new Map(b.map(x => [x.item_id, num(x)]));
   LINHAS = a.map(x => { num(x); x.ant = ANT.get(x.item_id) || null; return x; });
   // contas que têm números
@@ -160,14 +162,16 @@ function desenharKpis() {
 }
 
 function desenharAbas() {
-  $('#abas').innerHTML = ABAS.map(x => `<button type="button" class="aba${aba === x.v ? ' ativa' : ''}" data-aba="${x.v}">${x.n}</button>`).join('');
+  const nAv = AVISOS.filter(a => a.situacao === 'aberto').length;
+  $('#abas').innerHTML = ABAS.map(x => `<button type="button" class="aba${aba === x.v ? ' ativa' : ''}" data-aba="${x.v}">${x.n}${x.v === 'avisos' && nAv ? ` <span class="n">${nAv}</span>` : ''}</button>`).join('');
   $('#abas').querySelectorAll('button').forEach(b => b.onclick = async () => { aba = b.dataset.aba; desenhar(); if (aba === 'abc' && !ABC) await carregarAbc(); });
   $('#fSemana').style.display = aba === 'anuncios' ? '' : 'none';
-  $('#fConta').style.display = aba === 'abc' || aba === 'relatorio' ? 'none' : '';
+  $('#fConta').style.display = ['abc', 'relatorio', 'avisos'].includes(aba) ? 'none' : '';
 }
 
 function desenhar() {
   desenharAbas(); desenharKpis();
+  if (aba === 'avisos') return desenharAvisos();
   if (aba === 'anuncios') return desenharAnuncios();
   if (aba === 'abc') return desenharAbc();
   if (aba === 'ads') return desenharAds();
@@ -252,6 +256,38 @@ function desenharAds() {
       <td class="num">${N(x.cliques)}</td><td class="num">${N(x.impressoes)}</td>
       <td class="num">${x.gasto && !x.vendas ? '<span class="q-baixa">sem venda</span>' : x.acos != null ? Number(x.acos).toLocaleString('pt-BR') + '%' : ''}</td><td class="num">${x.acos_alvo != null ? Number(x.acos_alvo).toLocaleString('pt-BR') + '%' : ''}</td></tr>`).join('')
       || `<tr><td colspan="11" class="vazio">Sem campanhas lidas ainda.</td></tr>`}</tbody></table></div>`;
+}
+
+/* ---------- Avisos do analista (criados todo dia pelo servidor, regras de 8 semanas) ---------- */
+const TIPO_AV = { ads_caro: ['ADS caro', '#fde2e1'], visita_sem_venda: ['Visita sem venda', '#fff4d6'], queda_visitas: ['Queda de visitas', '#fde2e1'],
+  qualidade: ['Qualidade', '#eef0f3'], ads_oportunidade: ['Oportunidade de ADS', '#e3f4e8'], promocao: ['Promoção: Paulo decide', '#e8eefc'] };
+function desenharAvisos() {
+  const abertos = AVISOS.filter(a => a.situacao === 'aberto'), feitos = AVISOS.filter(a => a.situacao !== 'aberto').slice(0, 40);
+  // não redesenha enquanto alguém digita um comentário
+  if (document.activeElement?.matches?.('#corpo .av-obs')) return;
+  const cartao = a => `<div class="bloco aviso-ml" data-id="${a.id}">
+    <div class="bloco-cab"><h2><span class="tg" style="background:${(TIPO_AV[a.tipo] || [])[1] || '#eee'}">${esc((TIPO_AV[a.tipo] || [a.tipo])[0])}</span> ${esc(a.titulo)}</h2>
+      <a href="${linkMl(a.item_id)}" target="_blank" rel="noopener">Abrir no ML ↗</a></div>
+    <p class="relatorio" style="margin:0 0 8px">${esc(a.orientacao)}</p>
+    <p class="dica">${esc(a.item_id)} · ${esc(CANAIS.get(a.canal_id) || '')} · aviso de ${dataHoraBR(a.criado_em)}</p>
+    ${a.situacao === 'aberto' ? `<div class="ferr" style="gap:6px"><input class="av-obs" placeholder="Comentário (o que foi feito)" style="flex:1">
+      <button class="btn primario" data-r="feito">Feito</button><button class="btn" data-r="ignorado">Ignorar</button></div>`
+      : `<p class="dica"><b>${a.situacao === 'feito' ? 'Feito' : 'Ignorado'}</b> em ${dataHoraBR(a.resolvido_em)}${a.obs ? ' · ' + esc(a.obs) : ''} <button class="btn" data-r="aberto" style="margin-left:6px">Reabrir</button></p>`}
+  </div>`;
+  $('#corpo').innerHTML = `<p class="dica">Orientações do analista, criadas todo dia de manhã a partir dos números das últimas 8 semanas. Faça no Mercado Livre e marque <b>Feito</b> (com um comentário do que foi feito) ou <b>Ignorar</b>. Promoções: leve ao Paulo, ele decide. O mesmo caso não volta antes de 3 semanas.</p>
+    <div class="painel-col">${abertos.map(cartao).join('') || '<div class="cartao"><div class="vazio" style="padding:14px">Nenhum aviso para fazer agora. 👍</div></div>'}</div>
+    <p style="margin:16px 0 8px"><button class="btn" id="btnResolv">${verResolvidos ? 'Esconder' : 'Ver'} os já resolvidos (${feitos.length})</button></p>
+    ${verResolvidos ? `<div class="painel-col">${feitos.map(cartao).join('')}</div>` : ''}`;
+  $('#btnResolv').onclick = () => { verResolvidos = !verResolvidos; desenharAvisos(); };
+  $('#corpo').querySelectorAll('.aviso-ml button[data-r]').forEach(b => b.onclick = async () => {
+    const c = b.closest('.aviso-ml'), obs = c.querySelector('.av-obs')?.value || null;
+    b.disabled = true;
+    const { error } = await db.rpc('ml_aviso_resolver', { p_id: Number(c.dataset.id), p_situacao: b.dataset.r, p_obs: obs });
+    if (error) { b.disabled = false; return aviso(error.message, true); }
+    const a = AVISOS.find(x => x.id === Number(c.dataset.id)); if (a) { a.situacao = b.dataset.r; a.obs = obs; a.resolvido_em = new Date().toISOString(); }
+    aviso(b.dataset.r === 'aberto' ? 'Reaberto' : 'Marcado como ' + (b.dataset.r === 'feito' ? 'feito' : 'ignorado'));
+    desenhar();
+  });
 }
 
 /* ---------- Relatório da IA ---------- */

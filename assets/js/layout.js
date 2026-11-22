@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611212215';
+const VERSAO_TELAS = '202611212256';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
@@ -272,6 +272,8 @@ async function iniciarTela() {
   // Som só para quem atende o ML (perfil Comercial: Caio e Kleyton); os demais veem só o aviso visual.
   if (!window.frameElement) atualizacaoAutomatica();
   if (ctx.pode('perguntas_ml', 'alterar')) alertaPerguntasML(ctx.usuario?.perfil_id === 'comercial');
+  // Avisos do analista do ML: contador no menu para quem vê o painel; faixa amarela + som para o analista (quem não é administrador)
+  if (ctx.pode('painel_ml')) alertaAnalistaML(!ctx.admin);
   // Venda nova: cartão verde + som para Comercial e Expedição
   if (['comercial', 'expedicao'].includes(ctx.usuario?.perfil_id)) alertaVendas();
   // Menu lateral recolhível (lembra a escolha)
@@ -558,14 +560,26 @@ function montarEmbutido(ctx, usaEmpresa) {
 }
 
 /* ---------- Alerta de perguntas do Mercado Livre (só na janela principal) ---------- */
+// Faixas de alerta no topo (perguntas em vermelho, avisos do analista em amarelo), uma embaixo da outra.
+// O resto da tela desce exatamente a altura delas e encolhe para caber na janela.
+function faixasTopo() {
+  let w = document.getElementById('faixasTopo');
+  if (!w) { w = document.createElement('div'); w.id = 'faixasTopo'; w.className = 'faixas-topo nao-imprimir'; document.body.appendChild(w); window.addEventListener('resize', medirFaixas); }
+  return w;
+}
+function medirFaixas() {
+  requestAnimationFrame(() => {
+    const w = document.getElementById('faixasTopo'), vis = !!w && [...w.children].some(f => !f.hidden);
+    document.body.classList.toggle('com-alerta-perg', vis);
+    if (vis) document.documentElement.style.setProperty('--alerta-h', w.offsetHeight + 'px');
+  });
+}
+
 function alertaPerguntasML(comSom) {
   const vistas = new Set(); let primeira = true, ultimoSom = 0, piscaTitulo = null;
   const tituloOrig = document.title;
-  const faixa = document.createElement('div'); faixa.id = 'alertaPerg'; faixa.className = 'alerta-perg nao-imprimir'; faixa.hidden = true;
-  document.body.appendChild(faixa);
-  // altura real da faixa (1 ou 2 linhas): o resto da tela desce exatamente isso e encolhe para caber na janela
-  const medirFaixa = () => requestAnimationFrame(() => { if (!faixa.hidden) document.documentElement.style.setProperty('--alerta-h', faixa.offsetHeight + 'px'); });
-  window.addEventListener('resize', medirFaixa);
+  const faixa = document.createElement('div'); faixa.id = 'alertaPerg'; faixa.className = 'alerta-perg'; faixa.hidden = true;
+  faixasTopo().prepend(faixa);
   const tocar = () => { SOM.tocar([[880, 0], [880, .28], [880, .56]], 'square', .25, .22); ultimoSom = Date.now(); };   // três bipes fortes
   const notificar = (q, n) => {
     try { if (window.Notification && Notification.permission === 'granted') {
@@ -597,7 +611,7 @@ function alertaPerguntasML(comSom) {
       a.querySelectorAll('.cont-perg').forEach(x => x.remove());
       if (k) a.insertAdjacentHTML('beforeend', `<span class="cont-perg n-aprov pisca" title="${k} sem resposta">${k}</span>`);
     }));
-    if (!n) { faixa.hidden = true; document.body.classList.remove('com-alerta-perg'); primeira = false; return; }
+    if (!n) { faixa.hidden = true; medirFaixas(); primeira = false; return; }
     const velha = abertas[0];
     const porConta = [...abertas.reduce((m, q) => m.set(q.canal_id, (m.get(q.canal_id) || 0) + 1), new Map())]
       .map(([c, k]) => `<a href="${RAIZ}pages/comercial/${abertas.find(q => q.canal_id === c)?.shopee ? 'chat-shopee.html' : 'perguntas-ml.html?conta=' + c}" title="Responder só esta conta">${k} no ${esc(contasPerg.get(c) || 'ML')}</a>`).join(' · ');
@@ -606,7 +620,7 @@ function alertaPerguntasML(comSom) {
       <span class="ult">${esc(contasPerg.get(velha.canal_id) || '')}: “${esc(String(velha.texto).slice(0, 90))}${velha.texto.length > 90 ? '…' : ''}” · há ${minutos(velha.criada_em)}</span>
       <a class="btn" href="${RAIZ}pages/comercial/${velha.shopee ? 'chat-shopee' : 'perguntas-ml'}.html">Responder agora</a>
 `;
-    faixa.hidden = false; document.body.classList.add('com-alerta-perg'); medirFaixa();
+    faixa.hidden = false; medirFaixas();
     // som e aviso do computador: na hora, a cada pergunta nova; e de novo a cada 2 min enquanto ninguém responder
     if (novas.length && !primeira) notificar(novas[novas.length - 1], n);
     if (comSom && (novas.length && !primeira || Date.now() - ultimoSom > 2 * 6e4)) tocar();
@@ -614,6 +628,41 @@ function alertaPerguntasML(comSom) {
   }
   conferir(); setInterval(conferir, 30000);
   if (typeof ouvirMudancas === 'function') ouvirMudancas(['ml_perguntas'], conferir, { auxiliar: true, mesmoOculto: true });
+}
+
+/* ---------- Avisos do analista do Mercado Livre (faixa amarela) ----------
+   O servidor cria os avisos todo dia (ml_avisos, regras de 8 semanas); aparecem na hora, com som e aviso do
+   computador, até o analista marcar "Feito" ou "Ignorar" na aba Avisos do Painel do ML. */
+function alertaAnalistaML(comFaixa) {
+  const vistos = new Set(); let primeira = true;
+  const faixa = document.createElement('div'); faixa.id = 'alertaAnalista'; faixa.className = 'alerta-perg alerta-analista'; faixa.hidden = true;
+  if (comFaixa) faixasTopo().appendChild(faixa);
+  async function conferir() {
+    const { data, error } = await db.from('ml_avisos').select('id, titulo, orientacao, criado_em').eq('situacao', 'aberto').order('criado_em');
+    if (error) return;
+    const n = (data || []).length, novos = (data || []).filter(a => !vistos.has(a.id)); (data || []).forEach(a => vistos.add(a.id));
+    document.querySelectorAll('.menu a.item[data-mod="painel_ml"]').forEach(a => {
+      a.querySelectorAll('.cont-perg').forEach(x => x.remove());
+      if (n) a.insertAdjacentHTML('beforeend', `<span class="cont-perg n-aprov" title="${n} aviso(s) do analista">${n}</span>`);
+    });
+    if (!comFaixa) return;
+    if (!n) { faixa.hidden = true; medirFaixas(); primeira = false; return; }
+    const a = data[0];
+    faixa.innerHTML = `<span class="sino">📊</span><b>${n} orientaç${n > 1 ? 'ões' : 'ão'} do analista do Mercado Livre para fazer</b>
+      <span class="ult">${esc(a.titulo)}</span>
+      <a class="btn" href="${RAIZ}pages/comercial/painel-ml.html?aba=avisos">Ver agora</a>`;
+    faixa.hidden = false; medirFaixas();
+    if (novos.length && !primeira) {
+      SOM.tocar([[660, 0], [880, .18]], 'triangle', .3, .3);   // dois toques suaves (menos que o das perguntas)
+      try { if (window.Notification && Notification.permission === 'granted') {
+        const nt = new Notification(`Aviso do analista do ML${n > 1 ? ` (${n} para fazer)` : ''}`, { body: novos[novos.length - 1].titulo, tag: 'nox-analista-ml' });
+        nt.onclick = () => { window.focus(); faixa.querySelector('a.btn')?.click(); nt.close(); };
+      } } catch {}
+    }
+    primeira = false;
+  }
+  conferir(); setInterval(conferir, 120000);
+  if (typeof ouvirMudancas === 'function') ouvirMudancas(['ml_avisos'], conferir, { auxiliar: true, mesmoOculto: true });
 }
 
 /* ---------- Aviso de venda nova (Comercial e Expedição) ---------- */

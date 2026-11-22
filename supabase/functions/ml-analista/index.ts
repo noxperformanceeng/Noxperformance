@@ -227,6 +227,63 @@ REGRA DE OURO: não decida nada com uma semana só. Peça de R$ 500 a R$ 2.000 v
   return { ok: true, semana: ant };
 }
 
+// Avisos do analista (todo dia, depois da leitura): as regras olham 8 semanas, nunca uma semana só.
+// Cada caso vira um aviso com a orientação; o mesmo anúncio + tipo não volta antes de 3 semanas.
+async function avisos(db: Db) {
+  const seg = segundaDe(hojeSP()), ant = somaDias(seg, -7);
+  const ler = async (s: string) => { const out: any[] = []; for (let de = 0; ; de += 1000) { const { data } = await db.from('ml_anuncio_semana').select('*').eq('semana', s).range(de, de + 999); out.push(...(data ?? [])); if ((data ?? []).length < 1000) return out; } };
+  const semanas: any[][] = []; for (let k = 0; k < 8; k++) semanas.push(await ler(somaDias(ant, -7 * k)));   // [0] = última semana fechada
+  const atual = await ler(seg);
+  if (!semanas[0].length) return { erro: 'sem números' };
+  type H = { un: number; rs: number; vis: number; ads: number; adsrec: number; cliq: number; visSem: (number | null)[] };
+  const hist = new Map<string, H>();
+  semanas.forEach((xs, k) => xs.forEach(x => {
+    const h = hist.get(x.item_id) ?? { un: 0, rs: 0, vis: 0, ads: 0, adsrec: 0, cliq: 0, visSem: Array(8).fill(null) };
+    h.un += Number(x.vendas_qtd || 0); h.rs += Number(x.vendas_valor || 0); h.vis += Math.max(Number(x.visitas || 0), 0);
+    h.ads += Number(x.ads_custo || 0); h.adsrec += Number(x.ads_receita || 0); h.cliq += Number(x.ads_cliques || 0);
+    h.visSem[k] = x.visitas < 0 ? null : Number(x.visitas || 0); hist.set(x.item_id, h);
+  }));
+  const brl = (v: number) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const pc = (v: number) => (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  const curto = (t: string) => String(t || '').replace(/\s*\|.*$/, '').slice(0, 60);
+  const novos: any[] = [];
+  const add = (x: any, tipo: string, peso: number, titulo: string, orientacao: string, numeros: Record<string, unknown>) =>
+    novos.push({ item_id: x.item_id, canal_id: x.canal_id, tipo, semana: ant, titulo: `${titulo}: ${curto(x.titulo)}`, orientacao, numeros, peso });
+  for (const x of atual.length ? atual : semanas[0]) {
+    const h = hist.get(x.item_id); if (!h) continue;
+    const conv = h.vis ? h.un / h.vis : 0, acos = h.adsrec ? h.ads / h.adsrec : null, n8 = { vendas_8s: h.un, faturamento_8s: Math.round(h.rs), visitas_8s: h.vis, conversao_8s: pc(conv),
+      ads_gasto_8s: Math.round(h.ads), ads_vendeu_8s: Math.round(h.adsrec), acos_8s: acos == null ? null : pc(acos), cliques_8s: h.cliq, preco: Number(x.preco), qualidade: x.qualidade };
+    // 1) ADS caro
+    if (h.ads >= 80 && h.cliq >= 60 && (acos == null || acos > 0.08))
+      add(x, 'ads_caro', h.ads, 'ADS caro', `Em 8 semanas o ADS gastou ${brl(h.ads)} e vendeu ${brl(h.adsrec)} (ACOS ${acos == null ? 'sem venda' : pc(acos)}, ${h.cliq} cliques). Baixe a meta de ACOS da campanha ou o lance deste anúncio (não pause de cara). Se em 2 a 3 semanas continuar acima de 8%, aí sim pause o ADS dele.`, n8);
+    // 2) muita visita e pouca venda
+    if (h.vis >= 300 && conv < 0.004)
+      add(x, 'visita_sem_venda', h.vis * Number(x.preco || 0) / 1000, 'Muita visita, pouca venda', `${h.vis} visitas em 8 semanas e só ${h.un} venda(s) (conversão ${pc(conv)}). O problema é o anúncio, não o ADS: compare preço com os concorrentes e com os nossos anúncios parecidos, melhore fotos e título, coloque vídeo e parcelamento sem juros.${x.qualidade_falta ? ` O ML pede: ${x.qualidade_falta}.` : ''}`, n8);
+    // 3) queda forte de visitas (última semana fechada x média das 4 anteriores)
+    const prev = h.visSem.slice(1, 5).filter((v): v is number => v != null), media = prev.length >= 3 ? prev.reduce((a, b) => a + b, 0) / prev.length : 0, ult = h.visSem[0];
+    if (ult != null && media >= 40 && ult < 0.5 * media)
+      add(x, 'queda_visitas', media * Number(x.preco || 0) / 100, 'Queda de visitas', `Caiu de ${Math.round(media)} visitas por semana (média das 4 anteriores) para ${ult} na semana passada. Antes de mexer no preço, confira no ML: o anúncio está ativo? tem estoque? saiu da campanha de ADS? perdeu o Full ou mudou o frete? algum concorrente baixou o preço?`, { ...n8, visitas_semana: ult, media_4s: Math.round(media) });
+    // 4) qualidade baixa em anúncio que importa
+    if (x.qualidade != null && x.qualidade < 70 && (h.un >= 3 || h.vis >= 200))
+      add(x, 'qualidade', h.rs / 10, 'Qualidade baixa', `Nota ${x.qualidade} de 100 no ML num anúncio com ${h.un} vendas e ${h.vis} visitas em 8 semanas. Faça o que o ML pede${x.qualidade_falta ? `: ${x.qualidade_falta}` : ' (veja em Qualidade no ML)'}. Nota mais alta = mais exposição.`, n8);
+    // 5) vende bem e quase sem ADS
+    if (h.vis >= 80 && conv >= 0.02 && h.un >= 5 && h.cliq < 40)
+      add(x, 'ads_oportunidade', h.rs / 5, 'Vende bem, pouco ADS', `Converte ${pc(conv)} (${h.un} vendas em ${h.vis} visitas) e teve só ${h.cliq} cliques de ADS em 8 semanas. Coloque ou aumente o ADS aos poucos e reveja em 2 semanas.`, n8);
+    // 6) convite de promoção em anúncio que vende: o Paulo decide
+    const conv8 = (x.promocoes ?? []).filter((p: any) => p.situacao === 'candidate' && p.preco && p.vendedor_pct != null);
+    if (conv8.length && h.un >= 3)
+      add(x, 'promocao', h.rs / 20, 'Promoção para decidir', `Convites do ML para este anúncio (${h.un} vendas em 8 semanas, preço hoje ${brl(Number(x.preco))}): ${conv8.map((p: any) => `${p.nome || p.tipo}: preço R$ ${p.preco}, NOX paga ${p.vendedor_pct}% e ML ${p.meli_pct}%`).join(' · ')}. Leve ao Paulo com a sua sugestão: relâmpago costuma custar caro; prefira a opção em que a NOX paga menos.`, { ...n8, convites: conv8 });
+  }
+  // não repetir: mesmo anúncio + tipo com aviso nas últimas 3 semanas (aberto, feito ou ignorado)
+  const { data: ja } = await db.from('ml_avisos').select('item_id, tipo').gte('criado_em', new Date(Date.now() - 21 * 864e5).toISOString());
+  const tem = new Set((ja ?? []).map(a => a.item_id + ':' + a.tipo));
+  const { count: abertos } = await db.from('ml_avisos').select('id', { count: 'exact', head: true }).eq('situacao', 'aberto');
+  const vaga = Math.max(0, 25 - (abertos ?? 0));          // no máximo 25 abertos: o analista dá conta
+  const lote = novos.filter(a => !tem.has(a.item_id + ':' + a.tipo)).sort((a, b) => b.peso - a.peso).slice(0, Math.min(vaga, 10)).map(({ peso, ...a }) => a);
+  if (lote.length) { const { error } = await db.from('ml_avisos').upsert(lote, { onConflict: 'item_id,tipo,semana', ignoreDuplicates: true }); if (error) throw error; }
+  return { candidatos: novos.length, criados: lote.length };
+}
+
 async function sondarVarios(db: Db, canal: number, caminhos: { c: string; h?: Record<string, string> }[]) {
   const { data: conta } = await db.from('ml_contas').select('*').eq('canal_id', canal).maybeSingle();
   if (!conta) return { erro: 'conta não encontrada' };
@@ -250,6 +307,7 @@ Deno.serve(async req => {
   try {
     if (corpo.acao === 'sondar') return resp(await sondarVarios(db, Number(corpo.canal_id), corpo.caminhos ?? []));
     if (corpo.acao === 'relatorio') return resp(await relatorio(db));
+    if (corpo.acao === 'avisos') return resp(await avisos(db));
     if (corpo.acao === 'reparar') {
       const t = reparar(db).then(r => console.log('reparar', JSON.stringify(r))).catch(e => console.error('reparar', e));
       // @ts-ignore EdgeRuntime existe no Supabase

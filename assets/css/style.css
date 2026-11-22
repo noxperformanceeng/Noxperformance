@@ -678,7 +678,8 @@ body.embutido:not([data-emp="0"]) .empresa-chips .ec-info { color: var(--emp-cor
 @media (max-width: 760px) { body.embutido .empresa-chips > span:first-child, body.embutido .empresa-chips button { display: none; } body.embutido .empresa-chips .ec-info { margin-left: 0; } }
 
 /* Alerta de perguntas do Mercado Livre: faixa vermelha fixa no topo, em qualquer tela */
-.alerta-perg { position: fixed; top: 0; left: 0; right: 0; z-index: 9999; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+.faixas-topo { position: fixed; top: 0; left: 0; right: 0; z-index: 9999; }
+.alerta-perg { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
   padding: 10px 16px; background: #c0262d; color: #fff; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.25); animation: alerta-perg 1.2s ease-in-out infinite; }
 .alerta-perg .sino { font-size: 22px; animation: pisca-alerta 1s ease-in-out infinite; }
 .alerta-perg .ult { font-size: 13px; opacity: .92; flex: 1 1 260px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -689,7 +690,10 @@ body.embutido:not([data-emp="0"]) .empresa-chips .ec-info { color: var(--emp-cor
 .contas-ml:empty { display: none; }
 @keyframes alerta-perg { 0%, 100% { background: #c0262d; } 50% { background: #e0353d; } }
 @media (prefers-reduced-motion: reduce) { .alerta-perg, .alerta-perg .sino { animation: none; } }
-.alerta-perg[hidden] { display: none; }   /* sem pergunta esperando: some de vez (o display:flex acima vencia o hidden) */
+.alerta-perg[hidden] { display: none; }
+.alerta-analista { background: #f2b705; color: #2b2100; animation: none; font-size: 14px; padding: 8px 16px; }
+.alerta-analista .sino { animation: none; font-size: 18px; }
+.alerta-analista .btn { color: #6b4e00; }   /* sem pergunta esperando: some de vez (o display:flex acima vencia o hidden) */
 /* Com a faixa vermelha no topo, o resto da tela desce exatamente a altura dela (a faixa pode ter 1 ou 2 linhas):
    o sistema encolhe para caber na janela, senão o rodapé das janelas e telas fica escondido embaixo */
 body.com-alerta-perg { padding-top: var(--alerta-h, 52px); }
