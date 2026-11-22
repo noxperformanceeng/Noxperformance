@@ -100,10 +100,13 @@ async function detalhes(db: Db, conta: Conta, seg: string, ids: string[], pos: n
   const token = await tokenValido(db, conta), fim = fimSemana(seg), atual = seg === segundaDe(hojeSP());
   const { data: ja } = await db.from('ml_anuncio_semana').select('item_id, qualidade').eq('semana', seg).eq('canal_id', conta.canal_id);
   const temQual = new Set((ja ?? []).filter(x => x.qualidade != null).map(x => x.item_id));
-  const resto = ids.slice(pos);
-  const feitos = await emLote(resto, 8, async id => {
-    const v = await mlGet(token, `/items/${id}/visits?date_from=${seg}&date_to=${fim}`).catch(() => null);
-    const up: Record<string, unknown> = { item_id: id, semana: seg, canal_id: conta.canal_id, visitas: v?.total_visits ?? 0 };
+  const resto = ids.slice(pos), falhou: string[] = [];
+  const feitos = await emLote(resto, 5, async id => {
+    // erro na leitura (ex.: limite de consultas do ML) não vira "0 visitas": grava -1 (= não lida) e lê de novo depois
+    const v = await mlGet(token, `/items/${id}/visits?date_from=${seg}&date_to=${fim}`).catch(() => undefined);
+    if (v === undefined) falhou.push(id);
+    const up: Record<string, unknown> = { item_id: id, semana: seg, canal_id: conta.canal_id };
+    up.visitas = v === undefined ? -1 : v?.total_visits ?? 0;
     if (atual && !temQual.has(id)) {
       const q = await mlGet(token, `/item/${id}/performance`).catch(() => null);
       if (q) {
@@ -119,7 +122,32 @@ async function detalhes(db: Db, conta: Conta, seg: string, ids: string[], pos: n
     const { error } = await db.from('ml_anuncio_semana').update(up).eq('item_id', id).eq('semana', seg);
     if (error) throw error;
   });
+  await novamente(db, token, seg, falhou);
   return pos + feitos;
+}
+
+// segunda tentativa, devagar, das visitas que o ML recusou
+async function novamente(db: Db, token: string, seg: string, ids: string[]) {
+  const fim = fimSemana(seg);
+  for (const id of ids) {
+    if (!sobra()) return;
+    await new Promise(ok => setTimeout(ok, 400));
+    const v = await mlGet(token, `/items/${id}/visits?date_from=${seg}&date_to=${fim}`).catch(() => undefined);
+    if (v !== undefined) await db.from('ml_anuncio_semana').update({ visitas: v?.total_visits ?? 0 }).eq('item_id', id).eq('semana', seg);
+  }
+}
+
+// reparar: lê as visitas que ficaram sem ler (-1: leitura recusada pelo ML)
+async function reparar(db: Db) {
+  const lista = await contas(db), { data } = await db.from('ml_anuncio_semana').select('item_id, semana, canal_id').lt('visitas', 0).limit(400);
+  for (const c of lista) {
+    const meus = (data ?? []).filter(x => x.canal_id === c.canal_id); if (!meus.length) continue;
+    const token = await tokenValido(db, c);
+    for (const s of [...new Set(meus.map(x => x.semana))]) await novamente(db, token, s, meus.filter(x => x.semana === s).map(x => x.item_id));
+  }
+  const { count } = await db.from('ml_anuncio_semana').select('item_id', { count: 'exact', head: true }).lt('visitas', 0);
+  if (count && (data ?? []).length === 400) await continuar({ acao: 'reparar' });
+  return { faltam: count ?? 0 };
 }
 
 async function coletar(db: Db, corpo: { semanas?: number; conta?: number; seg?: string; fila?: string[]; pos?: number; ids?: string[] }) {
@@ -130,6 +158,7 @@ async function coletar(db: Db, corpo: { semanas?: number; conta?: number; seg?: 
     const pos = await detalhes(db, conta, corpo.seg, corpo.ids, corpo.pos ?? 0);
     if (pos < corpo.ids.length) { await continuar({ ...corpo, pos }); return { conta: conta.id, semana: corpo.seg, ate: pos, de: corpo.ids.length }; }
     if (corpo.fila?.length) await continuar({ acao: 'coletar', fila: corpo.fila });
+    else await continuar({ acao: 'reparar' });
     return { conta: conta.id, semana: corpo.seg, fim: true };
   }
   // fila de trabalho: [conta:semana, ...] (semana corrente primeiro; histórico depois)
@@ -153,7 +182,7 @@ async function relatorio(db: Db) {
   const { data: canais } = await db.from('canais_venda').select('id, nome');
   const nomeCanal = (id: number) => canais?.find(c => c.id === id)?.nome ?? `canal ${id}`;
   const ler = async (s: string) => { const out: any[] = []; for (let de = 0; ; de += 1000) { const { data } = await db.from('ml_anuncio_semana').select('*').eq('semana', s).range(de, de + 999); out.push(...(data ?? [])); if ((data ?? []).length < 1000) return out; } };
-  const [a, b] = await Promise.all([ler(ant), ler(ant2)]);
+  const [a, b] = (await Promise.all([ler(ant), ler(ant2)])).map(xs => xs.map(x => ({ ...x, visitas: x.visitas < 0 ? null : x.visitas })));
   if (!a.length) return { erro: 'sem números da semana passada' };
   const antes = new Map(b.map(x => [x.item_id, x]));
   const tot = (xs: any[], c: number) => { const f = xs.filter(x => x.canal_id === c); const s = (k: string) => f.reduce((t, x) => t + Number(x[k] || 0), 0);
@@ -161,7 +190,7 @@ async function relatorio(db: Db) {
   const resumo = [...new Set(a.map(x => x.canal_id))].map(c => ({ conta: nomeCanal(c), semana: tot(a, c), semana_anterior: tot(b, c) }));
   const fmt = (x: any) => `${x.item_id} | ${nomeCanal(x.canal_id)} | ${x.titulo} | R$ ${x.preco}${x.no_full ? ' | FULL' : ''} | visitas ${x.visitas} (antes ${antes.get(x.item_id)?.visitas ?? '-'}) | vendas ${x.vendas_qtd} un R$ ${x.vendas_valor} (antes ${antes.get(x.item_id)?.vendas_valor ?? '-'}) | ADS gasto R$ ${x.ads_custo} vendas R$ ${x.ads_receita}${x.qualidade != null ? ` | qualidade ${x.qualidade}` : ''}`;
   const top = [...a].sort((x, y) => y.vendas_valor - x.vendas_valor).slice(0, 25).map(fmt).join('\n');
-  const caiu = a.filter(x => (antes.get(x.item_id)?.visitas ?? 0) >= 30 && x.visitas < 0.6 * antes.get(x.item_id).visitas).sort((x, y) => y.visitas - x.visitas).slice(0, 15).map(fmt).join('\n');
+  const caiu = a.filter(x => x.visitas != null && (antes.get(x.item_id)?.visitas ?? 0) >= 30 && x.visitas < 0.6 * antes.get(x.item_id).visitas).sort((x, y) => y.visitas - x.visitas).slice(0, 15).map(fmt).join('\n');
   const semVenda = a.filter(x => x.visitas >= 60 && !Number(x.vendas_qtd)).sort((x, y) => y.visitas - x.visitas).slice(0, 15).map(fmt).join('\n');
   const adsRuim = a.filter(x => x.ads_custo >= 20 && (x.ads_receita === 0 || x.ads_custo / x.ads_receita > 0.15)).sort((x, y) => y.ads_custo - x.ads_custo).slice(0, 15).map(fmt).join('\n');
   const { data: contaDia } = await db.from('ml_conta_dia').select('*').order('dia', { ascending: false }).limit(4);
@@ -169,15 +198,15 @@ async function relatorio(db: Db) {
   const contexto = `RESUMO POR CONTA (semana de ${ant} a ${somaDias(ant, 6)} x semana anterior)\n${JSON.stringify(resumo)}\n\nREPUTAÇÃO E CAMPANHAS DE ADS (último dia lido)\n${JSON.stringify(contaDia ?? [])}\n\nANÚNCIOS QUE MAIS VENDERAM\n${top}\n\nANÚNCIOS QUE PERDERAM VISITAS\n${caiu || '(nenhum)'}\n\nANÚNCIOS COM MUITA VISITA E NENHUMA VENDA\n${semVenda || '(nenhum)'}\n\nANÚNCIOS COM ADS CARO (gasto alto e pouca venda pelo ADS)\n${adsRuim || '(nenhum)'}${abc?.length ? `\n\nCURVA A (90 dias)\n${abc.filter((x: any) => x.curva === 'A').slice(0, 30).map((x: any) => `${x.codigo} ${x.descricao} R$ ${x.faturamento}`).join('\n')}` : ''}`;
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST', headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: Deno.env.get('ANTHROPIC_MODELO') || 'claude-sonnet-5-5', max_tokens: 2500,
+    body: JSON.stringify({ model: Deno.env.get('ANTHROPIC_MODELO') || 'claude-sonnet-5-5', max_tokens: 8000,
       system: `Você é o analista sênior de marketplace da NOX (Nox Performance Engineering, peças de performance em inox: intakes, defletores, ponteiras, abafadores), que vende no Mercado Livre em duas contas. Escreva para o Paulo, o dono, em português simples e direto (ele não é técnico).
-Formato: título curto; 3 a 5 linhas de resumo da semana (vendas, visitas, ADS, comparando com a semana anterior, por conta); depois "O que fazer esta semana": no máximo 7 ações, da mais importante para a menos, cada uma com o anúncio (MLB e nome curto), o número que motivou e o ganho esperado. Use só os números fornecidos; não invente. Ações típicas: pausar ou baixar orçamento de ADS caro; pôr ADS em anúncio que converte bem; revisar preço/foto/título de anúncio com muita visita e nenhuma venda; investigar queda de visitas; aceitar ou recusar promoção; cuidar da reputação. Nada é alterado sozinho: são sugestões. Texto puro com marcadores "-", sem tabelas.`,
+Formato: título curto; 3 a 5 linhas de resumo da semana (vendas, visitas, ADS, comparando com a semana anterior, por conta); depois "O que fazer esta semana": no máximo 7 ações, da mais importante para a menos, cada uma com o anúncio (MLB e nome curto), o número que motivou e o ganho esperado. Use só os números fornecidos; não invente. Ações típicas: pausar ou baixar orçamento de ADS caro; pôr ADS em anúncio que converte bem; revisar preço/foto/título de anúncio com muita visita e nenhuma venda; investigar queda de visitas; aceitar ou recusar promoção; cuidar da reputação. Nada é alterado sozinho: são sugestões. Texto puro com marcadores "-", sem tabelas e sem markdown (nada de #, ** ou _). Visitas vazias (null) = não lidas: não tire conclusão delas.`,
       messages: [{ role: 'user', content: contexto }] })
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`IA (${r.status}): ${j?.error?.message ?? ''}`);
   const texto = (j.content ?? []).filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n').trim();
-  if (!texto) throw new Error('IA não devolveu o relatório');
+  if (!texto) throw new Error(`IA não devolveu o relatório (${j.stop_reason ?? '?'}: ${(j.content ?? []).map((c: any) => c.type).join(',')})`);
   await db.from('ml_relatorios').upsert({ semana: ant, texto, criado_em: new Date().toISOString() }, { onConflict: 'semana' });
   return { ok: true, semana: ant };
 }
@@ -205,6 +234,12 @@ Deno.serve(async req => {
   try {
     if (corpo.acao === 'sondar') return resp(await sondarVarios(db, Number(corpo.canal_id), corpo.caminhos ?? []));
     if (corpo.acao === 'relatorio') return resp(await relatorio(db));
+    if (corpo.acao === 'reparar') {
+      const t = reparar(db).then(r => console.log('reparar', JSON.stringify(r))).catch(e => console.error('reparar', e));
+      // @ts-ignore EdgeRuntime existe no Supabase
+      if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(t); else await t;
+      return resp({ ok: true });
+    }
     if (corpo.acao === 'coletar') {
       // trabalho longo: responde já e continua em segundo plano
       const tarefa = coletar(db, corpo).then(r => console.log('coletar', JSON.stringify(r))).catch(e => console.error('coletar', e));

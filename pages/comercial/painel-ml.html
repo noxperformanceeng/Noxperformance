@@ -6,7 +6,7 @@
 <title>Painel do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611212152">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611212215">
 <style>
   .kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -48,10 +48,10 @@
   <div id="corpo"><div class="vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611212152"></script>
-<script src="../../assets/js/ui.js?v=202611212152"></script>
-<script src="../../assets/js/auth.js?v=202611212152"></script>
-<script src="../../assets/js/layout.js?v=202611212152"></script>
+<script src="../../assets/js/supabase.js?v=202611212215"></script>
+<script src="../../assets/js/ui.js?v=202611212215"></script>
+<script src="../../assets/js/auth.js?v=202611212215"></script>
+<script src="../../assets/js/layout.js?v=202611212215"></script>
 <script>
 /* =====================================================================
    Painel do Mercado Livre (só leitura)
@@ -64,7 +64,7 @@ const ABAS = [{ v: 'anuncios', n: 'Anúncios' }, { v: 'abc', n: 'Curva ABC' }, {
 const RAPIDOS = [
   { v: '', n: 'Todos', f: () => true },
   { v: 'semvenda', n: 'Muita visita, nenhuma venda', f: x => x.visitas >= 60 && !x.vendas_qtd },
-  { v: 'caiu', n: 'Perdeu visitas', f: x => x.ant && x.ant.visitas >= 30 && x.visitas < .6 * x.ant.visitas },
+  { v: 'caiu', n: 'Perdeu visitas', f: x => x.ant && x.visitas != null && x.ant.visitas >= 30 && x.visitas < .6 * x.ant.visitas },
   { v: 'adscaro', n: 'ADS caro', f: x => x.ads_custo >= 20 && (!x.ads_receita || x.ads_custo / x.ads_receita > .15) },
   { v: 'semads', n: 'Vende bem, sem ADS', f: x => x.vendas_qtd >= 3 && !x.ads_custo },
   { v: 'qualidade', n: 'Qualidade baixa', f: x => x.qualidade != null && x.qualidade < 70 },
@@ -124,7 +124,7 @@ async function carregarSemana() {
     buscarTodos(() => db.from('ml_anuncio_semana').select(campos).eq('semana', s).order('item_id')),
     buscarTodos(() => db.from('ml_anuncio_semana').select('item_id, canal_id, visitas, vendas_qtd, vendas_valor, ads_custo, ads_receita').eq('semana', somaDias(s, -7)).order('item_id')),
   ]);
-  const num = x => { for (const k of ['preco', 'visitas', 'vendas_qtd', 'vendas_valor', 'ads_custo', 'ads_receita', 'ads_cliques', 'ads_impressoes']) x[k] = Number(x[k] || 0); if (x.qualidade != null) x.qualidade = Number(x.qualidade); return x; };
+  const num = x => { for (const k of ['preco', 'vendas_qtd', 'vendas_valor', 'ads_custo', 'ads_receita', 'ads_cliques', 'ads_impressoes']) x[k] = Number(x[k] || 0); if (x.qualidade != null) x.qualidade = Number(x.qualidade); x.visitas = x.visitas == null || Number(x.visitas) < 0 ? null : Number(x.visitas);   // -1 = ainda não lida no ML return x; };
   ANT = new Map(b.map(x => [x.item_id, num(x)]));
   LINHAS = a.map(x => { num(x); x.ant = ANT.get(x.item_id) || null; return x; });
   // contas que têm números
@@ -196,13 +196,13 @@ function desenharAnuncios() {
   $('#rap').innerHTML = RAPIDOS.map(r => `<button type="button" data-r="${r.v}" class="${rapido === r.v ? 'ativo' : ''}">${r.n}<span class="n">${base.filter(r.f).length}</span></button>`).join('');
   $('#rap').querySelectorAll('button').forEach(b => b.onclick = () => { rapido = b.dataset.r; desenharAnuncios(); });
   const lista = ordenarLista(filtradas(), ordem, { conv: x => x.visitas ? x.vendas_qtd / x.visitas : null, acos: x => x.ads_receita ? x.ads_custo / x.ads_receita : (x.ads_custo ? 99 : null) });
-  const varV = x => x.ant ? variacao(x.visitas, x.ant.visitas) : '';
+  const varV = x => x.ant && x.ant.visitas != null ? variacao(x.visitas, x.ant.visitas) : '';
   const qual = x => x.qualidade == null ? '' : `<span class="${x.qualidade >= 85 ? 'q-boa' : x.qualidade >= 70 ? 'q-media' : 'q-baixa'}" title="${esc(x.qualidade_falta ? 'Falta: ' + x.qualidade_falta : x.qualidade_nivel || '')}">${x.qualidade}</span>`;
   const promo = x => (x.promocoes || []).map(p => `<span class="tg" style="background:${p.situacao === 'candidate' ? '#fff4d6' : '#e3f4e8'}" title="${esc(`${p.nome || ''} ${p.situacao === 'candidate' ? '(convite: decidir)' : '(ativa)'}${p.preco ? ' · preço ' + R$2(p.preco) : ''}${p.meli_pct ? ` · ML paga ${p.meli_pct}%` : ''}`)}">${esc(PROMO[p.tipo] || p.tipo)}</span>`).join('');
   $('#tbAn').innerHTML = lista.slice(0, 600).map(x => `<tr>
     <td class="tit"><a href="${linkMl(x.item_id)}" target="_blank" rel="noopener">${esc(x.titulo || x.item_id)}</a>
       <small>${x.item_id}${$('#fConta').value ? '' : ' · ' + esc(CANAIS.get(x.canal_id) || '')}${x.no_full ? ' · <b style="color:#00a650">FULL</b>' : ''}</small></td>
-    <td class="num nw">${R$2(x.preco)}</td><td class="num nw">${N(x.visitas)}${varV(x)}</td><td class="num">${N(x.vendas_qtd)}</td>
+    <td class="num nw">${R$2(x.preco)}</td><td class="num nw">${x.visitas == null ? '<span title="Ainda não lida no Mercado Livre">—</span>' : N(x.visitas) + varV(x)}</td><td class="num">${N(x.vendas_qtd)}</td>
     <td class="num nw">${x.vendas_valor ? R$(x.vendas_valor) : ''}</td><td class="num">${x.visitas ? pct(x.vendas_qtd / x.visitas, 1) : ''}</td>
     <td class="num nw">${x.ads_custo ? R$2(x.ads_custo) : ''}</td><td class="num">${x.ads_custo ? (x.ads_receita ? pct(x.ads_custo / x.ads_receita) : '<span class="q-baixa">sem venda</span>') : ''}</td>
     <td class="num">${qual(x)}</td><td>${promo(x)}</td></tr>`).join('') || '<tr><td colspan="10" class="vazio">Nenhum anúncio neste filtro.</td></tr>';
@@ -255,13 +255,15 @@ function desenharAds() {
 }
 
 /* ---------- Relatório da IA ---------- */
+// texto da IA: **negrito** vira negrito e os # de título somem (o resto fica como veio)
+const textoRel = t => esc(t).replace(/^#+\s*/gm, '').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
 function desenharRelatorio() {
   const corpo = $('#corpo');
   if (!RELS.length) { corpo.innerHTML = '<div class="cartao"><div class="vazio" style="padding:14px">O primeiro relatório sai na segunda-feira de manhã, com os números da semana fechada.</div></div>'; return; }
   if (!RELS.some(r => r.semana === relSel)) relSel = RELS[0].semana;
   const r = RELS.find(x => x.semana === relSel);
   corpo.innerHTML = `<div class="barra-ferr" style="margin-bottom:8px"><div></div><div class="ferr"><select id="fRel">${RELS.map(x => `<option value="${x.semana}">Semana ${dm(x.semana)} a ${dm(somaDias(x.semana, 6))}</option>`).join('')}</select></div></div>
-    <div class="bloco"><div class="relatorio">${esc(r.texto)}</div><p class="dica" style="margin-top:14px">Escrito pela IA em ${dataHoraBR(r.criado_em)} a partir dos números do painel. São sugestões: nada foi mudado no Mercado Livre.</p></div>`;
+    <div class="bloco"><div class="relatorio">${textoRel(r.texto)}</div><p class="dica" style="margin-top:14px">Escrito pela IA em ${dataHoraBR(r.criado_em)} a partir dos números do painel. São sugestões: nada foi mudado no Mercado Livre.</p></div>`;
   const f = $('#fRel'); f.value = relSel; f.onchange = () => { relSel = f.value; desenharRelatorio(); };
 }
 
