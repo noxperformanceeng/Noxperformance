@@ -40,6 +40,7 @@ const tempoReal = (() => {
     aprovacoes_historico_lista: ['aprovacoes_historico'],
     compra_conjunto: ['pedidos_compra', 'pedidos_compra_itens', 'produto_arquivos', 'produto_estrutura', 'produtos'],
     desenhos_vigentes: ['produto_arquivos', 'produtos'],
+    painel_ml_curva_abc: ['pedidos_venda', 'pedidos_venda_itens', 'produtos'],
     entregas_a_faturar: ['clientes', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens'],
     estoque_contagem: ['estoque_movimentos', 'produtos'],
     estoque_disponivel: ['estoque_movimentos', 'estoque_fora_local', 'pedidos_venda', 'pedidos_venda_itens', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'produtos'],

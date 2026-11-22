@@ -7,13 +7,14 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611212005';
+const VERSAO_TELAS = '202611212152';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 const MENU = [
   { grupo: 'Vendas', icone: 'vendas', itens: [
     { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html' },
     { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html' },
     { id: 'perguntas_ml',  nome: 'Perguntas do Mercado Livre', arquivo: 'pages/comercial/perguntas-ml.html' },
+    { id: 'painel_ml',     nome: 'Painel do Mercado Livre', arquivo: 'pages/comercial/painel-ml.html' },
     { id: 'chat_shopee',   nome: 'Chat da Shopee',   arquivo: 'pages/comercial/chat-shopee.html' },
     { id: 'compatibilidade', nome: 'Compatibilidade',   arquivo: 'pages/comercial/compatibilidade.html' },
     { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },

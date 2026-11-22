@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel do Mercado Livre · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611212152">
+<style>
+  .kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .reps { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .rep { background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio); padding: 8px 12px; font-size: 13px; }
+  .rep b { margin-right: 6px; }
+  .termo { display: inline-block; width: 46px; height: 8px; border-radius: 4px; vertical-align: middle; margin: 0 6px; }
+  .filtros-rap { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .filtros-rap button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 14px; padding: 4px 11px; font: 500 12.5px var(--fonte); cursor: pointer; color: var(--texto-suave); }
+  .filtros-rap button.ativo { background: var(--destaque); border-color: var(--destaque); color: #fff; }
+  .filtros-rap button .n { opacity: .75; margin-left: 3px; }
+  td.tit { max-width: 360px; }
+  td.tit a { color: var(--texto); font-weight: 500; }
+  td.tit a:hover { text-decoration: underline; }
+  td.tit small { display: block; color: var(--texto-suave); font-size: 11.5px; }
+  .curva { display: inline-block; width: 22px; text-align: center; border-radius: 5px; font-weight: 700; font-size: 12px; padding: 1px 0; }
+  .curva.A { background: #e3f4e8; color: #1b7a3a; } .curva.B { background: #fff4d6; color: #8a6100; } .curva.C { background: #eef0f3; color: #5b6270; }
+  .resumo-abc { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .resumo-abc .rep { min-width: 170px; }
+  .relatorio { white-space: pre-wrap; line-height: 1.55; font-size: 14px; max-width: 900px; }
+  .q-baixa { color: var(--erro); font-weight: 600; } .q-media { color: #a46a00; font-weight: 600; } .q-boa { color: var(--ok); font-weight: 600; }
+  .dica { font-size: 12.5px; color: var(--texto-suave); margin: 0 0 10px; }
+</style>
+</head>
+<body data-modulo="painel_ml" data-titulo="Painel do Mercado Livre">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Painel do Mercado Livre</h1>
+    <p class="sub">Os números das contas do Mercado Livre, semana a semana: vendas, visitas, ADS, qualidade e promoções de cada anúncio, a curva ABC dos produtos e o relatório da IA com o que fazer. Atualiza sozinho todo dia de manhã; o relatório sai toda segunda. Aqui só se olha: nada é mudado no Mercado Livre.</p></div>
+  </div>
+  <div class="barra-ferr">
+    <div class="abas" id="abas"></div>
+    <div class="ferr">
+      <select id="fConta" title="Conta"></select>
+      <select id="fSemana" title="Semana"></select>
+    </div>
+  </div>
+  <div id="reps" class="reps"></div>
+  <div id="kpis" class="kpis"></div>
+  <div id="corpo"><div class="vazio">Carregando…</div></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611212152"></script>
+<script src="../../assets/js/ui.js?v=202611212152"></script>
+<script src="../../assets/js/auth.js?v=202611212152"></script>
+<script src="../../assets/js/layout.js?v=202611212152"></script>
+<script>
+/* =====================================================================
+   Painel do Mercado Livre (só leitura)
+   · ml_anuncio_semana: 1 linha por anúncio por semana (gravada pela função ml-analista todo dia às 7h).
+   · ml_conta_dia: reputação e campanhas de ADS do dia; ml_relatorios: relatório semanal da IA.
+   · Curva ABC: rpc painel_ml_curva_abc(p_dias, p_canal), calculada sobre os pedidos de venda.
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const ABAS = [{ v: 'anuncios', n: 'Anúncios' }, { v: 'abc', n: 'Curva ABC' }, { v: 'ads', n: 'Campanhas de ADS' }, { v: 'relatorio', n: 'Relatório da IA' }];
+const RAPIDOS = [
+  { v: '', n: 'Todos', f: () => true },
+  { v: 'semvenda', n: 'Muita visita, nenhuma venda', f: x => x.visitas >= 60 && !x.vendas_qtd },
+  { v: 'caiu', n: 'Perdeu visitas', f: x => x.ant && x.ant.visitas >= 30 && x.visitas < .6 * x.ant.visitas },
+  { v: 'adscaro', n: 'ADS caro', f: x => x.ads_custo >= 20 && (!x.ads_receita || x.ads_custo / x.ads_receita > .15) },
+  { v: 'semads', n: 'Vende bem, sem ADS', f: x => x.vendas_qtd >= 3 && !x.ads_custo },
+  { v: 'qualidade', n: 'Qualidade baixa', f: x => x.qualidade != null && x.qualidade < 70 },
+  { v: 'promo', n: 'Promoção para decidir', f: x => (x.promocoes || []).some(p => p.situacao === 'candidate') },
+  { v: 'full', n: 'No Full', f: x => x.no_full },
+];
+const R$ = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const R$2 = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const N = v => Number(v || 0).toLocaleString('pt-BR');
+const pct = (v, d = 1) => v == null || !isFinite(v) ? '—' : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: d }) + '%';
+const dm = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '';
+const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const linkMl = id => 'https://produto.mercadolivre.com.br/' + String(id).replace(/^MLB/, 'MLB-');
+function variacao(a, b) {
+  if (!b) return '';
+  const v = (a - b) / b; return ` <span class="${v >= 0 ? 'var-pos' : 'var-neg'}">${v >= 0 ? '▲' : '▼'} ${pct(Math.abs(v), 0)}</span>`;
+}
+const PROMO = { DEAL: 'Campanha', MARKETPLACE_CAMPAIGN: 'Campanha ML', PRICE_DISCOUNT: 'Desconto', LIGHTNING: 'Relâmpago', DOD: 'Oferta do dia',
+  VOLUME: 'Leve mais', SELLER_CAMPAIGN: 'Campanha própria', SMART: 'Co-participação', PRE_NEGOTIATED: 'Pré-negociada', UNHEALTHY_STOCK: 'Estoque parado', SELLER_COUPON_CAMPAIGN: 'Cupom' };
+
+let CTX = null, CANAIS = new Map(), SEMANAS = [], LINHAS = [], ANT = new Map(), DIA = [], RELS = [], ABC = null;
+let canalAbc = '', aba = 'anuncios', rapido = '', busca = '', ordem = { campo: 'vendas_valor', asc: false }, diasAbc = 90, relSel = null;
+
+async function carregarSemanas() {
+  const { data } = await db.from('ml_anuncio_semana').select('semana').order('semana', { ascending: false }).limit(1);
+  if (!data?.length) return [];
+  // semanas existentes (lê só a coluna semana, de trás para frente, até 26 semanas)
+  const cand = Array.from({ length: 26 }, (_, k) => somaDias(data[0].semana, -7 * k));
+  const ns = await Promise.all(cand.map(s => db.from('ml_anuncio_semana').select('item_id', { count: 'exact', head: true }).eq('semana', s).then(r => r.count || 0)));
+  return cand.filter((s, k) => ns[k] > 0);
+}
+
+async function carregar() {
+  const [{ data: cs }, sems, { data: dia }, { data: rels }] = await Promise.all([
+    db.from('canais_venda').select('id, nome'),
+    carregarSemanas(),
+    db.from('ml_conta_dia').select('*').order('dia', { ascending: false }).limit(20),
+    db.from('ml_relatorios').select('semana, texto, criado_em').order('semana', { ascending: false }).limit(12),
+  ]);
+  CANAIS = new Map((cs || []).map(c => [c.id, c.nome]));
+  SEMANAS = sems; RELS = rels || [];
+  const ult = new Map(); for (const d of dia || []) if (!ult.has(d.canal_id)) ult.set(d.canal_id, d);
+  DIA = [...ult.values()];
+  // filtros (mantém a escolha atual)
+  const fS = $('#fSemana'), selS = fS.value || SEMANAS[0] || '';
+  fS.innerHTML = SEMANAS.map((s, i) => `<option value="${s}">${i === 0 ? 'Esta semana' : 'Semana'} ${dm(s)} a ${dm(somaDias(s, 6))}</option>`).join('') || '<option value="">Sem números ainda</option>';
+  if (SEMANAS.includes(selS)) fS.value = selS;
+  await carregarSemana();
+  if (aba === 'abc') await carregarAbc();
+}
+
+async function carregarSemana() {
+  const s = $('#fSemana').value;
+  if (!s) { LINHAS = []; ANT = new Map(); return desenhar(); }
+  const campos = 'item_id, canal_id, titulo, preco, no_full, situacao, visitas, vendas_qtd, vendas_valor, ads_custo, ads_receita, ads_cliques, ads_impressoes, qualidade, qualidade_nivel, qualidade_falta, promocoes';
+  const [a, b] = await Promise.all([
+    buscarTodos(() => db.from('ml_anuncio_semana').select(campos).eq('semana', s).order('item_id')),
+    buscarTodos(() => db.from('ml_anuncio_semana').select('item_id, canal_id, visitas, vendas_qtd, vendas_valor, ads_custo, ads_receita').eq('semana', somaDias(s, -7)).order('item_id')),
+  ]);
+  const num = x => { for (const k of ['preco', 'visitas', 'vendas_qtd', 'vendas_valor', 'ads_custo', 'ads_receita', 'ads_cliques', 'ads_impressoes']) x[k] = Number(x[k] || 0); if (x.qualidade != null) x.qualidade = Number(x.qualidade); return x; };
+  ANT = new Map(b.map(x => [x.item_id, num(x)]));
+  LINHAS = a.map(x => { num(x); x.ant = ANT.get(x.item_id) || null; return x; });
+  // contas que têm números
+  const fC = $('#fConta'), selC = fC.value, ids = [...new Set(LINHAS.map(x => x.canal_id))];
+  fC.innerHTML = (ids.length > 1 ? '<option value="">Todas as contas</option>' : '') + ids.map(id => `<option value="${id}">${esc(CANAIS.get(id) || 'Conta ' + id)}</option>`).join('');
+  if ([...fC.options].some(o => o.value === selC)) fC.value = selC;
+  desenhar();
+}
+
+const daConta = xs => { const c = $('#fConta').value; return c ? xs.filter(x => String(x.canal_id) === c) : xs; };
+
+function desenharKpis() {
+  const a = daConta(LINHAS), c = $('#fConta').value, b = daConta([...ANT.values()]);
+  const s = (xs, k) => xs.reduce((t, x) => t + Number(x[k] || 0), 0);
+  const vv = s(a, 'vendas_valor'), vq = s(a, 'vendas_qtd'), vis = s(a, 'visitas'), ag = s(a, 'ads_custo'), ar = s(a, 'ads_receita');
+  const bv = s(b, 'vendas_valor'), bq = s(b, 'vendas_qtd'), bvis = s(b, 'visitas'), bag = s(b, 'ads_custo');
+  const atual = $('#fSemana').value === SEMANAS[0];
+  const k = (tit, valor, ctx) => `<div class="kpi"><div class="kpi-tit">${tit}</div><div class="kpi-valor">${valor}</div><div class="kpi-ctx">${ctx}</div></div>`;
+  $('#kpis').innerHTML = !a.length ? '' : [
+    k('Vendas', R$(vv), `${N(vq)} unidades${variacao(vv, bv)}${atual ? ' <small>(semana em andamento)</small>' : ''}`),
+    k('Visitas', N(vis), `vs ${N(bvis)} na semana anterior${variacao(vis, bvis)}`),
+    k('Conversão', pct(vis ? vq / vis : null, 2), `unidades vendidas ÷ visitas${bvis ? ` · antes ${pct(bq / bvis, 2)}` : ''}`),
+    k('ADS: gasto', R$(ag), `vendeu ${R$(ar)} pelo ADS${variacao(ag, bag)}`),
+    k('ADS: ACOS', pct(ar ? ag / ar : null), `gasto ÷ venda do ADS · ${ar ? `${(vv ? ar / vv * 100 : 0).toFixed(0)}% das vendas vieram do ADS` : 'sem venda por ADS'}`),
+  ].join('');
+  // reputação por conta
+  const cor = { '5_green': '#2e9e55', '4_light_green': '#8bc34a', '3_yellow': '#f2c200', '2_orange': '#f28c00', '1_red': '#d93025' };
+  const med = { gold: 'MercadoLíder Gold', platinum: 'MercadoLíder Platinum', silver: 'MercadoLíder' };
+  $('#reps').innerHTML = DIA.filter(d => !c || String(d.canal_id) === c).map(d => `<div class="rep"><b>${esc(CANAIS.get(d.canal_id) || 'Conta ' + d.canal_id)}</b>
+    reputação<span class="termo" style="background:${cor[d.reputacao] || '#ccc'}"></span>${med[d.medalha] || ''}
+    · reclamações ${pct(Number(d.reclamacoes), 2)} · atrasos ${pct(Number(d.atrasos), 2)} · cancelamentos ${pct(Number(d.cancelamentos), 2)}
+    ${d.visitas != null ? `· ${N(d.visitas)} visitas ontem e hoje` : ''}</div>`).join('');
+}
+
+function desenharAbas() {
+  $('#abas').innerHTML = ABAS.map(x => `<button type="button" class="aba${aba === x.v ? ' ativa' : ''}" data-aba="${x.v}">${x.n}</button>`).join('');
+  $('#abas').querySelectorAll('button').forEach(b => b.onclick = async () => { aba = b.dataset.aba; desenhar(); if (aba === 'abc' && !ABC) await carregarAbc(); });
+  $('#fSemana').style.display = aba === 'anuncios' ? '' : 'none';
+  $('#fConta').style.display = aba === 'abc' || aba === 'relatorio' ? 'none' : '';
+}
+
+function desenhar() {
+  desenharAbas(); desenharKpis();
+  if (aba === 'anuncios') return desenharAnuncios();
+  if (aba === 'abc') return desenharAbc();
+  if (aba === 'ads') return desenharAds();
+  desenharRelatorio();
+}
+
+/* ---------- Anúncios ---------- */
+function desenharAnuncios() {
+  const corpo = $('#corpo');
+  if (!LINHAS.length) { corpo.innerHTML = '<div class="cartao"><div class="vazio" style="padding:14px">Ainda não há números. A primeira leitura do Mercado Livre está em andamento: volte em alguns minutos.</div></div>'; return; }
+  const base = daConta(LINHAS);
+  if (!corpo.querySelector('#tbAn')) {
+    corpo.innerHTML = `<div class="filtros-rap" id="rap"></div>
+      <div class="barra-ferr" style="margin-bottom:8px"><div></div><div class="ferr"><input id="fBusca" class="busca" type="search" placeholder="Buscar: título ou MLB…"><span id="relAn"></span></div></div>
+      <div class="cartao tabela-rolagem"><table><thead><tr>
+        <th data-ord="titulo">Anúncio</th><th data-ord="preco" class="num">Preço</th><th data-ord="visitas" class="num">Visitas</th>
+        <th data-ord="vendas_qtd" class="num">Vendas (un)</th><th data-ord="vendas_valor" class="num">Vendas (R$)</th><th data-ord="conv" class="num">Conversão</th>
+        <th data-ord="ads_custo" class="num">ADS gasto</th><th data-ord="acos" class="num">ACOS</th><th data-ord="qualidade" class="num">Qualidade</th><th>Promoções</th>
+      </tr></thead><tbody id="tbAn"></tbody></table></div>`;
+    const fb = $('#fBusca'); fb.value = busca; fb.oninput = () => { busca = fb.value; desenharAnuncios(); };
+    botoesRelatorio('relAn', () => ({ titulo: 'Anúncios do Mercado Livre', arquivo: 'anuncios_ml',
+      colunas: ['MLB', 'Conta', 'Título', 'Full', 'Preço', 'Visitas', 'Vendas un', 'Vendas R$', 'Conversão', 'ADS gasto', 'ADS venda', 'ACOS', 'Qualidade', 'Falta na qualidade'],
+      linhas: filtradas().map(x => [x.item_id, CANAIS.get(x.canal_id) || '', x.titulo, x.no_full ? 'sim' : '', x.preco, x.visitas, x.vendas_qtd, x.vendas_valor,
+        x.visitas ? (x.vendas_qtd / x.visitas * 100).toFixed(2) + '%' : '', x.ads_custo, x.ads_receita, x.ads_receita ? (x.ads_custo / x.ads_receita * 100).toFixed(1) + '%' : '', x.qualidade ?? '', x.qualidade_falta || '']) }));
+  }
+  $('#rap').innerHTML = RAPIDOS.map(r => `<button type="button" data-r="${r.v}" class="${rapido === r.v ? 'ativo' : ''}">${r.n}<span class="n">${base.filter(r.f).length}</span></button>`).join('');
+  $('#rap').querySelectorAll('button').forEach(b => b.onclick = () => { rapido = b.dataset.r; desenharAnuncios(); });
+  const lista = ordenarLista(filtradas(), ordem, { conv: x => x.visitas ? x.vendas_qtd / x.visitas : null, acos: x => x.ads_receita ? x.ads_custo / x.ads_receita : (x.ads_custo ? 99 : null) });
+  const varV = x => x.ant ? variacao(x.visitas, x.ant.visitas) : '';
+  const qual = x => x.qualidade == null ? '' : `<span class="${x.qualidade >= 85 ? 'q-boa' : x.qualidade >= 70 ? 'q-media' : 'q-baixa'}" title="${esc(x.qualidade_falta ? 'Falta: ' + x.qualidade_falta : x.qualidade_nivel || '')}">${x.qualidade}</span>`;
+  const promo = x => (x.promocoes || []).map(p => `<span class="tg" style="background:${p.situacao === 'candidate' ? '#fff4d6' : '#e3f4e8'}" title="${esc(`${p.nome || ''} ${p.situacao === 'candidate' ? '(convite: decidir)' : '(ativa)'}${p.preco ? ' · preço ' + R$2(p.preco) : ''}${p.meli_pct ? ` · ML paga ${p.meli_pct}%` : ''}`)}">${esc(PROMO[p.tipo] || p.tipo)}</span>`).join('');
+  $('#tbAn').innerHTML = lista.slice(0, 600).map(x => `<tr>
+    <td class="tit"><a href="${linkMl(x.item_id)}" target="_blank" rel="noopener">${esc(x.titulo || x.item_id)}</a>
+      <small>${x.item_id}${$('#fConta').value ? '' : ' · ' + esc(CANAIS.get(x.canal_id) || '')}${x.no_full ? ' · <b style="color:#00a650">FULL</b>' : ''}</small></td>
+    <td class="num nw">${R$2(x.preco)}</td><td class="num nw">${N(x.visitas)}${varV(x)}</td><td class="num">${N(x.vendas_qtd)}</td>
+    <td class="num nw">${x.vendas_valor ? R$(x.vendas_valor) : ''}</td><td class="num">${x.visitas ? pct(x.vendas_qtd / x.visitas, 1) : ''}</td>
+    <td class="num nw">${x.ads_custo ? R$2(x.ads_custo) : ''}</td><td class="num">${x.ads_custo ? (x.ads_receita ? pct(x.ads_custo / x.ads_receita) : '<span class="q-baixa">sem venda</span>') : ''}</td>
+    <td class="num">${qual(x)}</td><td>${promo(x)}</td></tr>`).join('') || '<tr><td colspan="10" class="vazio">Nenhum anúncio neste filtro.</td></tr>';
+  ligarOrdenacao($('#corpo'), ordem, desenharAnuncios);
+}
+function filtradas() {
+  const f = RAPIDOS.find(r => r.v === rapido)?.f || (() => true), b = semAcento(busca.trim());
+  return daConta(LINHAS).filter(f).filter(x => !b || semAcento(x.titulo + ' ' + x.item_id).includes(b));
+}
+
+/* ---------- Curva ABC ---------- */
+async function carregarAbc() {
+  const { data, error } = await db.rpc('painel_ml_curva_abc', { p_dias: diasAbc, p_canal: canalAbc ? Number(canalAbc) : null });
+  if (error) { aviso('Curva ABC: ' + error.message, true); ABC = []; } else ABC = data || [];
+  if (aba === 'abc') desenharAbc();
+}
+function desenharAbc() {
+  const corpo = $('#corpo');
+  if (!corpo.querySelector('#tbAbc')) {
+    corpo.innerHTML = `<p class="dica">Produtos que mais faturam (pelos pedidos de venda do sistema): <b>A</b> = os que somam 80% do faturamento (não podem faltar no estoque nem ficar sem anúncio bom), <b>B</b> = os próximos 15%, <b>C</b> = os 5% finais.</p>
+      <div class="barra-ferr" style="margin-bottom:8px"><div class="resumo-abc" id="resAbc"></div>
+        <div class="ferr"><select id="fCanalAbc"><option value="">Empresa toda (todos os canais)</option>${[...CANAIS].map(([id, n]) => `<option value="${id}">${esc(n)}</option>`).join('')}</select><select id="fDias"><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="180">Últimos 180 dias</option><option value="365">Últimos 12 meses</option></select><span id="relAbc"></span></div></div>
+      <div class="cartao tabela-rolagem"><table><thead><tr><th>Curva</th><th>Código</th><th>Produto</th><th class="num">Quantidade</th><th class="num">Faturamento</th><th class="num">Participação</th><th class="num">Acumulado</th></tr></thead><tbody id="tbAbc"></tbody></table></div>`;
+    const fc = $('#fCanalAbc'); fc.value = canalAbc; fc.onchange = () => { canalAbc = fc.value; ABC = null; desenharAbc(); carregarAbc(); };
+    const fd = $('#fDias'); fd.value = String(diasAbc); fd.onchange = () => { diasAbc = Number(fd.value); ABC = null; desenharAbc(); carregarAbc(); };
+    botoesRelatorio('relAbc', () => ({ titulo: `Curva ABC – ${canalAbc ? CANAIS.get(Number(canalAbc)) : 'empresa toda'} (${diasAbc} dias)`, arquivo: 'curva_abc_ml', colunas: ['Curva', 'Código', 'Produto', 'Quantidade', 'Faturamento', 'Participação %', 'Acumulado %'],
+      linhas: (ABC || []).map(x => [x.curva, x.codigo, x.descricao, x.quantidade, x.faturamento, x.participacao, x.acumulado]) }));
+  }
+  if (!ABC) { $('#tbAbc').innerHTML = '<tr><td colspan="7" class="vazio">Calculando…</td></tr>'; return; }
+  const tot = ABC.reduce((t, x) => t + Number(x.faturamento), 0);
+  $('#resAbc').innerHTML = ['A', 'B', 'C'].map(k => { const xs = ABC.filter(x => x.curva === k), f = xs.reduce((t, x) => t + Number(x.faturamento), 0);
+    return `<div class="rep"><span class="curva ${k}">${k}</span> <b>${xs.length} produtos</b> ${R$(f)} <small>(${tot ? (f / tot * 100).toFixed(0) : 0}%)</small></div>`; }).join('');
+  $('#tbAbc').innerHTML = ABC.map(x => `<tr><td><span class="curva ${x.curva}">${x.curva}</span></td><td class="nw">${esc(x.codigo || '')}</td><td>${esc(x.descricao || '')}</td>
+    <td class="num">${N(x.quantidade)}</td><td class="num nw">${R$(x.faturamento)}</td><td class="num">${Number(x.participacao).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</td>
+    <td class="num">${Number(x.acumulado).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</td></tr>`).join('') || '<tr><td colspan="7" class="vazio">Sem vendas no período.</td></tr>';
+}
+
+/* ---------- Campanhas de ADS ---------- */
+function desenharAds() {
+  const c = $('#fConta').value, dias = DIA.filter(d => !c || String(d.canal_id) === c);
+  const linhas = dias.flatMap(d => (d.campanhas || []).map(x => ({ ...x, conta: CANAIS.get(d.canal_id) || '' }))).sort((a, b) => b.gasto - a.gasto);
+  $('#corpo').innerHTML = `<p class="dica">Campanhas de Product Ads na semana corrente (até hoje). ACOS = quanto do valor vendido pelo ADS foi gasto em anúncio; quanto menor, melhor. Alvo = ACOS que a campanha tenta manter.</p>
+    <div class="cartao tabela-rolagem"><table><thead><tr><th>Campanha</th>${c ? '' : '<th>Conta</th>'}<th>Situação</th><th class="num">Orçamento/dia</th><th class="num">Gasto</th><th class="num">Vendas pelo ADS</th>
+    <th class="num">Unidades</th><th class="num">Cliques</th><th class="num">Impressões</th><th class="num">ACOS</th><th class="num">ACOS alvo</th></tr></thead><tbody>
+    ${linhas.map(x => `<tr><td>${esc(x.nome || x.id)}</td>${c ? '' : `<td>${esc(x.conta)}</td>`}<td>${x.status === 'active' ? 'Ativa' : x.status === 'paused' ? 'Pausada' : esc(x.status || '')}</td>
+      <td class="num nw">${x.orcamento_dia ? R$(x.orcamento_dia) : ''}</td><td class="num nw">${R$2(x.gasto)}</td><td class="num nw">${R$(x.vendas)}</td><td class="num">${N(x.unidades)}</td>
+      <td class="num">${N(x.cliques)}</td><td class="num">${N(x.impressoes)}</td>
+      <td class="num">${x.gasto && !x.vendas ? '<span class="q-baixa">sem venda</span>' : x.acos != null ? Number(x.acos).toLocaleString('pt-BR') + '%' : ''}</td><td class="num">${x.acos_alvo != null ? Number(x.acos_alvo).toLocaleString('pt-BR') + '%' : ''}</td></tr>`).join('')
+      || `<tr><td colspan="11" class="vazio">Sem campanhas lidas ainda.</td></tr>`}</tbody></table></div>`;
+}
+
+/* ---------- Relatório da IA ---------- */
+function desenharRelatorio() {
+  const corpo = $('#corpo');
+  if (!RELS.length) { corpo.innerHTML = '<div class="cartao"><div class="vazio" style="padding:14px">O primeiro relatório sai na segunda-feira de manhã, com os números da semana fechada.</div></div>'; return; }
+  if (!RELS.some(r => r.semana === relSel)) relSel = RELS[0].semana;
+  const r = RELS.find(x => x.semana === relSel);
+  corpo.innerHTML = `<div class="barra-ferr" style="margin-bottom:8px"><div></div><div class="ferr"><select id="fRel">${RELS.map(x => `<option value="${x.semana}">Semana ${dm(x.semana)} a ${dm(somaDias(x.semana, 6))}</option>`).join('')}</select></div></div>
+    <div class="bloco"><div class="relatorio">${esc(r.texto)}</div><p class="dica" style="margin-top:14px">Escrito pela IA em ${dataHoraBR(r.criado_em)} a partir dos números do painel. São sugestões: nada foi mudado no Mercado Livre.</p></div>`;
+  const f = $('#fRel'); f.value = relSel; f.onchange = () => { relSel = f.value; desenharRelatorio(); };
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  $('#fSemana').onchange = carregarSemana;
+  $('#fConta').onchange = () => { canalAbc = $('#fConta').value; ABC = null; desenhar(); };
+  await carregar();
+})();
+</script>
+</body>
+</html>
