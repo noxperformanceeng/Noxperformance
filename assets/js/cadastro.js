@@ -311,13 +311,14 @@ async function montarCadastro(cfg) {
     let t = txtBusca.get(r);
     if (t === undefined) {
       t = semAcento(campos.map(c => `${r[c.id] ?? ''} ${mostrar(c, r[c.id])}`).join(' ') + ' ' + (cfg.textoBuscaExtra?.(r, extra) || ''));
+      if (cfg.chavesBusca) t += chavesDocumento(t);   // "oc:529;", "nf:1234;", "pc:52;" (ver ui.js)
       txtBusca.set(r, t);
     }
     return t;
   };
   function filtrar(ignorarPend, ignorarExtra) {
     const de = $('#fDe').value, ate = $('#fAte').value, pc = $('#fPerCampo').value, rev = cfg.revisao ? $('#fRev').value : '';
-    const termos = semAcento($('#fBusca').value).split(/\s+/).filter(Boolean);
+    const busca = $('#fBusca').value, termos = (cfg.chavesBusca ? buscaComChaves(busca) : semAcento(busca)).split(/\s+/).filter(Boolean);
     // valores dos filtros lidos uma vez (antes era uma consulta à tela por linha)
     const extras = (cfg.filtrosExtras || []).filter(f => f.id !== ignorarExtra)
       .map(f => [f, cont.querySelector(`[data-filtro-extra="${f.id}"]`).value]).filter(([, v]) => v);

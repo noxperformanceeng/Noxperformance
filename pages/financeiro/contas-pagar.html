@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611212256">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611240000">
 <style>
   .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -53,12 +53,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611212256"></script>
-<script src="../../assets/js/ui.js?v=202611212256"></script>
-<script src="../../assets/js/auth.js?v=202611212256"></script>
-<script src="../../assets/js/layout.js?v=202611212256"></script>
-<script src="../../assets/js/cadastro.js?v=202611212256"></script>
-<script src="../../assets/js/comprovante.js?v=202611212256"></script>
+<script src="../../assets/js/supabase.js?v=202611240000"></script>
+<script src="../../assets/js/ui.js?v=202611240000"></script>
+<script src="../../assets/js/auth.js?v=202611240000"></script>
+<script src="../../assets/js/layout.js?v=202611240000"></script>
+<script src="../../assets/js/cadastro.js?v=202611240000"></script>
+<script src="../../assets/js/comprovante.js?v=202611240000"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -613,7 +613,7 @@ function confirmarSemPedido(fornId) {
 const cfg = {
   tabela: 'titulos_pagar', modulo: 'pagar', titulo: 'Contas a pagar', singular: 'título', plural: 'títulos',
   subtitulo: 'Despesas e títulos por empresa. Compra de produto entra pelo pedido de compra / NF; aqui, manualmente, só despesas.',
-  dicaBusca: 'fornecedor, documento, categoria, conta…', ordem: 'data_vencimento', revisao: false, porEmpresa: true,
+  dicaBusca: 'fornecedor, documento, OC 529, NF 1234, PC 52…', chavesBusca: true, ordem: 'data_vencimento', revisao: false, porEmpresa: true,
   filtrosExtras: [
     { id: 'grupo', label: 'Situação', padrao: 'abertos', opcoes: [{ v: 'abertos', n: 'Em aberto (a pagar)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'hoje', n: 'Vencem hoje' }, { v: 'urgentes', n: 'Urgentes' }, { v: 'programados', n: 'Programados' },
         { v: 'parcial', n: 'Pago parcial' }, { v: 'pago', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }],
@@ -695,6 +695,16 @@ const cfg = {
       ctx.pode('compras') ? db.from('pedidos_compra').select('id, numero, fornecedor_id').in('situacao', ['aprovado', 'enviado', 'recebido_parcial']) : { data: [] }]);
     FILA = fl.data || []; PC_ABERTOS = pa.data || [];
     const ac = await db.rpc('minhas_acoes'); ACOES = new Set(ac.data || []);
+    // Para a busca por OC / PC / NF dos títulos criados no ERP: número do pedido, OC do Tiny e NFs ligadas
+    const ids = k => [...new Set(linhas.map(r => r[k]).filter(Boolean))];
+    const idsPc = ids('pedido_compra_id'), idsNf = ids('nf_entrada_id');
+    const [pcs, nfs] = await Promise.all([
+      idsPc.length ? db.from('pedidos_compra').select('id, numero, numero_tiny').in('id', idsPc) : { data: [] },
+      idsPc.length || idsNf.length ? db.from('nfe_entrada').select('id, numero, pedido_compra_id')
+        .or([idsPc.length && `pedido_compra_id.in.(${idsPc})`, idsNf.length && `id.in.(${idsNf})`].filter(Boolean).join(',')) : { data: [] }]);
+    const docsPc = {}, docsNf = {};
+    (pcs.data || []).forEach(x => docsPc[x.id] = `${x.numero || ''} ${x.numero_tiny ? 'OC ' + x.numero_tiny : ''}`);
+    (nfs.data || []).forEach(x => { docsNf[x.id] = 'NF ' + x.numero; if (x.pedido_compra_id) docsPc[x.pedido_compra_id] = (docsPc[x.pedido_compra_id] || '') + ' NF ' + x.numero; });
     FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x), nome: x.nome, fantasia: x.nome_fantasia, doc: x.cnpj, ativo: x.situacao === 'ativo',
       impostos: x.categoria === 'Impostos e guias' ? x.impostos || [] : [] }));
     CATS = c.map(x => ({ ...x, ativo: x.situacao === 'ativo' }));
@@ -703,7 +713,7 @@ const cfg = {
     pg.forEach(p => (pagamentos[p.titulo_id] ||= []).push(p));
     ra.forEach(x => (rateio[x.titulo_id] ||= []).push(x));
     const anexos = {}; an.forEach(x => (anexos[x.titulo_id] ||= []).push(x));
-    extraAtual = { pagamentos, rateio, anexos };
+    extraAtual = { pagamentos, rateio, anexos, docsPc, docsNf };
     return extraAtual;
   },
   colunasExtras: [
@@ -712,7 +722,7 @@ const cfg = {
     { label: 'Prazo', soExportar: true, texto: r => textoPrazo(r) },
     { label: 'Conta', soExportar: true, texto: (r, e) => { const p = (e.pagamentos[r.id] || []).filter(x => !x.estornado); return conta(p.length ? p.at(-1).conta_bancaria_id : r.conta_bancaria_id)?.descricao || ''; } }
   ],
-  textoBuscaExtra: r => `${cat(r.categoria_financeira_id)?.codigo || ''} ${conta(r.conta_bancaria_id)?.descricao || ''} ${r.descricao || ''} ${r.origem_ref?.fornecedor_tiny || ''} ${r.origem_ref?.categoria_tiny || ''} ${r.origem_ref?.tiny_id || ''} ${Number(r.valor || 0).toFixed(2).replace('.', ',')}`,
+  textoBuscaExtra: (r, e) => `${e.docsPc?.[r.pedido_compra_id] || ''} ${e.docsNf?.[r.nf_entrada_id] || ''} ${r.origem_ref?.pedido_compra || r.origem_ref?.pedido || ''} ${r.origem_ref?.nf ? 'NF ' + r.origem_ref.nf : ''} ${cat(r.categoria_financeira_id)?.codigo || ''} ${conta(r.conta_bancaria_id)?.descricao || ''} ${r.descricao || ''} ${r.origem_ref?.fornecedor_tiny || ''} ${r.origem_ref?.categoria_tiny || ''} ${r.origem_ref?.tiny_id || ''} ${Number(r.valor || 0).toFixed(2).replace('.', ',')}`,
   subtituloLinha: r => [r.projecao ? 'projeção' : '', extraAtual.anexos?.[r.id]?.length ? `📎 ${extraAtual.anexos[r.id].length}` : ''].filter(Boolean).join(' · '),
   resumo: v => {
     window.__visiveisNox = v;
