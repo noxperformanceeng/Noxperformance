@@ -18,6 +18,9 @@
   .sub-ed th { text-align: left; font-size: 11px; color: var(--texto-suave); font-weight: 500; padding: 0 3px 3px; white-space: nowrap; }
   .sub-ed td { padding: 2px 3px; border: 0; vertical-align: top; }
   .sub-ed input, .sub-ed select { padding: 5px 6px; font-size: 12.5px; }
+  /* colunas numéricas do item não encolhem (com nome de produto longo, Qtd e Un ficavam sem largura e o número sumia) */
+  #itens [data-k=unidade] { min-width: 46px; } #itens [data-k=quantidade] { min-width: 64px; } #itens [data-k=valor_unitario] { min-width: 84px; }
+  #itens [data-k=desconto] { min-width: 64px; } #itens [data-k=ipi_pct] { min-width: 46px; }
   .sub-ed .rm { background: none; border: 0; color: var(--erro); cursor: pointer; font-size: 16px; }
   .sub-ed td.num { text-align: right; padding-top: 7px; white-space: nowrap; }
   .sub-ed .ro { color: var(--texto-suave); font-size: 11px; margin-top: 2px; }
