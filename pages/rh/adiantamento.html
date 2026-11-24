@@ -6,7 +6,7 @@
 <title>Adiantamento salarial · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611240000">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611240009">
 <style>
   .modal.largo { max-width: 920px; }
   .gerar-cab { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; margin: 8px 0 12px; align-items: end; }
@@ -18,12 +18,12 @@
 <body data-modulo="adiantamento" data-titulo="Adiantamento salarial" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611240000"></script>
-<script src="../../assets/js/ui.js?v=202611240000"></script>
-<script src="../../assets/js/auth.js?v=202611240000"></script>
-<script src="../../assets/js/layout.js?v=202611240000"></script>
-<script src="../../assets/js/cadastro.js?v=202611240000"></script>
-<script src="../../assets/js/rh.js?v=202611240000"></script>
+<script src="../../assets/js/supabase.js?v=202611240009"></script>
+<script src="../../assets/js/ui.js?v=202611240009"></script>
+<script src="../../assets/js/auth.js?v=202611240009"></script>
+<script src="../../assets/js/layout.js?v=202611240009"></script>
+<script src="../../assets/js/cadastro.js?v=202611240009"></script>
+<script src="../../assets/js/rh.js?v=202611240009"></script>
 <script>
 /* =====================================================================
    Adiantamento salarial (vale)
@@ -31,13 +31,15 @@
    - "Gerar adiantamentos do mês" busca nos holerites (lançamentos dos meses anteriores) quem recebe
      e quanto; dá para ajustar o valor ou aplicar um % do salário antes de gravar.
    - Cada adiantamento vira o desconto 981 na folha do mês. Cancelado → o desconto sai.
+   - Admitido no mês: valor proporcional aos dias (mês de 30 dias). Sem histórico e admitido no mês ou no
+     anterior: sugere o % mais comum dos outros × salário × dias/30.
    ===================================================================== */
 let CTX = null;
 const SIT = [{ v: 'previsto', n: 'Previsto (só no RH)' }, { v: 'confirmado', n: 'Confirmado (no financeiro)' }, { v: 'pago', n: 'Pago pelo financeiro' }, { v: 'cancelado', n: 'Cancelado' }];
 const cfg = {
   textoNovo: '+ Novo adiantamento',
   tabela: 'rh_adiantamentos', modulo: 'adiantamento', titulo: 'Adiantamento salarial', singular: 'adiantamento', plural: 'adiantamentos',
-  subtitulo: 'Vale do mês. Ao confirmar: vira o desconto 981 nos Lançamentos e o título no Contas a pagar. Fica "pago" sozinho quando o financeiro paga.',
+  subtitulo: 'Vale do mês. Ao confirmar: vira o desconto 981 nos Lançamentos e o título no Contas a pagar. Fica "pago" sozinho quando o financeiro paga. Admitido no mês: proporcional aos dias (mês de 30).',
   dicaBusca: 'funcionário, mês…', ordem: 'competencia', revisao: false, porEmpresa: true,
   abas: { campo: 'situacao', padrao: '', opcoes: [{ v: 'previsto', n: 'Previstos' }, { v: 'confirmado', n: 'Confirmados' }, { v: 'pago', n: 'Pagos' }, { v: 'cancelado', n: 'Cancelados' }, { v: '', n: 'Todos' }] },
   periodos: [{ campo: 'competencia', label: 'Competência' }, { campo: 'data_pagamento', label: 'Pagamento' }],
@@ -95,7 +97,7 @@ async function gerarMes() {
   const total = () => { const sel = linhas.filter(l => l.ok && !l.ja); q('#gTot').innerHTML = `${sel.length} marcado(s) · <b>${reais(sel.reduce((s, l) => s + (l.valor || 0), 0))}</b>`; };
   const desenhar = () => {
     q('#gLista').innerHTML = linhas.length ? linhas.map((l, i) => `<tr class="${l.ja ? 'apagado' : ''}"><td><input type="checkbox" data-i="${i}" ${l.ok ? 'checked' : ''} ${l.ja ? 'disabled' : ''}></td>
-      <td>${esc(l.f.nome)}${l.ja ? '<small class="sub2">já tem adiantamento neste mês</small>' : ''}</td><td class="num">${num2(l.f.salario_base)}</td>
+      <td>${esc(l.f.nome)}${l.ja ? '<small class="sub2">já tem adiantamento neste mês</small>' : l.dias < 30 ? `<small class="sub2">admitido em ${dataBR(l.f.data_admissao + 'T12:00:00')} · proporcional ${l.dias}/30 dias</small>` : ''}</td><td class="num">${num2(l.f.salario_base)}</td>
       <td>${l.ult ? `${mesBR(l.ult.competencia)} · ${reais(l.ult.valor)}` : '<small>sem histórico</small>'}</td>
       <td class="num">${l.f.salario_base && l.valor ? num2(l.valor / l.f.salario_base * 100) : ''}</td>
       <td class="num"><input class="v" data-v="${i}" inputmode="decimal" value="${l.valor ? num2(l.valor) : ''}" ${l.ja ? 'disabled' : ''}></td></tr>`).join('')
@@ -110,15 +112,21 @@ async function gerarMes() {
     const [ult, ja] = await Promise.all([ultimosLancamentos('981', comp),
       db.from('rh_adiantamentos').select('funcionario_id').eq('competencia', comp + '-01').neq('situacao', 'cancelado')]);
     const jaSet = new Set((ja.data || []).map(x => x.funcionario_id));
+    // % mais comum entre quem já recebe (para sugerir aos recém-admitidos sem histórico)
+    const pcts = {}; ativosNoMes(comp, CTX.empresa).forEach(f => { const u = ult[f.id]; if (u && f.salario_base) { const p = Math.round(u.valor / f.salario_base * 100); pcts[p] = (pcts[p] || 0) + 1; } });
+    const pctComum = +(Object.entries(pcts).sort((a, b) => b[1] - a[1])[0]?.[0] || 0);
+    const recente = f => f.data_admissao && f.data_admissao.slice(0, 7) >= somaMes(comp, -1);
     linhas = ativosNoMes(comp, CTX.empresa).filter(f => f.situacao !== 'afastado')
-      .map(f => ({ f, ult: ult[f.id], valor: ult[f.id] ? Number(ult[f.id].valor) : null, ok: !!ult[f.id] && !jaSet.has(f.id), ja: jaSet.has(f.id) }))
+      .map(f => { const dias = diasNoMesComercial(f, comp), u = ult[f.id], novo = !u && recente(f) && pctComum && f.salario_base;
+        const cheio = u ? Number(u.valor) : novo ? Number(f.salario_base) * pctComum / 100 : null;
+        return { f, ult: u, dias, valor: cheio ? Math.round(cheio * dias / 30 * 100) / 100 : null, ok: !!(u || novo) && dias > 0 && !jaSet.has(f.id), ja: jaSet.has(f.id) }; })
       .sort((a, b) => (b.ok - a.ok) || a.f.nome.localeCompare(b.f.nome));
     desenhar();
   };
   q('#gComp').onchange = montar;
   q('#gTodos').onchange = e => { linhas.forEach(l => { if (!l.ja) l.ok = e.target.checked; }); desenhar(); };
   q('#gAplicar').onclick = () => { const p = lerNumero(q('#gPct').value); if (!p) return aviso('Informe o %', true);
-    linhas.forEach(l => { if (l.ok && !l.ja) l.valor = Math.round(Number(l.f.salario_base || 0) * p) / 100; }); desenhar(); };
+    linhas.forEach(l => { if (l.ok && !l.ja) l.valor = Math.round(Number(l.f.salario_base || 0) * p * l.dias / 30) / 100; }); desenhar(); };
   q('#gOk').onclick = async () => {
     const comp = q('#gComp').value, sel = linhas.filter(l => l.ok && !l.ja && l.valor > 0);
     if (!sel.length) return aviso('Marque ao menos um funcionário com valor', true);

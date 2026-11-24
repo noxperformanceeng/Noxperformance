@@ -42,6 +42,13 @@ function ativosNoMes(m, empresa) {
     && !(f.situacao === 'desligado' && !f.data_demissao));
 }
 
+// Dias a pagar no mês comercial de 30 dias: admitido ou desligado no mês → proporcional (admitido dia 11 → 20 dias)
+function diasNoMesComercial(f, m) {
+  const ini = f.data_admissao && f.data_admissao.slice(0, 7) === m ? Math.min(+f.data_admissao.slice(8, 10), 30) : 1;
+  const fim = f.data_demissao && f.data_demissao.slice(0, 7) === m ? Math.min(+f.data_demissao.slice(8, 10), 30) : 30;
+  return Math.max(fim - ini + 1, 0);
+}
+
 /* ---------- Eventos da folha ---------- */
 let EVENTOS = [];
 async function carregarEventos() {
@@ -53,7 +60,7 @@ async function carregarEventos() {
 const evento = id => EVENTOS.find(e => e.id === +id);
 const eventoCod = cod => EVENTOS.find(e => String(e.codigo).toUpperCase() === String(cod).toUpperCase());
 const TELAS_RH = { lancamentos: 'Lançamentos', adiantamento: 'Adiantamento salarial', ferias: 'Férias', vale_transporte: 'Vale-transporte',
-  decimo_terceiro: '13º salário', faltas: 'Faltas', ponto: 'Ponto' };
+  decimo_terceiro: '13º salário', faltas: 'Faltas', ponto: 'Ponto', calculo: 'Cálculo automático (DSR/INSS)' };
 // Referência como no recibo: horas em h:mm, o resto com 2 casas
 const refBR = (ev, v) => v == null || v === '' ? '' : ev?.referencia_tipo === 'horas' ? horasBR(v) : num2(v);
 

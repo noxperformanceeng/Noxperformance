@@ -6,16 +6,16 @@
 <title>Colaboradores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611240000">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611240009">
 </head>
 <body data-modulo="funcionarios" data-titulo="Colaboradores" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611240000"></script>
-<script src="../../assets/js/ui.js?v=202611240000"></script>
-<script src="../../assets/js/auth.js?v=202611240000"></script>
-<script src="../../assets/js/layout.js?v=202611240000"></script>
-<script src="../../assets/js/cadastro.js?v=202611240000"></script>
+<script src="../../assets/js/supabase.js?v=202611240009"></script>
+<script src="../../assets/js/ui.js?v=202611240009"></script>
+<script src="../../assets/js/auth.js?v=202611240009"></script>
+<script src="../../assets/js/layout.js?v=202611240009"></script>
+<script src="../../assets/js/cadastro.js?v=202611240009"></script>
 <script>
 const SIT = [{ v: 'ativo', n: 'Ativo' }, { v: 'ferias', n: 'Férias' }, { v: 'afastado', n: 'Afastado' }, { v: 'desligado', n: 'Desligado' }];
 const CONTRATO = [{ v: 'clt', n: 'CLT' }, { v: 'pj', n: 'PJ' }, { v: 'estagio', n: 'Estágio' }, { v: 'temporario', n: 'Temporário' },
@@ -23,6 +23,16 @@ const CONTRATO = [{ v: 'clt', n: 'CLT' }, { v: 'pj', n: 'PJ' }, { v: 'estagio', 
 const SETORES = ['Corte', 'Dobra', 'Solda', 'Polimento / acabamento', 'Montagem', 'Usinagem', 'Pintura', 'Almoxarifado', 'Expedição',
   'Compras', 'Comercial', 'Financeiro', 'RH', 'Engenharia', 'Administração', 'Limpeza / manutenção'];
 let USUARIOS = [], ESCALAS_RH = [];
+// Aniversário (nascimento) e tempo de casa (admissão) no mês atual → { dia, anos, hoje } ou null
+function dataNoMes(r, campo) {
+  const d = r[campo], hj = new Date().toLocaleDateString('sv-SE');
+  if (!d || r.situacao === 'desligado' || d.slice(5, 7) !== hj.slice(5, 7) || d.slice(0, 4) >= hj.slice(0, 4)) return null;
+  return { dia: d.slice(8, 10), anos: +hj.slice(0, 4) - +d.slice(0, 4), hoje: d.slice(5) === hj.slice(5) };
+}
+function datasDoMesTexto(r) {
+  const a = dataNoMes(r, 'data_nascimento'), c = dataNoMes(r, 'data_admissao');
+  return [a && `🎂 ${a.hoje ? 'aniversário HOJE' : 'aniversário dia ' + a.dia}`, c && `🏅 ${c.anos} ano${c.anos > 1 ? 's' : ''} de casa ${c.hoje ? 'HOJE' : 'dia ' + c.dia}`].filter(Boolean).join(' · ');
+}
 // Perfil do login direto no cadastro do colaborador (só o administrador troca)
 document.addEventListener('change', async ev => {
   const s = ev.target.closest('[data-perfil-func]'); if (!s) return;
@@ -124,8 +134,10 @@ montarCadastro({
       <div>Ações liberadas: <b>${esc(u.perfil_id === 'admin' ? 'todas (gestor)' : acoes.join(', ') || 'só as do perfil')}</b></div>
       <div><a href="${RAIZ}pages/config/usuarios.html?usuario=${encodeURIComponent(u.id)}" style="color:var(--destaque)">Ajustar telas e ações →</a></div></div>`;
   },
-  subtituloLinha: r => ({ clt: 'CLT', pj: 'PJ', estagio: 'Estágio', temporario: 'Temporário', aprendiz: 'Aprendiz', autonomo: 'Autônomo' })[r.tipo_contrato],
+  subtituloLinha: r => [({ clt: 'CLT', pj: 'PJ', estagio: 'Estágio', temporario: 'Temporário', aprendiz: 'Aprendiz', autonomo: 'Autônomo' })[r.tipo_contrato], datasDoMesTexto(r)].filter(Boolean).join(' · '),
   pendencias: [
+    { id: 'aniv', nome: '🎂 Aniversário no mês', cor: 'ok', teste: r => !!dataNoMes(r, 'data_nascimento') },
+    { id: 'casa', nome: '🏅 Tempo de casa no mês', cor: 'ok', teste: r => !!dataNoMes(r, 'data_admissao') },
     { id: 'sem_cpf', nome: 'Sem CPF', cor: 'erro', bloqueia: true, teste: r => !r.cpf },
     { id: 'cpf_inv', nome: 'CPF inválido', cor: 'erro', bloqueia: true, teste: r => r.cpf && !cpfValido(r.cpf) },
     { id: 'sem_emp', nome: 'Sem empresa', cor: 'erro', bloqueia: true, teste: r => !r.empresa_id },
