@@ -603,9 +603,20 @@ async function baixarDesenhos(r) {
 async function mostrarPendencias(m, r) {
   const { data } = await db.rpc('pc_pendencias', { p_id: r.id }); const ls = data || [], box = m.querySelector('#pcPend'), et = m.querySelector('#etDados');
   if (et && EDITAVEL.includes(r.situacao)) { et.className = ls.some(x => x.bloqueia) ? 'erro' : 'ok'; et.textContent = ls.some(x => x.bloqueia) ? `Dados completos · falta ${ls.filter(x => x.bloqueia).length}` : 'Dados completos ✓'; }
-  if (!box || !ls.length || FINAL.includes(r.situacao)) return;
+  if (!box || FINAL.includes(r.situacao)) return;
+  // cotação obrigatória (a partir de R$500,00): a diretoria pode dispensar com motivo (assinatura, fornecedor único…)
+  const dispensa = r.cotacao_dispensa ? `<div class="sub" style="margin-top:6px">Cotação dispensada por <b>${esc(USU.find(u => u.id === r.cotacao_dispensa.por)?.nome || '')}</b>: ${esc(r.cotacao_dispensa.motivo || '')}</div>` : '';
+  const btDisp = x => x.id === 'cotacao_obrigatoria' && (CTX.admin || ACOES.has('compras.aprovar')) && ['rascunho', 'recusado', 'em_aprovacao'].includes(r.situacao)
+    ? ' <button type="button" class="btn fino" data-dispensar>Dispensar cotação…</button>' : '';
+  if (!ls.length) { box.innerHTML = dispensa; return; }
   box.innerHTML = `<div class="aviso-box ${ls.some(x => x.bloqueia) ? 'erro pisca-borda' : ''}" style="margin-top:8px"><b>⚠ Pendências deste pedido</b>${ls.some(x => x.bloqueia) && EDITAVEL.includes(r.situacao) ? ' — o rascunho fica salvo; resolva as marcadas com ● para enviar à aprovação' : ''}
-    <ul style="margin:4px 0 0 18px;padding:0">${ls.map(x => `<li>${x.bloqueia ? '● ' : ''}${esc(x.texto)}</li>`).join('')}</ul></div>`;
+    <ul style="margin:4px 0 0 18px;padding:0">${ls.map(x => `<li>${x.bloqueia ? '● ' : ''}${esc(x.texto)}${btDisp(x)}</li>`).join('')}</ul></div>${dispensa}`;
+  box.querySelector('[data-dispensar]')?.addEventListener('click', async () => {
+    const mot = prompt('Dispensar a cotação deste pedido? Informe o motivo (ex.: assinatura mensal, fornecedor único):'); if (!mot?.trim()) return;
+    const { error } = await db.rpc('pedido_compra_dispensar_cotacao', { p_id: r.id, p_motivo: mot });
+    if (error) return aviso('Não dispensou: ' + error.message, true);
+    aviso('Cotação dispensada · o pedido já pode ir para aprovação'); m.remove(); cfg.recarregar();
+  });
 }
 
 function secaoPedido(r) {

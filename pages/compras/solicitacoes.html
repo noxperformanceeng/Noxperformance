@@ -42,15 +42,16 @@
 <script>
 /* =====================================================================
    Solicitações de compra (antes do pedido)
-   Quem precisa pede produto/serviço do cadastro + quantidade + justificativa (sem fornecedor)
-   → Aprovação da diretoria (central de Aprovações ou aqui) → Fila do comprador
-   → Comprador marca itens (de uma ou várias solicitações), escolhe o fornecedor e gera o pedido em rascunho.
+   Qualquer pessoa pede produto/serviço do cadastro + quantidade + justificativa (sem fornecedor)
+   → vai DIRETO para a fila do comprador (sem aprovação aqui: a aprovação única é no pedido de compra)
+   → Comprador recusa com motivo ou marca itens (de uma ou várias solicitações) e gera a cotação
+   → Cotação (obrigatória a partir de R$500,00) → pedidos de compra → aprovação da diretoria.
    Cada item guarda o pedido gerado; pedido cancelado devolve o item para a fila.
    ===================================================================== */
 const SIT = [
   { v: 'em_aprovacao', n: 'Aguardando aprovação', cor: 'alerta' }, { v: 'recusado', n: 'Recusada (ajustar)', cor: 'erro' },
   { v: 'aprovado', n: 'Aprovada', cor: 'ok' }, { v: 'cancelado', n: 'Cancelada', cor: 'neutro' }];
-const EDITAVEL = ['em_aprovacao', 'recusado'];
+const EDITAVEL = ['em_aprovacao', 'recusado', 'aprovado'];   // aprovada (na fila) só enquanto nenhum item entrou em cotação/pedido
 const URG = [{ v: 'baixa', n: 'Baixa', cor: 'neutro' }, { v: 'normal', n: 'Normal', cor: 'neutro' }, { v: 'alta', n: 'Alta', cor: 'alerta' }, { v: 'urgente', n: 'Urgente', cor: 'erro' }];
 const pesoUrg = v => URG.findIndex(u => u.v === (v || 'normal'));
 const tgUrg = v => { const u = URG[pesoUrg(v)] || URG[1]; return u.v === 'normal' ? '' : `<span class="tg ${u.cor}">${u.n}</span>`; };
@@ -74,7 +75,7 @@ const itensDe = r => ex.itens?.[r.id] || [];
 function etapa(r) {
   if (r.situacao !== 'aprovado') return sit(r.situacao);
   const its = itensDe(r), pend = its.filter(pendente).length;
-  if (pend === its.length) return { n: 'Aprovada · aguardando comprador', cor: 'ok' };
+  if (pend === its.length) return { n: 'Com o comprador', cor: 'ok' };
   if (its.every(i => pendente(i) || emCotacao(i))) return { n: 'Em cotação', cor: 'alerta' };
   const peds = [...new Set(its.filter(i => !semPedido(i)).map(i => PEDS[i.pedido_id]))].filter(Boolean);
   if (pend || its.some(emCotacao)) return { n: `Em compra parcial (${its.length - pend}/${its.length})`, cor: 'pc' };
@@ -157,6 +158,13 @@ async function decidir(r, aprovar) {
   aviso(aprovar ? `${r.numero} aprovada · foi para o comprador` : `${r.numero} recusada · voltou para quem pediu`);
   document.querySelector('.modal-fundo')?.remove(); cfg.recarregar(); window.top.dispatchEvent(new Event('nox:aprovacoes'));
 }
+// comprador recusa o que está na fila (ex.: já tem em estoque, pedido em duplicidade) — volta para quem pediu com o motivo
+async function recusarComprador(r) {
+  const mot = prompt(`Recusar a solicitação ${r.numero}? Informe o motivo (quem pediu vai ver):`); if (!mot?.trim()) return;
+  const { error } = await db.rpc('solicitacao_compra_decidir', { p_id: r.id, p_aprovar: false, p_motivo: mot });
+  if (error) return aviso('Não recusou: ' + error.message, true);
+  aviso(`${r.numero} recusada · voltou para quem pediu`); document.querySelector('.modal-fundo')?.remove(); cfg.recarregar();
+}
 async function cancelar(r) {
   const mot = prompt(`Cancelar a solicitação ${r.numero}? Informe o motivo:`); if (!mot?.trim()) return;
   const { error } = await db.rpc('solicitacao_compra_cancelar', { p_id: r.id, p_motivo: mot });
@@ -197,12 +205,11 @@ function abrirFila(soDe) {
 const cfg = {
   textoNovo: '+ Nova solicitação',
   tabela: 'solicitacoes_compra', modulo: 'solicitacoes_compra', titulo: 'Solicitações de compra', singular: 'solicitação', plural: 'solicitações',
-  subtitulo: 'Peça aqui o que precisa comprar: produto ou serviço do cadastro (digite para buscar) ou, se for compra única que não vai para a fabricação (ventilador, produto de limpeza…), "Sem cadastro (avulso)" com a descrição. Informe quantidade, urgência e para quê. A diretoria aprova, o comprador escolhe a empresa, cota com os fornecedores e gera os pedidos de compra.',
+  subtitulo: 'Peça aqui o que precisa comprar: produto ou serviço do cadastro (digite para buscar) ou, se for compra única que não vai para a fabricação (ventilador, produto de limpeza…), "Sem cadastro (avulso)" com a descrição. Informe quantidade, urgência e para quê. A solicitação vai direto para o comprador, que cota com os fornecedores e gera os pedidos de compra; a diretoria aprova o pedido. Acompanhe aqui o andamento até a chegada do material.',
   dicaBusca: 'nº, item, justificativa, solicitante…', ordem: 'data_solicitacao', revisao: false, porEmpresa: false,
   abas: { campo: 'situacao', padrao: 'andamento', opcoes: [
     { v: 'andamento', n: 'Em andamento', teste: r => r.situacao === 'em_aprovacao' || r.situacao === 'recusado' || (r.situacao === 'aprovado' && itensDe(r).some(pendente)) },
     { v: 'minhas', n: 'Minhas', teste: r => minha(r) },
-    { v: 'aprovacao', n: 'Aguardando aprovação', teste: r => r.situacao === 'em_aprovacao' },
     { v: 'fila', n: 'Fila do comprador', teste: r => r.situacao === 'aprovado' && itensDe(r).some(pendente) },
     { v: 'cotacao', n: 'Em cotação', teste: r => r.situacao === 'aprovado' && itensDe(r).some(emCotacao) },
     { v: 'pedido', n: 'Em pedido', teste: r => r.situacao === 'aprovado' && itensDe(r).some(i => !semPedido(i)) },
@@ -258,25 +265,30 @@ const cfg = {
   apagado: r => r.situacao === 'cancelado',
   secaoExtra: r => {
     const e = etapa(r), passo = (t, cls) => `<span class="${cls}">${t}</span>`;
-    const fluxo = [passo('Solicitada', 'ok'), passo(r.situacao === 'recusado' ? 'Recusada' : 'Aprovação', r.situacao === 'em_aprovacao' ? 'agora' : r.situacao === 'recusado' ? 'erro' : r.situacao === 'aprovado' ? 'ok' : ''),
+    const pedsIt = [...new Set(itensDe(r).filter(i => !semPedido(i)).map(i => PEDS[i.pedido_id]))].filter(Boolean), chegou = e.n === 'Recebida';
+    const fluxo = [passo('Solicitada', 'ok'),
+      ...(r.situacao === 'recusado' ? [passo('Recusada', 'erro')] : r.situacao === 'em_aprovacao' ? [passo('Aprovação', 'agora')] : []),
       passo('Comprador', r.situacao === 'aprovado' ? (itensDe(r).some(pendente) ? 'agora' : 'ok') : ''),
-      passo('Cotação', r.situacao === 'aprovado' && itensDe(r).some(emCotacao) ? 'agora' : r.situacao === 'aprovado' && itensDe(r).some(i => !semPedido(i)) ? 'ok' : ''),
-      passo('Pedido de compra', r.situacao === 'aprovado' && itensDe(r).some(i => !semPedido(i)) ? 'ok' : '')].join('<i>›</i>');
+      passo('Cotação', r.situacao === 'aprovado' && itensDe(r).some(emCotacao) ? 'agora' : r.situacao === 'aprovado' && pedsIt.length ? 'ok' : ''),
+      passo('Pedido de compra', r.situacao === 'aprovado' && pedsIt.length ? (chegou ? 'ok' : 'agora') : ''),
+      passo('Material chegou', chegou ? 'ok' : '')].join('<i>›</i>');
     const peds = [...new Set(itensDe(r).filter(i => i.pedido_id).map(i => i.pedido_id))].map(id => PEDS[id]).filter(Boolean);
     const cots = [...new Set(itensDe(r).filter(i => i.cotacao_id).map(i => i.cotacao_id))].map(id => COTS[id]).filter(Boolean);
     const bts = [
       r.situacao === 'em_aprovacao' && possoAprovar() && (!minha(r) || CTX.admin) ? '<button type="button" class="btn primario" data-sc="aprovar">Aprovar</button><button type="button" class="btn" data-sc="recusar">Recusar…</button>' : '',
       r.situacao === 'aprovado' && souComprador() && itensDe(r).some(pendente) ? '<button type="button" class="btn primario" data-sc="pedido">Gerar cotação</button>' : '',
+      r.situacao === 'aprovado' && (souComprador() || possoAprovar()) && itensDe(r).length && itensDe(r).every(pendente) ? '<button type="button" class="btn" data-sc="recusar_comprador" title="Ex.: já tem em estoque, pedido repetido, item errado">Recusar…</button>' : '',
       r.situacao !== 'cancelado' && (minha(r) || CTX.pode('solicitacoes_compra', 'total')) && !itensDe(r).some(i => !semPedido(i) || emCotacao(i)) ? '<button type="button" class="btn discreto" data-sc="cancelar">Cancelar solicitação</button>' : ''].join('');
     return `<div class="secao">Andamento</div><div class="sc-fluxo">${fluxo}</div>
-      <div class="sub">Pedida por <b>${esc(usu(r.solicitante_id))}</b>${r.decidido_em ? ` · ${r.situacao === 'recusado' ? 'recusada' : 'aprovada'} por <b>${esc(usu(r.decidido_por))}</b> em ${dataHoraBR(r.decidido_em)}` : ''} · <span class="tg ${e.cor}">${esc(e.n)}</span></div>
+      <div class="sub">Pedida por <b>${esc(usu(r.solicitante_id))}</b>${r.decidido_em && r.decidido_por ? ` · ${r.situacao === 'recusado' ? 'recusada' : 'aprovada'} por <b>${esc(usu(r.decidido_por))}</b> em ${dataHoraBR(r.decidido_em)}` : ''} · <span class="tg ${e.cor}">${esc(e.n)}</span></div>
       ${cots.length ? `<div style="margin-top:6px">Cotação(ões): ${cots.map(c => CTX.pode('cotacoes_compra') ? `<a href="${RAIZ}pages/compras/cotacoes.html?abrir=${c.id}" class="tg ${c.situacao === 'cancelada' ? 'neutro' : 'alerta'}">${esc(c.numero)} · ${esc(c.situacao)}</a>` : `<span class="tg neutro">${esc(c.numero)} · ${esc(c.situacao)}</span>`).join(' ')}</div>` : ''}
       ${peds.length ? `<div style="margin-top:6px">Pedido(s) gerado(s): ${peds.map(p => `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${p.id}" class="tg ${p.situacao === 'cancelado' ? 'neutro' : 'pc'}">${esc(p.numero)} · ${esc(p.fornecedor || '')} · ${esc(p.situacao)}</a>`).join(' ')}</div>` : ''}
-      ${r.situacao === 'recusado' && minha(r) ? '<div class="aviso-box">Recusada: ajuste o que for preciso e salve para mandar de novo para aprovação.</div>' : ''}
+      ${r.situacao === 'recusado' && minha(r) ? '<div class="aviso-box">Recusada: veja o motivo, ajuste o que for preciso e salve para mandar de novo ao comprador (ou cancele).</div>' : ''}
       ${bts ? `<div class="acoes-pc" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${bts}</div>` : ''}`;
   },
   aoAbrir(m, r, ctx) {
-    const novo = !r.id, editavel = novo || (EDITAVEL.includes(r.situacao) && (minha(r) || ctx.pode('solicitacoes_compra', 'total')));
+    const novo = !r.id, editavel = novo || (EDITAVEL.includes(r.situacao) && (r.situacao !== 'aprovado' || (itensDe(r).length && itensDe(r).every(pendente)))
+      && (minha(r) || ctx.pode('solicitacoes_compra', 'total')));
     const ped = r.situacao === 'aprovado';
     const box = document.createElement('div');
     box.innerHTML = `<div class="sub-ed" id="itens"><div class="secao">O que precisa comprar</div>${editavel ? LEGENDA : ''}
@@ -285,7 +297,7 @@ const cfg = {
       ${editavel ? '<div style="margin-top:6px"><button type="button" class="btn fino" id="addItem">+ Item</button> <span class="sub">Não achou o item? Use "+ cadastrar" ao lado da lista.</span></div>' : ''}</div>`;
     const antes = [...m.querySelectorAll('.secao')].find(s => s.textContent === 'Andamento' || s.textContent === 'Histórico');
     antes ? antes.parentNode.insertBefore(box, antes) : m.querySelector('.acoes').before(box);
-    m.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => ({ aprovar: () => decidir(r, true), recusar: () => decidir(r, false), cancelar: () => cancelar(r),
+    m.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => ({ aprovar: () => decidir(r, true), recusar: () => decidir(r, false), cancelar: () => cancelar(r), recusar_comprador: () => recusarComprador(r),
       pedido: () => { m.remove(); abrirFila([r.id]); } })[b.dataset.sc]());
     if (!editavel) {
       box.querySelectorAll('input, select, button.rm').forEach(i => i.disabled = true);
@@ -306,6 +318,7 @@ const cfg = {
       conferirLinha(tr);
     });
     box.addEventListener('focusout', e => { const tr = e.target.closest('tr'); if (tr && e.target.dataset.k === 'observacao') conferirLinha(tr); });
+    if (!novo && r.situacao === 'aprovado') m.querySelector('#cAviso').innerHTML = '<div class="aviso-box">Ainda na fila do comprador: dá para alterar até ele começar a cotação.</div>';
     if (!novo && r.situacao === 'em_aprovacao') m.querySelector('#cAviso').innerHTML = '<div class="aviso-box">Ainda aguardando aprovação: se alterar, ela continua na fila da diretoria com os dados novos.</div>';
   },
   validar: (d, r) => {
@@ -322,7 +335,7 @@ const cfg = {
     const { data, error } = await db.rpc('solicitacao_compra_salvar', { p_sol: { ...dados, id: novo ? null : r.id }, p_itens: lerItens(m) });
     if (error) throw error;
     window.top.dispatchEvent(new Event('nox:aprovacoes'));
-    if (novo) setTimeout(() => aviso('Solicitação enviada para aprovação da diretoria'), 600);
+    if (novo || r.situacao === 'recusado') setTimeout(() => aviso('Solicitação enviada para o comprador'), 600);
     return data;
   },
   // Voltou do "+ cadastrar": refaz as listas de cada item sem perder o que foi escolhido
