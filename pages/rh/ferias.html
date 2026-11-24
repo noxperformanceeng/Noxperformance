@@ -6,7 +6,7 @@
 <title>Férias · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611212256">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611240008">
 <style>
   .modal.largo { max-width: 960px; }
 </style>
@@ -14,12 +14,12 @@
 <body data-modulo="ferias" data-titulo="Férias" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611212256"></script>
-<script src="../../assets/js/ui.js?v=202611212256"></script>
-<script src="../../assets/js/auth.js?v=202611212256"></script>
-<script src="../../assets/js/layout.js?v=202611212256"></script>
-<script src="../../assets/js/cadastro.js?v=202611212256"></script>
-<script src="../../assets/js/rh.js?v=202611212256"></script>
+<script src="../../assets/js/supabase.js?v=202611240008"></script>
+<script src="../../assets/js/ui.js?v=202611240008"></script>
+<script src="../../assets/js/auth.js?v=202611240008"></script>
+<script src="../../assets/js/layout.js?v=202611240008"></script>
+<script src="../../assets/js/cadastro.js?v=202611240008"></script>
+<script src="../../assets/js/rh.js?v=202611240008"></script>
 <script>
 /* =====================================================================
    Férias
@@ -28,8 +28,14 @@
    - Programada/confirmada entra na folha da competência (eventos 9101 a 9104: ajuste o código
      da contabilidade na tela Eventos da folha). Cancelada → sai da folha.
    - "Saldo por funcionário": períodos vencidos e a vencer.
+   - Descontos nas férias (empréstimo, INSS/previdência, IR, outros): viram lançamentos da férias na competência
+     (SQL 162). O INSS descontado aqui é abatido do INSS calculado da folha do mês.
    ===================================================================== */
-let CTX = null, FERIAS = [];
+let CTX = null, FERIAS = [], DESC = [];
+const totalFerias = r => Number(r.valor_ferias || 0) + Number(r.valor_terco || 0) + Number(r.valor_abono || 0) + Number(r.valor_terco_abono || 0);
+const totalDesc = r => (r.descontos || []).reduce((s, d) => s + Number(d.valor || 0), 0);
+// Eventos que podem ser descontados nas férias: descontos ativos que não são de outra tela
+const eventosDesconto = () => EVENTOS.filter(e => e.tipo === 'desconto' && e.situacao === 'ativo' && !e.tela_exclusiva);
 const SIT = [{ v: 'programada', n: 'Programada' }, { v: 'confirmada', n: 'Confirmada' }, { v: 'historico', n: 'Histórico (antes do sistema, sem folha)' }, { v: 'cancelada', n: 'Cancelada' }];
 const cfg = {
   textoNovo: '+ Programar férias',
@@ -56,10 +62,12 @@ const cfg = {
     { id: 'observacao', label: 'Observação', tipo: 'textarea', col: 3 }
   ],
   colunasExtras: [
-    { label: 'Total (R$)', texto: r => num2(Number(r.valor_ferias || 0) + Number(r.valor_terco || 0) + Number(r.valor_abono || 0) + Number(r.valor_terco_abono || 0)) },
+    { label: 'Total (R$)', texto: r => num2(totalFerias(r)) },
+    { label: 'Descontos (R$)', texto: r => totalDesc(r) ? num2(totalDesc(r)) : '' },
+    { label: 'Líquido (R$)', texto: r => num2(totalFerias(r) - totalDesc(r)) },
     { label: 'Período aquisitivo', texto: r => r.aquisitivo_inicio ? `${dataCurta(r.aquisitivo_inicio)} a ${dataCurta(r.aquisitivo_fim)}` : '' }
   ],
-  async carregarExtra(linhas, ctx) { CTX = ctx; FERIAS = linhas; await carregarFuncionarios(); return {}; },
+  async carregarExtra(linhas, ctx) { CTX = ctx; FERIAS = linhas; await Promise.all([carregarFuncionarios(), carregarEventos()]); return {}; },
   pendencias: [
     { id: 'sem_aq', nome: 'Sem período aquisitivo', cor: 'alerta', teste: r => !['cancelada', 'historico'].includes(r.situacao) && !r.aquisitivo_inicio },
     { id: 'fora', nome: 'Fora do prazo de concessão', cor: 'erro', teste: r => !['cancelada', 'historico'].includes(r.situacao) && r.aquisitivo_fim && r.gozo_fim > somaAnos(r.aquisitivo_fim, 1) },
@@ -85,14 +93,45 @@ const cfg = {
       q('#f_data_pagamento').value = somaDias(g, -2); q('#f_competencia').value = g.slice(0, 7); calcular(); });
     ['dias', 'abono_dias'].forEach(id => q('#f_' + id).addEventListener('change', calcular));
     if (!r.id) { sugerirPeriodo(); calcular(); }
+    montarDescontos(m, r);
   },
-  antesSalvar(d) { delete d.gozo_fim; },
+  antesSalvar(d) { delete d.gozo_fim; d.descontos = DESC.filter(x => x.codigo && x.valor > 0).map(x => ({ codigo: x.codigo, valor: Math.round(x.valor * 100) / 100, observacao: x.observacao || null })); },
   validar: d => !Number.isInteger(d.dias) || d.dias < 1 || d.dias > 30 ? 'Dias de gozo: de 1 a 30'
     : (d.abono_dias || 0) > 10 ? 'Abono: até 10 dias' : d.dias + (d.abono_dias || 0) > 30 ? 'Gozo + abono passa de 30 dias'
     : d.dias < 5 ? 'Nenhum período de férias pode ter menos de 5 dias' : null,
   acoesLote: [{ nome: 'Confirmar', dados: { situacao: 'confirmada' } }, { nome: 'Cancelar', dados: { situacao: 'cancelada' } }],
   apagado: r => r.situacao === 'cancelada'
 };
+
+// Seção "Descontos nas férias" do formulário: linhas com evento, valor e observação
+function montarDescontos(m, r) {
+  DESC = (r.descontos || []).map(x => ({ ...x, valor: Number(x.valor) }));
+  const ro = !CTX.pode('ferias', 'editar'), evs = eventosDesconto();
+  m.querySelector('[data-campo="observacao"]').parentElement.insertAdjacentHTML('afterend',
+    `<div class="secao">Descontos nas férias</div><p class="sub" style="margin:0 0 6px">Empréstimo consignado, INSS (previdência), IR e outros que saem do recibo de férias.</p>
+     <table class="lista-mini"><thead><tr><th>Evento</th><th class="num">Valor (R$)</th><th>Observação</th><th></th></tr></thead><tbody id="fDesc"></tbody></table>
+     ${ro ? '' : '<button type="button" class="btn fino" id="fDescAdd" style="margin-top:6px">+ Desconto</button>'}<div class="tot-hol" id="fDescTot" style="text-align:right;margin-top:6px"></div>`);
+  const q = s => m.querySelector(s);
+  const total = () => { const t = ['valor_ferias', 'valor_terco', 'valor_abono', 'valor_terco_abono'].reduce((s, id) => s + (lerNumero(q('#f_' + id).value) || 0), 0),
+    d = DESC.reduce((s, x) => s + (x.valor || 0), 0);
+    q('#fDescTot').innerHTML = `Férias ${reais(t)} · descontos ${reais(d)} · <b>líquido ${reais(t - d)}</b>`; };
+  const desenhar = () => {
+    q('#fDesc').innerHTML = DESC.length ? DESC.map((x, i) => `<tr>
+      <td><select data-dc="${i}" ${ro ? 'disabled' : ''}><option value="">— escolha —</option>${evs.map(e => `<option value="${esc(e.codigo)}"${e.codigo === x.codigo ? ' selected' : ''}>${esc(e.codigo + ' · ' + e.descricao)}</option>`).join('')}</select></td>
+      <td class="num"><input data-dv="${i}" inputmode="decimal" style="width:110px;text-align:right" value="${x.valor ? num2(x.valor) : ''}" ${ro ? 'disabled' : ''}></td>
+      <td><input data-do="${i}" value="${esc(x.observacao || '')}" placeholder="ex.: parcela 3/10" ${ro ? 'disabled' : ''}></td>
+      <td>${ro ? '' : `<button type="button" class="acao-linha" data-dx="${i}" title="Tirar">✕</button>`}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="vazio">Sem descontos.</td></tr>';
+    m.querySelectorAll('[data-dc]').forEach(c => c.onchange = () => DESC[+c.dataset.dc].codigo = c.value);
+    m.querySelectorAll('[data-dv]').forEach(c => c.onchange = () => { DESC[+c.dataset.dv].valor = lerNumero(c.value); total(); });
+    m.querySelectorAll('[data-do]').forEach(c => c.onchange = () => DESC[+c.dataset.do].observacao = c.value.trim());
+    m.querySelectorAll('[data-dx]').forEach(b => b.onclick = () => { DESC.splice(+b.dataset.dx, 1); desenhar(); });
+    total();
+  };
+  q('#fDescAdd')?.addEventListener('click', () => { DESC.push({ codigo: '', valor: null, observacao: '' }); desenhar(); });
+  ['valor_ferias', 'valor_terco', 'valor_abono', 'valor_terco_abono', 'dias', 'abono_dias', 'funcionario_id'].forEach(id => q('#f_' + id)?.addEventListener('change', () => setTimeout(total)));
+  desenhar();
+}
 
 (async () => {
   await montarCadastro(cfg);
