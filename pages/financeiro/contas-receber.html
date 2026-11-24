@@ -6,7 +6,7 @@
 <title>Contas a receber · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611240008">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611240009">
 <style>
   .pg-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; margin-top: 8px; padding: 10px; border: 1px solid var(--linha); border-radius: 8px; }
   .pg-form label { font-size: 11px; margin-bottom: 2px; }
@@ -17,11 +17,11 @@
 <body data-modulo="receber" data-titulo="Contas a receber" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611240008"></script>
-<script src="../../assets/js/ui.js?v=202611240008"></script>
-<script src="../../assets/js/auth.js?v=202611240008"></script>
-<script src="../../assets/js/layout.js?v=202611240008"></script>
-<script src="../../assets/js/cadastro.js?v=202611240008"></script>
+<script src="../../assets/js/supabase.js?v=202611240009"></script>
+<script src="../../assets/js/ui.js?v=202611240009"></script>
+<script src="../../assets/js/auth.js?v=202611240009"></script>
+<script src="../../assets/js/layout.js?v=202611240009"></script>
+<script src="../../assets/js/cadastro.js?v=202611240009"></script>
 <script>
 /* =====================================================================
    Contas a receber — uma lista só, por empresa ou consolidado
@@ -135,7 +135,7 @@ function janela(titulo, corpo, botao, aoConfirmar) {
 const cfg = {
   tabela: 'titulos_receber', modulo: 'receber', titulo: 'Contas a receber', singular: 'título', plural: 'títulos', textoNovo: '+ Novo título',
   subtitulo: 'Vendas de marketplace (valor líquido, com a composição de tarifas) e de distribuidores. A baixa vem da conciliação do extrato ou manual.',
-  dicaBusca: 'cliente, nº da venda, documento, canal…', ordem: 'data_vencimento', revisao: false, porEmpresa: true,
+  dicaBusca: 'cliente, nº da venda, NF 1234, PV 1352, canal…', chavesBusca: true, ordem: 'data_vencimento', revisao: false, porEmpresa: true,
   filtrosExtras: [
     { id: 'grupo', label: 'Situação', opcoes: [{ v: 'abertos', n: 'Em aberto (a receber)' }, { v: 'vencidos', n: 'Vencidos' }, { v: 'parcial', n: 'Recebido parcial' },
         { v: 'recebido', n: 'Recebidos' }, { v: 'cancelado', n: 'Cancelados' }],
@@ -207,7 +207,7 @@ const cfg = {
     { label: 'Prazo', texto: r => textoPrazo(r), html: r => `<span class="prazo p-${faixa(r)}">${textoPrazo(r)}</span>` },
     { label: 'Venda', texto: r => linkVenda(PEDIDOS[r.pedido_venda_id]) || '', html: r => { const l = linkVenda(PEDIDOS[r.pedido_venda_id]); return l ? `<a class="ext" href="${esc(l)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">abrir</a>` : ''; } }
   ],
-  textoBuscaExtra: r => { const p = PEDIDOS[r.pedido_venda_id]; return [r.descricao, canal(r.canal_id)?.nome, p?.numero_externo, p?.pack_id, p?.envio_id, p?.nf_numero, cat(r.categoria_financeira_id)?.codigo].filter(Boolean).join(' '); },
+  textoBuscaExtra: r => { const p = PEDIDOS[r.pedido_venda_id]; return [r.descricao, canal(r.canal_id)?.nome, p?.numero_externo, p?.pack_id, p?.envio_id, p?.nf_numero && 'NF ' + p.nf_numero, cat(r.categoria_financeira_id)?.codigo].filter(Boolean).join(' '); },
   subtituloLinha: r => [r.parcela && r.parcelas > 1 ? `parcela ${r.parcela}/${r.parcelas}` : '', r.documento].filter(Boolean).join(' · '),
   resumo: v => { window.__visiveisNox = v; const venc = v.filter(vencido);
     return (venc.length ? `<span class="vermelho">Vencido <b>${reais(venc.reduce((s, r) => s + Number(r.saldo), 0))}</b> (${venc.length})</span>` : '')

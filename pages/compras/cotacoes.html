@@ -6,7 +6,7 @@
 <title>Cotações de fornecedores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611240008">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611240009">
 <style>
   .mapa { overflow: auto; max-height: 64vh; border: 1px solid var(--linha); border-radius: 10px; }
   .mapa table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 100%; }
@@ -39,11 +39,11 @@
 <body data-modulo="cotacoes_compra" data-titulo="Cotações de fornecedores">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611240008"></script>
-<script src="../../assets/js/ui.js?v=202611240008"></script>
-<script src="../../assets/js/auth.js?v=202611240008"></script>
-<script src="../../assets/js/layout.js?v=202611240008"></script>
-<script src="../../assets/js/cadastro.js?v=202611240008"></script>
+<script src="../../assets/js/supabase.js?v=202611240009"></script>
+<script src="../../assets/js/ui.js?v=202611240009"></script>
+<script src="../../assets/js/auth.js?v=202611240009"></script>
+<script src="../../assets/js/layout.js?v=202611240009"></script>
+<script src="../../assets/js/cadastro.js?v=202611240009"></script>
 <script>
 /* =====================================================================
    Cotações de fornecedores (entre a solicitação aprovada e o pedido de compra)
@@ -108,7 +108,7 @@ function linhaItem(r, it, ed) {
       ${chipsArq(it)}
       ${ed ? '<button type="button" class="rm" data-rmi title="Tirar o item desta cotação (volta para a fila do comprador)">× tirar</button>' : ''}</td>
     ${fs.map(f => celula(f, it, ed)).join('')}${ed ? '<td></td>' : ''}
-    <td class="venc"><select data-k="vencedor" data-simples${ed ? '' : ' disabled'}><option value="">— vencedor —</option>${comPreco.map(f => `<option value="${f.fornecedor_id}"${it.vencedor_id === f.id ? ' selected' : ''}>${esc(nomeF(f.fornecedor_id))}${ind?.cotacao_forn_id === f.id ? ' (indicado)' : ''}</option>`).join('')}</select>
+    <td class="venc"><select data-k="vencedor" data-simples${ed ? '' : ' disabled'}><option value="">${comPreco.length ? '— vencedor —' : '— lance o preço —'}</option>${comPreco.map(f => `<option value="${f.fornecedor_id}"${it.vencedor_id === f.id ? ' selected' : ''}>${esc(nomeF(f.fornecedor_id))}${ind?.cotacao_forn_id === f.id ? ' (indicado)' : ''}</option>`).join('')}</select>
       <input data-k="motivo_escolha" placeholder="Justificativa (escolha diferente da indicada)" value="${esc(it.motivo_escolha || '')}" style="margin-top:3px${it.vencedor_id && ind && it.vencedor_id !== ind.cotacao_forn_id ? '' : ';display:none'}"${ed ? '' : ' disabled'}></td></tr>`;
 }
 function htmlMapa(r) {
@@ -119,13 +119,25 @@ function htmlMapa(r) {
     <div class="cot-leg">Lance o preço de cada fornecedor (unitário e IPI). A <b>nota</b> pesa preço com IPI e frete rateado (50%), prazo de pagamento (20%), prazo de entrega (15%) e histórico de entregas no prazo com o fornecedor (15%). Fundo verde = indicado; contorno = vencedor escolhido. Preço em itálico = último preço do cadastro, ainda não confirmado (digite para confirmar). No pedido, o frete vai proporcional aos itens que o fornecedor venceu.</div>
     <div class="cot-acoes"><button type="button" class="btn" data-pdf="">Baixar PDF da cotação</button><button type="button" class="btn" id="cotZip">Baixar desenhos (ZIP com DXF e PDF)</button>
       <span class="sub">O PDF leva a lista dos itens com campos para o fornecedor preencher (preço, IPI, prazo…) e, no final, os desenhos de corte e dobra. Os DXF vão no ZIP.</span></div>
+    ${ed ? `<div class="cot-acoes"><b style="font-size:12.5px">Escolher o vencedor:</b><button type="button" class="btn" id="cotSalvarAn">Salvar e recalcular análise</button><button type="button" class="btn" id="cotIndicados">Escolher os indicados</button>
+      <button type="button" class="btn primario" id="cotGerar">Gerar pedidos de compra</button><span style="flex:1"></span><button type="button" class="btn discreto" id="cotCancelar">Cancelar cotação</button></div>` : ''}
     <div class="mapa"><table><thead><tr><th class="fixa">Item</th>${fs.map(f => colForn(f, ed)).join('')}${ed ? '<th style="min-width:120px"><button type="button" class="btn fino" id="addForn">+ Fornecedor</button></th>' : ''}<th class="venc">Vencedor</th></tr></thead>
       <tbody>${its.map(it => linhaItem(r, it, ed)).join('')}</tbody>
       <tfoot><tr><td class="fixa">Total com IPI e frete</td>${fs.map(f => `<td class="cel">${reais(tot(f))}</td>`).join('')}${ed ? '<td></td>' : ''}<td></td></tr></tfoot></table></div>
-    ${ed ? `<div class="cot-acoes"><button type="button" class="btn" id="cotSalvarAn">Salvar e recalcular análise</button><button type="button" class="btn" id="cotIndicados">Escolher os indicados</button>
-      <button type="button" class="btn primario" id="cotGerar">Gerar pedidos de compra</button><span style="flex:1"></span><button type="button" class="btn discreto" id="cotCancelar">Cancelar cotação</button></div>` : ''}
     ${r.situacao === 'concluida' ? `<div class="aviso-box" style="background:#e8f5ec;color:var(--ok)">Pedidos gerados: ${fornsDe(r).filter(f => f.pedido_id).map(f => `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${f.pedido_id}">${esc(nomeF(f.fornecedor_id))}</a>`).join(' · ')}</div>` : ''}`;
 }
+
+/* ---------- Vencedor ao vivo: entra na lista quem tem preço lançado na linha (sem precisar salvar antes) ---------- */
+function opcoesVencedor(m, tr) {
+  const cols = [...m.querySelectorAll('.mapa thead th.forn')], sel = tr.querySelector('[data-k=vencedor]'), atual = sel.value;
+  const ind = ANALISE.find(x => x.item_id === Number(tr.dataset.item) && x.recomendado);
+  const ok = cols.map((th, ci) => ({ fid: Number(th.querySelector('[data-k=fornecedor_id]').value) || null, td: tr.querySelectorAll('td.cel')[ci] }))
+    .filter(c => c.fid && lerNumero(c.td?.querySelector('[data-k=valor_unitario]')?.value) > 0);
+  sel.innerHTML = `<option value="">${ok.length ? '— vencedor —' : '— lance o preço —'}</option>` + ok.map(c => `<option value="${c.fid}">${esc(nomeF(c.fid))}${ind?.fornecedor_id === c.fid ? ' (indicado)' : ''}</option>`).join('');
+  sel.value = ok.some(c => String(c.fid) === atual) ? atual : (ok.length === 1 ? String(ok[0].fid) : '');   // só um com preço: já é o vencedor
+  const mot = tr.querySelector('[data-k=motivo_escolha]'); if (mot) mot.style.display = sel.value && ind && Number(sel.value) !== ind.fornecedor_id ? '' : 'none';
+}
+const opcoesVencedorTodas = m => m.querySelectorAll('.mapa tbody tr[data-item]').forEach(tr => opcoesVencedor(m, tr));
 
 /* ---------- Ler o mapa da tela ---------- */
 function lerMapa(m) {
@@ -295,6 +307,7 @@ const cfg = {
     ARQS = idsP.length ? ((await db.rpc('desenhos_vigentes', { p_produtos: idsP })).data || []) : [];
     const box = m.querySelector('#cotMapa'); box.innerHTML = htmlMapa(r);
     const ed = editavel(r);
+    if (ed) opcoesVencedorTodas(m);
     if (!ed) { m.querySelectorAll('.campo input, .campo select, .campo textarea').forEach(i => i.disabled = true); m.querySelector('#mSalvar')?.remove(); }
     box.addEventListener('click', async e => {
       const t = e.target;
@@ -319,11 +332,13 @@ const cfg = {
       if (t.closest('[data-rmf]')) { if (!confirm('Tirar este fornecedor e os preços dele da cotação?')) return;
         const ci = [...m.querySelectorAll('.mapa thead th.forn')].indexOf(t.closest('th'));
         m.querySelectorAll('.mapa tr').forEach(tr => { const c = tr.querySelectorAll(tr.closest('thead') ? 'th.forn' : 'td.cel')[ci]; c?.remove(); });
-        return; }
+        opcoesVencedorTodas(m); return; }
       if (t.closest('[data-rmi]')) { if (!confirm('Tirar este item da cotação? Ele volta para a fila do comprador.')) return; t.closest('tr').remove(); return; }
-      if (t.id === 'cotIndicados') { m.querySelectorAll('.mapa tbody tr[data-item]').forEach(tr => { const a = ANALISE.find(x => x.item_id === Number(tr.dataset.item) && x.recomendado);
-          if (a) { tr.querySelector('[data-k=vencedor]').value = String(a.fornecedor_id); tr.querySelector('[data-k=motivo_escolha]').style.display = 'none'; } });
-        aviso('Vencedores = indicados pela análise (salve ou gere os pedidos)'); return; }
+      if (t.id === 'cotIndicados') { let falta = 0;
+        m.querySelectorAll('.mapa tbody tr[data-item]').forEach(tr => { opcoesVencedor(m, tr); const sel = tr.querySelector('[data-k=vencedor]'), a = ANALISE.find(x => x.item_id === Number(tr.dataset.item) && x.recomendado);
+          if (a && [...sel.options].some(o => o.value === String(a.fornecedor_id))) { sel.value = String(a.fornecedor_id); tr.querySelector('[data-k=motivo_escolha]').style.display = 'none'; }
+          else if (!sel.value) falta++; });
+        aviso(falta ? `${falta} item(ns) sem indicado: lance os preços e clique em "Salvar e recalcular análise"` : 'Vencedores = indicados pela análise (salve ou gere os pedidos)', !!falta); return; }
       if (t.id === 'cotSalvarAn') { try { await gravar(r, m); aviso('Salvo · análise recalculada'); reabrir(r); } catch (er) { aviso('Não salvou: ' + (er.message || er), true); } return; }
       if (t.id === 'cotGerar') {
         const { itens } = lerMapa(m);
@@ -345,9 +360,12 @@ const cfg = {
         m.remove(); aviso(`${r.numero} cancelada`); cfg.recarregar(); }
     });
     // digitou no preço que veio do cadastro: passa a valer como preço cotado
-    box.addEventListener('input', e => { if (e.target.dataset.sug) { delete e.target.dataset.sug; e.target.style.fontStyle = ''; e.target.style.color = ''; } });
+    box.addEventListener('input', e => { if (e.target.dataset.sug) { delete e.target.dataset.sug; e.target.style.fontStyle = ''; e.target.style.color = ''; }
+      if (ed && e.target.dataset.k === 'valor_unitario') opcoesVencedor(m, e.target.closest('tr')); });
     // escolheu vencedor diferente do indicado: pede justificativa
-    box.addEventListener('change', e => { if (e.target.dataset.k !== 'vencedor') return;
+    box.addEventListener('change', e => { if (ed && e.target.dataset.k === 'fornecedor_id') return opcoesVencedorTodas(m);
+      if (ed && e.target.dataset.k === 'valor_unitario') opcoesVencedor(m, e.target.closest('tr'));
+      if (e.target.dataset.k !== 'vencedor') return;
       const tr = e.target.closest('tr'), a = ANALISE.find(x => x.item_id === Number(tr.dataset.item) && x.recomendado), mot = tr.querySelector('[data-k=motivo_escolha]');
       const outro = a && e.target.value && Number(e.target.value) !== a.fornecedor_id; mot.style.display = outro ? '' : 'none'; if (outro) mot.focus(); });
   },

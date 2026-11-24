@@ -134,6 +134,29 @@ function semAcento(t) {
   return String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
+// Números de documento escritos de vários jeitos viram uma chave só, para a busca achar o número exato:
+// "Ref. a ordem de compra nº 529", "REF OC 529", "OC529" → "oc:529;"   "NF nº 205291" → "nf:205291;"
+// "PC-00052" → "pc:52;"   "pedido de venda nº 1352" → "pv:1352;". OC = ordem de compra (Tiny), PC = pedido do ERP.
+const PADROES_DOC = [
+  ['oc', /\b(?:o\.?c|ordem(?!\s+de\s+serv)(?:\s+de\s+compras?)?)\s*(?:n[º°o]?\.?\s*)?[:#-]?\s*(\d+)/gi],
+  ['nf', /\b(?:nfs?-?e?|nota\s+fiscal)\s*(?:n[º°o]?\.?\s*)?[:#-]?\s*(\d+)/gi],
+  ['pc', /\bpc\s*-?\s*(\d+)/gi],
+  ['pv', /\b(?:pv|pedido\s+de\s+venda)\s*(?:n[º°o]?\.?\s*)?[:#-]?\s*(\d+)/gi]
+];
+const chaveDoc = (k, n) => ` ${k}:${String(n).replace(/^0+(?=\d)/, '')}; `;
+// Chaves achadas num texto (vão junto do texto de busca de cada linha)
+function chavesDocumento(texto) {
+  const t = semAcento(texto); let s = '';
+  for (const [k, re] of PADROES_DOC) for (const m of t.matchAll(re)) s += chaveDoc(k, m[1]);
+  return s;
+}
+// O que a pessoa digitou: "oc 529" vira "oc:529;" (acha a OC 529, não a 5290 nem a NF 205291)
+function buscaComChaves(busca) {
+  let t = semAcento(busca);
+  for (const [k, re] of PADROES_DOC) t = t.replace(re, (_, n) => chaveDoc(k, n));
+  return t;
+}
+
 // Cliente/fornecedor com o nome fantasia junto: "ACME COMERCIO LTDA (ACME FILTROS)". Fica igual se não houver
 // fantasia ou se ela já estiver dentro da razão social. Serve para listas, selects (a busca acha pelos dois) e PDFs.
 function nomeComFantasia(x) {
