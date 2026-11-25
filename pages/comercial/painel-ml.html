@@ -6,7 +6,7 @@
 <title>Painel do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251644">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251743">
 <style>
   .kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -28,6 +28,9 @@
   .resumo-abc .rep { min-width: 170px; }
   .relatorio { white-space: pre-wrap; line-height: 1.55; font-size: 14px; max-width: 900px; }
   .q-baixa { color: var(--erro); font-weight: 600; } .q-media { color: #a46a00; font-weight: 600; } .q-boa { color: var(--ok); font-weight: 600; }
+  .perso { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; } .perso input { width: 140px; }
+  .periodo { font-size: 12.5px; color: var(--texto-suave); margin: -4px 0 10px; }
+  .evol { margin: 0 0 14px; } .evol td, .evol th { padding: 5px 10px; font-size: 13px; }
   .dica { font-size: 12.5px; color: var(--texto-suave); margin: 0 0 10px; }
 </style>
 </head>
@@ -40,7 +43,10 @@
     <div class="abas" id="abas"></div>
     <div class="ferr">
       <select id="fConta" title="Conta"></select>
+      <select id="fModo" title="Período"><option value="semana">Semana</option><option value="mes">Mês</option><option value="perso">Personalizado</option></select>
       <select id="fSemana" title="Semana"></select>
+      <select id="fMes" title="Mês" hidden></select>
+      <span id="fPerso" class="perso" hidden><input type="date" id="fDe" title="De"> até <input type="date" id="fAte" title="Até"></span>
     </div>
   </div>
   <div id="reps" class="reps"></div>
@@ -48,10 +54,10 @@
   <div id="corpo"><div class="vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251644"></script>
-<script src="../../assets/js/ui.js?v=202611251644"></script>
-<script src="../../assets/js/auth.js?v=202611251644"></script>
-<script src="../../assets/js/layout.js?v=202611251644"></script>
+<script src="../../assets/js/supabase.js?v=202611251743"></script>
+<script src="../../assets/js/ui.js?v=202611251743"></script>
+<script src="../../assets/js/auth.js?v=202611251743"></script>
+<script src="../../assets/js/layout.js?v=202611251743"></script>
 <script>
 /* =====================================================================
    Painel do Mercado Livre (só leitura)
@@ -91,8 +97,8 @@ let AVISOS = [], verResolvidos = false, canalAbc = '', aba = new URLSearchParams
 async function carregarSemanas() {
   const { data } = await db.from('ml_anuncio_semana').select('semana').order('semana', { ascending: false }).limit(1);
   if (!data?.length) return [];
-  // semanas existentes (lê só a coluna semana, de trás para frente, até 26 semanas)
-  const cand = Array.from({ length: 26 }, (_, k) => somaDias(data[0].semana, -7 * k));
+  // semanas existentes (lê só a coluna semana, de trás para frente, até 60 semanas)
+  const cand = Array.from({ length: 60 }, (_, k) => somaDias(data[0].semana, -7 * k));
   const ns = await Promise.all(cand.map(s => db.from('ml_anuncio_semana').select('item_id', { count: 'exact', head: true }).eq('semana', s).then(r => r.count || 0)));
   return cand.filter((s, k) => ns[k] > 0);
 }
@@ -114,21 +120,56 @@ async function carregar() {
   const fS = $('#fSemana'), selS = fS.value || SEMANAS[0] || '';
   fS.innerHTML = SEMANAS.map((s, i) => `<option value="${s}">${i === 0 ? 'Esta semana' : 'Semana'} ${dm(s)} a ${dm(somaDias(s, 6))}</option>`).join('') || '<option value="">Sem números ainda</option>';
   if (SEMANAS.includes(selS)) fS.value = selS;
+  // meses: a semana conta no mês da sua quinta-feira (onde ficam pelo menos 4 dos 7 dias)
+  const MESES_N = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const fM = $('#fMes'), selM = fM.value, meses = [...new Set(SEMANAS.map(mesDa))];
+  fM.innerHTML = meses.map(m => `<option value="${m}">${MESES_N[Number(m.slice(5, 7)) - 1]} de ${m.slice(0, 4)}${m === mesDa(SEMANAS[0]) ? ' (em andamento)' : ''}</option>`).join('');
+  if (meses.includes(selM)) fM.value = selM;
+  if (!$('#fDe').value && SEMANAS.length) { $('#fDe').value = SEMANAS[Math.min(SEMANAS.length - 1, 12)]; $('#fAte').value = somaDias(SEMANAS[0], 6); }
   await carregarSemana();
   if (aba === 'abc') await carregarAbc();
 }
 
+// Semanas do período escolhido (mais nova primeiro) e as do período anterior, do mesmo tamanho
+const mesDa = s => somaDias(s, 3).slice(0, 7);
+function semanasDoPeriodo() {
+  const modo = $('#fModo').value;
+  let ws = modo === 'mes' ? SEMANAS.filter(s => mesDa(s) === $('#fMes').value)
+    : modo === 'perso' ? SEMANAS.filter(s => { const q = somaDias(s, 3); return (!$('#fDe').value || q >= $('#fDe').value) && (!$('#fAte').value || q <= $('#fAte').value); })
+    : [$('#fSemana').value].filter(Boolean);
+  const ant = ws.length ? Array.from({ length: ws.length }, (_, k) => somaDias(ws.at(-1), -7 * (k + 1))) : [];
+  return { ws, ant };
+}
+let PER = { ws: [], ant: [] }, EVOL = [];
 async function carregarSemana() {
-  const s = $('#fSemana').value;
-  if (!s) { LINHAS = []; ANT = new Map(); return desenhar(); }
-  const campos = 'item_id, canal_id, titulo, preco, no_full, situacao, visitas, vendas_qtd, vendas_valor, ads_custo, ads_receita, ads_cliques, ads_impressoes, qualidade, qualidade_nivel, qualidade_falta, promocoes';
-  const [a, b] = await Promise.all([
-    buscarTodos(() => db.from('ml_anuncio_semana').select(campos).eq('semana', s).order('item_id')),
-    buscarTodos(() => db.from('ml_anuncio_semana').select('item_id, canal_id, visitas, vendas_qtd, vendas_valor, ads_custo, ads_receita').eq('semana', somaDias(s, -7)).order('item_id')),
+  PER = semanasDoPeriodo();
+  const { ws, ant } = PER;
+  if (!ws.length) { LINHAS = []; ANT = new Map(); EVOL = []; return desenhar(); }
+  const leve = 'item_id, canal_id, semana, visitas, vendas_qtd, vendas_valor, ads_custo, ads_receita, ads_cliques, ads_impressoes';
+  const campos = 'item_id, canal_id, titulo, preco, no_full, situacao, qualidade, qualidade_nivel, qualidade_falta, promocoes';
+  const [a, ult, b] = await Promise.all([
+    buscarTodos(() => db.from('ml_anuncio_semana').select(leve).in('semana', ws).order('item_id').order('semana')),
+    buscarTodos(() => db.from('ml_anuncio_semana').select(campos).eq('semana', ws[0]).order('item_id')),
+    buscarTodos(() => db.from('ml_anuncio_semana').select(leve).in('semana', ant).order('item_id').order('semana')),
   ]);
-  const num = x => { for (const k of ['preco', 'vendas_qtd', 'vendas_valor', 'ads_custo', 'ads_receita', 'ads_cliques', 'ads_impressoes']) x[k] = Number(x[k] || 0); if (x.qualidade != null) x.qualidade = Number(x.qualidade); x.visitas = x.visitas == null || Number(x.visitas) < 0 ? null : Number(x.visitas); /* -1 = ainda não lida no ML */ return x; };
-  ANT = new Map(b.map(x => [x.item_id, num(x)]));
-  LINHAS = a.map(x => { num(x); x.ant = ANT.get(x.item_id) || null; return x; });
+  const NUM = ['vendas_qtd', 'vendas_valor', 'ads_custo', 'ads_receita', 'ads_cliques', 'ads_impressoes'];
+  // soma as semanas de cada anúncio (visita -1 = ainda não lida no ML: fica de fora da soma)
+  const somar = xs => { const m = new Map();
+    for (const x of xs) { const t = m.get(x.item_id) || m.set(x.item_id, { item_id: x.item_id, canal_id: x.canal_id, visitas: null, ...Object.fromEntries(NUM.map(k => [k, 0])) }).get(x.item_id);
+      NUM.forEach(k => t[k] += Number(x[k] || 0)); if (x.visitas != null && Number(x.visitas) >= 0) t.visitas = (t.visitas || 0) + Number(x.visitas); }
+    return m; };
+  const ma = somar(a), mult = new Map(ult.map(x => [x.item_id, x]));
+  ANT = somar(b);
+  LINHAS = [...ma.values()].map(x => { const d = mult.get(x.item_id) || {};
+    const r = { ...x, titulo: d.titulo, preco: Number(d.preco || 0), no_full: d.no_full, situacao: d.situacao, qualidade: d.qualidade != null ? Number(d.qualidade) : null,
+      qualidade_nivel: d.qualidade_nivel, qualidade_falta: d.qualidade_falta, promocoes: d.promocoes };
+    r.ant = ANT.get(x.item_id) || null; return r; });
+  // evolução semana a semana (ou mês a mês, se o período for longo) para ver a tendência
+  const porSem = new Map(); for (const x of a) { const g = ws.length > 10 ? mesDa(x.semana) : x.semana;
+    const t = porSem.get(g) || porSem.set(g, { g, canais: new Map() }).get(g);
+    const c = t.canais.get(x.canal_id) || t.canais.set(x.canal_id, { v: 0, q: 0, vis: 0, ag: 0, ar: 0 }).get(x.canal_id);
+    c.v += Number(x.vendas_valor || 0); c.q += Number(x.vendas_qtd || 0); c.vis += Math.max(Number(x.visitas || 0), 0); c.ag += Number(x.ads_custo || 0); c.ar += Number(x.ads_receita || 0); }
+  EVOL = [...porSem.values()].sort((p, q) => p.g.localeCompare(q.g));
   // contas que têm números
   const fC = $('#fConta'), selC = fC.value, ids = [...new Set(LINHAS.map(x => x.canal_id))];
   fC.innerHTML = (ids.length > 1 ? '<option value="">Todas as contas</option>' : '') + ids.map(id => `<option value="${id}">${esc(CANAIS.get(id) || 'Conta ' + id)}</option>`).join('');
@@ -143,16 +184,23 @@ function desenharKpis() {
   const s = (xs, k) => xs.reduce((t, x) => t + Number(x[k] || 0), 0);
   const vv = s(a, 'vendas_valor'), vq = s(a, 'vendas_qtd'), vis = s(a, 'visitas'), ag = s(a, 'ads_custo'), ar = s(a, 'ads_receita');
   const bv = s(b, 'vendas_valor'), bq = s(b, 'vendas_qtd'), bvis = s(b, 'visitas'), bag = s(b, 'ads_custo');
-  const atual = $('#fSemana').value === SEMANAS[0];
+  const atual = PER.ws.includes(SEMANAS[0]), nomeAnt = PER.ws.length > 1 ? 'no período anterior' : 'na semana anterior';
   const k = (tit, valor, ctx) => `<div class="kpi"><div class="kpi-tit">${tit}</div><div class="kpi-valor">${valor}</div><div class="kpi-ctx">${ctx}</div></div>`;
   $('#kpis').innerHTML = !a.length ? '' : [
-    k('Vendas', R$(vv), `${N(vq)} unidades${variacao(vv, bv)}${atual ? ' <small>(semana em andamento)</small>' : ''}`),
-    k('Visitas', N(vis), `vs ${N(bvis)} na semana anterior${variacao(vis, bvis)}`),
+    k('Vendas', R$(vv), `${N(vq)} unidades${variacao(vv, bv)}${atual ? ` <small>(${PER.ws.length > 1 ? 'período inclui a semana em andamento' : 'semana em andamento'})</small>` : ''}`),
+    k('Visitas', N(vis), `vs ${N(bvis)} ${nomeAnt}${variacao(vis, bvis)}`),
     k('Conversão', pct(vis ? vq / vis : null, 2), `unidades vendidas ÷ visitas${bvis ? ` · antes ${pct(bq / bvis, 2)}` : ''}`),
     k('ADS: gasto', R$(ag), `vendeu ${R$(ar)} pelo ADS${variacao(ag, bag)}`),
     k('ADS: ROAS geral', ag ? `<span style="color:${ar / ag >= 30 ? '#2e9e55' : '#d93025'}">${(ar / ag).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>` : '—', `venda do ADS ÷ gasto · meta: acima de 30`),
     k('ADS: ACOS', ar ? `<span style="color:${ag / ar <= 0.025 ? '#2e9e55' : ag / ar <= 0.03 ? '#b8860b' : '#d93025'}">${pct(ag / ar)}</span>` : pct(null), `ideal abaixo de 2%, aceitável até 2,5% · ${ar ? `${(vv ? ar / vv * 100 : 0).toFixed(0)}% das vendas vieram do ADS` : 'sem venda por ADS'}`),
   ].join('');
+  const desc = PER.ws.length ? `Período: ${PER.ws.length} semana${PER.ws.length > 1 ? 's' : ''}, de ${dm(PER.ws.at(-1))}/${PER.ws.at(-1).slice(0, 4)} a ${dm(somaDias(PER.ws[0], 6))}/${somaDias(PER.ws[0], 6).slice(0, 4)}. Comparação com as ${PER.ant.length} semana${PER.ant.length > 1 ? 's' : ''} anteriores.` : '';
+  const ev = EVOL.map(e => { const cs = [...e.canais].filter(([id]) => !c || String(id) === c).map(([, v]) => v);
+    const t = k => cs.reduce((s2, x) => s2 + x[k], 0); return { g: e.g, v: t('v'), q: t('q'), vis: t('vis'), ag: t('ag'), ar: t('ar') }; });
+  const rotG = g => g.length === 7 ? `${['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Number(g.slice(5)) - 1]}/${g.slice(2, 4)}` : `${dm(g)} a ${dm(somaDias(g, 6))}`;
+  let per = document.getElementById('periodo'); if (!per) { per = document.createElement('div'); per.id = 'periodo'; $('#kpis').insertAdjacentElement('afterend', per); }
+  per.innerHTML = !a.length ? '' : `<p class="periodo">${desc}</p>${ev.length > 1 ? `<div class="cartao tabela-rolagem evol"><table><thead><tr><th>${EVOL[0].g.length === 7 ? 'Mês' : 'Semana'}</th><th class="num">Vendas (R$)</th><th class="num">Unidades</th><th class="num">Visitas</th><th class="num">Conversão</th><th class="num">ADS gasto</th><th class="num">ROAS</th><th class="num">ACOS</th></tr></thead><tbody>${
+    ev.map(e => `<tr><td>${rotG(e.g)}</td><td class="num">${R$(e.v)}</td><td class="num">${N(e.q)}</td><td class="num">${N(e.vis)}</td><td class="num">${e.vis ? pct(e.q / e.vis, 2) : ''}</td><td class="num">${R$(e.ag)}</td><td class="num">${e.ag ? (e.ar / e.ag).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : ''}</td><td class="num">${e.ar ? pct(e.ag / e.ar) : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
   // reputação por conta
   const cor = { '5_green': '#2e9e55', '4_light_green': '#8bc34a', '3_yellow': '#f2c200', '2_orange': '#f28c00', '1_red': '#d93025' };
   const med = { gold: 'MercadoLíder Gold', platinum: 'MercadoLíder Platinum', silver: 'MercadoLíder' };
@@ -166,7 +214,10 @@ function desenharAbas() {
   const nAv = AVISOS.filter(a => a.situacao === 'aberto').length;
   $('#abas').innerHTML = ABAS.map(x => `<button type="button" class="aba${aba === x.v ? ' ativa' : ''}" data-aba="${x.v}">${x.n}${x.v === 'avisos' && nAv ? ` <span class="n">${nAv}</span>` : ''}</button>`).join('');
   $('#abas').querySelectorAll('button').forEach(b => b.onclick = async () => { aba = b.dataset.aba; desenhar(); if (aba === 'abc' && !ABC) await carregarAbc(); });
-  $('#fSemana').style.display = aba === 'anuncios' ? '' : 'none';
+  const modo = $('#fModo').value, an = aba === 'anuncios';
+  $('#fModo').style.display = an ? '' : 'none';
+  $('#fSemana').style.display = an && modo === 'semana' ? '' : 'none';
+  $('#fMes').hidden = !(an && modo === 'mes'); $('#fPerso').hidden = !(an && modo === 'perso');
   $('#fConta').style.display = ['abc', 'relatorio', 'avisos'].includes(aba) ? 'none' : '';
 }
 
@@ -308,6 +359,8 @@ function desenharRelatorio() {
 (async () => {
   CTX = await iniciarTela(); if (!CTX) return;
   $('#fSemana').onchange = carregarSemana;
+  $('#fMes').onchange = carregarSemana; $('#fDe').onchange = carregarSemana; $('#fAte').onchange = carregarSemana;
+  $('#fModo').onchange = () => { desenharAbas(); carregarSemana(); };
   $('#fConta').onchange = () => { canalAbc = $('#fConta').value; ABC = null; desenhar(); };
   await carregar();
 })();
