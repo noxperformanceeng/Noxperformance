@@ -196,27 +196,33 @@ async function relatorio(db: Db) {
   const acos8 = (id: string) => { const h = h8(id); return h.adsrec ? h.ads / h.adsrec : (h.ads ? 9 : 0); };
   const tot = (xs: any[], c: number) => { const f = xs.filter(x => x.canal_id === c); const s = (k: string) => f.reduce((t, x) => t + Number(x[k] || 0), 0);
     return { visitas: s('visitas'), vendas: s('vendas_valor'), unidades: s('vendas_qtd'), ads_gasto: s('ads_custo'), ads_vendas: s('ads_receita') }; };
-  const resumo = [...new Set(a.map(x => x.canal_id))].map(c => ({ conta: nomeCanal(c), semana: tot(a, c), semana_anterior: tot(b, c) }));
-  const fmt = (x: any) => `${x.item_id} | ${nomeCanal(x.canal_id)} | ${x.titulo} | R$ ${x.preco}${x.no_full ? ' | FULL' : ''} | visitas ${x.visitas} (antes ${antes.get(x.item_id)?.visitas ?? '-'}) | vendas ${x.vendas_qtd} un R$ ${x.vendas_valor} (antes ${antes.get(x.item_id)?.vendas_valor ?? '-'}) | ADS gasto R$ ${x.ads_custo} vendas R$ ${x.ads_receita} | 8 SEMANAS: ${h8(x.item_id).un} un R$ ${Math.round(h8(x.item_id).rs)}, ${h8(x.item_id).vis} visitas, ADS gasto R$ ${Math.round(h8(x.item_id).ads)} vendeu R$ ${Math.round(h8(x.item_id).adsrec)} (ACOS ${h8(x.item_id).adsrec ? (acos8(x.item_id) * 100).toFixed(1) + '%' : 'sem venda'}), ${h8(x.item_id).cliq} cliques${x.qualidade != null ? ` | qualidade ${x.qualidade}` : ''}`;
+  // ROAS geral (vendas pelo ADS ÷ gasto do ADS) por conta: a meta é ficar sempre acima de 30
+  const roas8 = (c: number) => { let g = 0, v = 0; for (const x of a.filter(y => y.canal_id === c)) { const h = h8(x.item_id); g += h.ads; v += h.adsrec; } return g ? Math.round(v / g * 10) / 10 : null; };
+  const resumo = [...new Set(a.map(x => x.canal_id))].map(c => { const s = tot(a, c), s0 = tot(b, c);
+    return { conta: nomeCanal(c), semana: s, semana_anterior: s0, roas_geral_semana: s.ads_gasto ? Math.round(s.ads_vendas / s.ads_gasto * 10) / 10 : null,
+      roas_geral_semana_anterior: s0.ads_gasto ? Math.round(s0.ads_vendas / s0.ads_gasto * 10) / 10 : null, roas_geral_8_semanas: roas8(c) }; });
+  const fmt = (x: any) => `${x.item_id} | ${nomeCanal(x.canal_id)} | ${x.titulo} | R$ ${x.preco}${x.no_full ? ' | FULL' : ''} | visitas ${x.visitas} (antes ${antes.get(x.item_id)?.visitas ?? '-'}) | vendas ${x.vendas_qtd} un R$ ${x.vendas_valor} (antes ${antes.get(x.item_id)?.vendas_valor ?? '-'}) | ADS gasto R$ ${x.ads_custo} vendas R$ ${x.ads_receita} | 8 SEMANAS: ${h8(x.item_id).un} un R$ ${Math.round(h8(x.item_id).rs)}, ${h8(x.item_id).vis} visitas, ADS gasto R$ ${Math.round(h8(x.item_id).ads)} vendeu R$ ${Math.round(h8(x.item_id).adsrec)} (ACOS ${h8(x.item_id).adsrec ? (acos8(x.item_id) * 100).toFixed(1) + '%, ROAS ' + (h8(x.item_id).adsrec / h8(x.item_id).ads).toFixed(1) : 'sem venda'}), ${h8(x.item_id).cliq} cliques${x.qualidade != null ? ` | qualidade ${x.qualidade}` : ''}`;
   const top = [...a].sort((x, y) => y.vendas_valor - x.vendas_valor).slice(0, 25).map(fmt).join('\n');
   const caiu = a.filter(x => x.visitas != null && (antes.get(x.item_id)?.visitas ?? 0) >= 30 && x.visitas < 0.6 * antes.get(x.item_id).visitas).sort((x, y) => y.visitas - x.visitas).slice(0, 15).map(fmt).join('\n');
   // muita visita e pouca venda NAS 8 SEMANAS (uma semana sem venda de peça de R$ 1.000 é normal)
   const semVenda = a.filter(x => h8(x.item_id).vis >= 300 && h8(x.item_id).un / h8(x.item_id).vis < 0.004).sort((x, y) => y.visitas - x.visitas).slice(0, 15).map(fmt).join('\n');
   // ADS caro nas 8 semanas, com cliques suficientes para julgar
-  const adsRuim = a.filter(x => h8(x.item_id).ads >= 80 && h8(x.item_id).cliq >= 60 && acos8(x.item_id) > 0.08).sort((x, y) => h8(y.item_id).ads - h8(x.item_id).ads).slice(0, 15).map(fmt).join('\n');
+  // régua do Paulo (nov/2026): ACOS ideal abaixo de 2%, aceitável até 2,5%, de 3% a 5% agir, acima de 5% muito alto (ticket alto)
+  const adsRuim = a.filter(x => h8(x.item_id).ads >= 80 && h8(x.item_id).cliq >= 60 && acos8(x.item_id) > 0.03).sort((x, y) => h8(y.item_id).ads - h8(x.item_id).ads).slice(0, 15).map(fmt).join('\n');
   // convites de promoção (lidos na semana corrente) dos anúncios que mais faturam: quanto a NOX paga e o preço final
   const promo = (await ler(seg)).filter(x => (x.promocoes ?? []).some((p: any) => p.situacao === 'candidate' && p.preco)).sort((x, y) => h8(y.item_id).rs - h8(x.item_id).rs).slice(0, 12)
     .map(x => `${x.item_id} | ${nomeCanal(x.canal_id)} | ${x.titulo} | R$ ${x.preco} | 8 semanas ${h8(x.item_id).un} un | ` + (x.promocoes ?? []).filter((p: any) => p.preco)
       .map((p: any) => `${p.nome || p.tipo} (${p.situacao === 'candidate' ? 'convite' : 'ativa'}): preço R$ ${p.preco}${p.vendedor_pct != null ? `, NOX paga ${p.vendedor_pct}%, ML paga ${p.meli_pct}%` : ''}`).join(' ; ')).join('\n');
   const { data: contaDia } = await db.from('ml_conta_dia').select('*').order('dia', { ascending: false }).limit(4);
   const { data: abc } = await db.rpc('painel_ml_curva_abc', { p_dias: 90 });   // (servidor: a função confere permissão; sem login devolve vazio)
-  const contexto = `RESUMO POR CONTA (semana de ${ant} a ${somaDias(ant, 6)} x semana anterior)\n${JSON.stringify(resumo)}\n\nREPUTAÇÃO E CAMPANHAS DE ADS (último dia lido)\n${JSON.stringify(contaDia ?? [])}\n\nANÚNCIOS QUE MAIS VENDERAM\n${top}\n\nANÚNCIOS QUE PERDERAM VISITAS\n${caiu || '(nenhum)'}\n\nANÚNCIOS COM MUITA VISITA E POUCA VENDA (8 semanas)\n${semVenda || '(nenhum)'}\n\nANÚNCIOS COM ADS CARO NAS 8 SEMANAS (ACOS acima de 8%)\n${adsRuim || '(nenhum)'}\n\nCONVITES DE PROMOÇÃO DOS ANÚNCIOS QUE MAIS FATURAM\n${promo || '(nenhum)'}${abc?.length ? `\n\nCURVA A (90 dias)\n${abc.filter((x: any) => x.curva === 'A').slice(0, 30).map((x: any) => `${x.codigo} ${x.descricao} R$ ${x.faturamento}`).join('\n')}` : ''}`;
+  const contexto = `RESUMO POR CONTA (semana de ${ant} a ${somaDias(ant, 6)} x semana anterior)\n${JSON.stringify(resumo)}\n\nREPUTAÇÃO E CAMPANHAS DE ADS (último dia lido)\n${JSON.stringify(contaDia ?? [])}\n\nANÚNCIOS QUE MAIS VENDERAM\n${top}\n\nANÚNCIOS QUE PERDERAM VISITAS\n${caiu || '(nenhum)'}\n\nANÚNCIOS COM MUITA VISITA E POUCA VENDA (8 semanas)\n${semVenda || '(nenhum)'}\n\nANÚNCIOS COM ADS CARO NAS 8 SEMANAS (ACOS acima de 3%)\n${adsRuim || '(nenhum)'}\n\nCONVITES DE PROMOÇÃO DOS ANÚNCIOS QUE MAIS FATURAM\n${promo || '(nenhum)'}${abc?.length ? `\n\nCURVA A (90 dias)\n${abc.filter((x: any) => x.curva === 'A').slice(0, 30).map((x: any) => `${x.codigo} ${x.descricao} R$ ${x.faturamento}`).join('\n')}` : ''}`;
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST', headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model: Deno.env.get('ANTHROPIC_MODELO') || 'claude-sonnet-5-5', max_tokens: 24000,   // o modelo pensa antes de escrever: folga grande para não cortar o texto
       system: `Você é o analista sênior de marketplace da NOX (Nox Performance Engineering, peças de performance em inox: intakes, defletores, ponteiras, abafadores), que vende no Mercado Livre em duas contas. Escreva para o Paulo, o dono, em português simples e direto (ele não é técnico).
 Formato: título curto; 3 a 5 linhas de resumo da semana (vendas, visitas, ADS, comparando com a semana anterior, por conta); depois "O que fazer esta semana": no máximo 7 ações, da mais importante para a menos, cada uma com o anúncio (MLB e nome curto), o número que motivou e o ganho esperado. Use só os números fornecidos; não invente. Ações típicas: pausar ou baixar orçamento de ADS caro; pôr ADS em anúncio que converte bem; revisar preço/foto/título de anúncio com muita visita e nenhuma venda; investigar queda de visitas; aceitar ou recusar promoção; cuidar da reputação. Nada é alterado sozinho: são sugestões. Texto puro com marcadores "-", sem tabelas e sem markdown (nada de #, ** ou _). Visitas vazias (null) = não lidas: não tire conclusão delas.
-REGRA DE OURO: não decida nada com uma semana só. Peça de R$ 500 a R$ 2.000 vende poucas unidades por semana e oscila; uma semana sem venda ou sem venda pelo ADS é normal. Use sempre as colunas "8 SEMANAS": só sugira pausar ADS se o ACOS de 8 semanas passar de 8% com pelo menos 60 cliques; só sugira mexer em preço/foto/título se a conversão de 8 semanas (unidades ÷ visitas) estiver baixa. Para cortar ADS, prefira baixar o lance ou a meta de ACOS a pausar. Promoção com coparticipação do ML: diga quanto a NOX paga (vendedor_pct) e o preço final, para o Paulo decidir.`,
+REGRA DE OURO: não decida nada com uma semana só. Peça de R$ 500 a R$ 2.000 vende poucas unidades por semana e oscila; uma semana sem venda ou sem venda pelo ADS é normal. Use sempre as colunas "8 SEMANAS"; só sugira mexer em preço/foto/título se a conversão de 8 semanas (unidades ÷ visitas) estiver baixa.
+RÉGUA DE ADS DA NOX (ticket alto, então ADS caro pesa muito): a métrica principal é o ROAS (vendas pelo ADS ÷ gasto). Comece sempre pelo ROAS GERAL de cada conta (roas_geral_semana e roas_geral_8_semanas): tem que estar sempre acima de 30, quanto maior melhor; abaixo de 30 é o primeiro alerta do relatório. Depois olhe anúncio por anúncio: quais gastam muito e quais não, e quais puxam o ROAS geral para baixo. ACOS (gasto ÷ vendas pelo ADS) do anúncio em 8 semanas: abaixo de 2% é o ideal; até 2,5% é aceitável; entre 2,5% e 3% fique de olho; entre 3% e 5% é caro e precisa de ação; acima de 5% é muito alto (sempre gasta demais). Ação para ACOS acima de 3%: aumentar a meta de ROAS da campanha/anúncio ou diminuir o orçamento diário, conforme o caso, ou os dois; diga qual e por quê (ex.: gasta muito todo dia → orçamento; vende pouco por clique → ROAS). Pausar só se continuar acima de 5% depois de 2 a 3 semanas de ajuste. Promoção com coparticipação do ML: diga quanto a NOX paga (vendedor_pct) e o preço final, para o Paulo decidir.`,
       messages: [{ role: 'user', content: contexto }] })
   });
   const j = await r.json().catch(() => ({}));
@@ -254,8 +260,11 @@ async function avisos(db: Db) {
     const conv = h.vis ? h.un / h.vis : 0, acos = h.adsrec ? h.ads / h.adsrec : null, n8 = { vendas_8s: h.un, faturamento_8s: Math.round(h.rs), visitas_8s: h.vis, conversao_8s: pc(conv),
       ads_gasto_8s: Math.round(h.ads), ads_vendeu_8s: Math.round(h.adsrec), acos_8s: acos == null ? null : pc(acos), cliques_8s: h.cliq, preco: Number(x.preco), qualidade: x.qualidade };
     // 1) ADS caro
-    if (h.ads >= 80 && h.cliq >= 60 && (acos == null || acos > 0.08))
-      add(x, 'ads_caro', h.ads, 'ADS caro', `Em 8 semanas o ADS gastou ${brl(h.ads)} e vendeu ${brl(h.adsrec)} (ACOS ${acos == null ? 'sem venda' : pc(acos)}, ${h.cliq} cliques). Baixe a meta de ACOS da campanha ou o lance deste anúncio (não pause de cara). Se em 2 a 3 semanas continuar acima de 8%, aí sim pause o ADS dele.`, n8);
+    // régua do Paulo: ACOS ideal < 2%, aceitável até 2,5%; 3% a 5% agir; > 5% muito alto
+    if (h.ads >= 80 && h.cliq >= 60 && (acos == null || acos > 0.03)) {
+      const roas = h.ads ? h.adsrec / h.ads : 0, alto = acos == null || acos > 0.05;
+      add(x, 'ads_caro', alto ? h.ads * 2 : h.ads, alto ? 'ADS muito caro' : 'ADS caro', `Em 8 semanas o ADS gastou ${brl(h.ads)} e vendeu ${brl(h.adsrec)} (ACOS ${acos == null ? 'sem venda' : pc(acos)}, ROAS ${roas.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}, ${h.cliq} cliques). A meta da NOX é ACOS abaixo de 2% (aceitável até 2,5%). ${alto ? 'Acima de 5% é muito alto: aumente a meta de ROAS e diminua o orçamento diário deste anúncio. Se em 2 a 3 semanas continuar acima de 5%, pause o ADS dele.' : 'Entre 3% e 5%: analise e aumente a meta de ROAS ou diminua o orçamento diário (se gasta muito todo dia, orçamento; se vende pouco pelo que gasta, ROAS), ou os dois.'}`, { ...n8, roas_8s: Math.round(roas * 10) / 10 });
+    }
     // 2) muita visita e pouca venda
     if (h.vis >= 300 && conv < 0.004)
       add(x, 'visita_sem_venda', h.vis * Number(x.preco || 0) / 1000, 'Muita visita, pouca venda', `${h.vis} visitas em 8 semanas e só ${h.un} venda(s) (conversão ${pc(conv)}). O problema é o anúncio, não o ADS: compare preço com os concorrentes e com os nossos anúncios parecidos, melhore fotos e título, coloque vídeo e parcelamento sem juros.${x.qualidade_falta ? ` O ML pede: ${x.qualidade_falta}.` : ''}`, n8);
@@ -274,12 +283,23 @@ async function avisos(db: Db) {
     if (conv8.length && h.un >= 3)
       add(x, 'promocao', h.rs / 20, 'Promoção para decidir', `Convites do ML para este anúncio (${h.un} vendas em 8 semanas, preço hoje ${brl(Number(x.preco))}): ${conv8.map((p: any) => `${p.nome || p.tipo}: preço R$ ${p.preco}, NOX paga ${p.vendedor_pct}% e ML ${p.meli_pct}%`).join(' · ')}. Leve ao Paulo com a sua sugestão: relâmpago costuma custar caro; prefira a opção em que a NOX paga menos.`, { ...n8, convites: conv8 });
   }
+  // ROAS geral da conta (8 semanas) abaixo de 30: primeiro alerta, antes dos anúncios
+  for (const c of [...new Set(semanas[0].map(x => x.canal_id))]) {
+    let g = 0, v = 0; for (const [id, h] of hist) if (semanas[0].some(x => x.item_id === id && x.canal_id === c)) { g += h.ads; v += h.adsrec; }
+    const roas = g ? v / g : null;
+    if (g >= 200 && roas != null && roas < 30)
+      novos.push({ item_id: 'CONTA-' + c, canal_id: c, tipo: 'ads_caro', semana: ant, peso: 1e9, titulo: `ROAS geral abaixo de 30: Mercado Livre ${c === 1 ? '30' : c === 2 ? '37' : c}`,
+        orientacao: `Nas últimas 8 semanas o ADS desta conta gastou ${brl(g)} e vendeu ${brl(v)}: ROAS geral ${roas.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} (a meta é ficar sempre acima de 30). Veja os avisos "ADS caro" desta conta: comece pelos anúncios que mais gastam e aumente a meta de ROAS ou reduza o orçamento diário deles.`,
+        numeros: { ads_gasto_8s: Math.round(g), ads_vendeu_8s: Math.round(v), roas_geral_8s: Math.round(roas * 10) / 10 } });
+  }
   // não repetir: mesmo anúncio + tipo com aviso nas últimas 3 semanas (aberto, feito ou ignorado)
   const { data: ja } = await db.from('ml_avisos').select('item_id, tipo').gte('criado_em', new Date(Date.now() - 21 * 864e5).toISOString());
   const tem = new Set((ja ?? []).map(a => a.item_id + ':' + a.tipo));
   const { count: abertos } = await db.from('ml_avisos').select('id', { count: 'exact', head: true }).eq('situacao', 'aberto');
   const vaga = Math.max(0, 25 - (abertos ?? 0));          // no máximo 25 abertos: o analista dá conta
-  const lote = novos.filter(a => !tem.has(a.item_id + ':' + a.tipo)).sort((a, b) => b.peso - a.peso).slice(0, Math.min(vaga, 10)).map(({ peso, ...a }) => a);
+  const livres = novos.filter(a => !tem.has(a.item_id + ':' + a.tipo)).sort((a, b) => b.peso - a.peso);
+  // o alerta da conta (ROAS geral abaixo de 30) entra sempre, mesmo com a fila cheia
+  const lote = [...livres.filter(a => a.item_id.startsWith('CONTA-')), ...livres.filter(a => !a.item_id.startsWith('CONTA-')).slice(0, Math.min(vaga, 10))].map(({ peso, ...a }) => a);
   if (lote.length) { const { error } = await db.from('ml_avisos').upsert(lote, { onConflict: 'item_id,tipo,semana', ignoreDuplicates: true }); if (error) throw error; }
   return { candidatos: novos.length, criados: lote.length };
 }

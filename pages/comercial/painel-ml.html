@@ -6,7 +6,7 @@
 <title>Painel do Mercado Livre · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611232135">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611242100">
 <style>
   .kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -48,10 +48,10 @@
   <div id="corpo"><div class="vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611232135"></script>
-<script src="../../assets/js/ui.js?v=202611232135"></script>
-<script src="../../assets/js/auth.js?v=202611232135"></script>
-<script src="../../assets/js/layout.js?v=202611232135"></script>
+<script src="../../assets/js/supabase.js?v=202611242100"></script>
+<script src="../../assets/js/ui.js?v=202611242100"></script>
+<script src="../../assets/js/auth.js?v=202611242100"></script>
+<script src="../../assets/js/layout.js?v=202611242100"></script>
 <script>
 /* =====================================================================
    Painel do Mercado Livre (só leitura)
@@ -150,7 +150,8 @@ function desenharKpis() {
     k('Visitas', N(vis), `vs ${N(bvis)} na semana anterior${variacao(vis, bvis)}`),
     k('Conversão', pct(vis ? vq / vis : null, 2), `unidades vendidas ÷ visitas${bvis ? ` · antes ${pct(bq / bvis, 2)}` : ''}`),
     k('ADS: gasto', R$(ag), `vendeu ${R$(ar)} pelo ADS${variacao(ag, bag)}`),
-    k('ADS: ACOS', pct(ar ? ag / ar : null), `gasto ÷ venda do ADS · ${ar ? `${(vv ? ar / vv * 100 : 0).toFixed(0)}% das vendas vieram do ADS` : 'sem venda por ADS'}`),
+    k('ADS: ROAS geral', ag ? `<span style="color:${ar / ag >= 30 ? '#2e9e55' : '#d93025'}">${(ar / ag).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>` : '—', `venda do ADS ÷ gasto · meta: acima de 30`),
+    k('ADS: ACOS', ar ? `<span style="color:${ag / ar <= 0.025 ? '#2e9e55' : ag / ar <= 0.03 ? '#b8860b' : '#d93025'}">${pct(ag / ar)}</span>` : pct(null), `ideal abaixo de 2%, aceitável até 2,5% · ${ar ? `${(vv ? ar / vv * 100 : 0).toFixed(0)}% das vendas vieram do ADS` : 'sem venda por ADS'}`),
   ].join('');
   // reputação por conta
   const cor = { '5_green': '#2e9e55', '4_light_green': '#8bc34a', '3_yellow': '#f2c200', '2_orange': '#f28c00', '1_red': '#d93025' };
@@ -248,14 +249,15 @@ function desenharAbc() {
 function desenharAds() {
   const c = $('#fConta').value, dias = DIA.filter(d => !c || String(d.canal_id) === c);
   const linhas = dias.flatMap(d => (d.campanhas || []).map(x => ({ ...x, conta: CANAIS.get(d.canal_id) || '' }))).sort((a, b) => b.gasto - a.gasto);
-  $('#corpo').innerHTML = `<p class="dica">Campanhas de Product Ads na semana corrente (até hoje). ACOS = quanto do valor vendido pelo ADS foi gasto em anúncio; quanto menor, melhor. Alvo = ACOS que a campanha tenta manter.</p>
+  $('#corpo').innerHTML = `<p class="dica">Campanhas de Product Ads na semana corrente (até hoje). ROAS = vendas pelo ADS ÷ gasto (meta da NOX: ROAS geral acima de 30). ACOS = gasto ÷ vendas pelo ADS: ideal abaixo de 2%, aceitável até 2,5%; de 3% a 5% aumentar a meta de ROAS ou diminuir o orçamento diário; acima de 5% é muito alto.</p>
     <div class="cartao tabela-rolagem"><table><thead><tr><th>Campanha</th>${c ? '' : '<th>Conta</th>'}<th>Situação</th><th class="num">Orçamento/dia</th><th class="num">Gasto</th><th class="num">Vendas pelo ADS</th>
-    <th class="num">Unidades</th><th class="num">Cliques</th><th class="num">Impressões</th><th class="num">ACOS</th><th class="num">ACOS alvo</th></tr></thead><tbody>
+    <th class="num">Unidades</th><th class="num">Cliques</th><th class="num">Impressões</th><th class="num">ROAS</th><th class="num">ACOS</th><th class="num">ACOS alvo</th></tr></thead><tbody>
     ${linhas.map(x => `<tr><td>${esc(x.nome || x.id)}</td>${c ? '' : `<td>${esc(x.conta)}</td>`}<td>${x.status === 'active' ? 'Ativa' : x.status === 'paused' ? 'Pausada' : esc(x.status || '')}</td>
       <td class="num nw">${x.orcamento_dia ? R$(x.orcamento_dia) : ''}</td><td class="num nw">${R$2(x.gasto)}</td><td class="num nw">${R$(x.vendas)}</td><td class="num">${N(x.unidades)}</td>
       <td class="num">${N(x.cliques)}</td><td class="num">${N(x.impressoes)}</td>
+      <td class="num">${x.gasto && x.vendas ? `<span style="color:${x.vendas / x.gasto >= 30 ? '#2e9e55' : '#d93025'}">${(x.vendas / x.gasto).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>` : ''}</td>
       <td class="num">${x.gasto && !x.vendas ? '<span class="q-baixa">sem venda</span>' : x.acos != null ? Number(x.acos).toLocaleString('pt-BR') + '%' : ''}</td><td class="num">${x.acos_alvo != null ? Number(x.acos_alvo).toLocaleString('pt-BR') + '%' : ''}</td></tr>`).join('')
-      || `<tr><td colspan="11" class="vazio">Sem campanhas lidas ainda.</td></tr>`}</tbody></table></div>`;
+      || `<tr><td colspan="12" class="vazio">Sem campanhas lidas ainda.</td></tr>`}</tbody></table></div>`;
 }
 
 /* ---------- Avisos do analista (criados todo dia pelo servidor, regras de 8 semanas) ---------- */
@@ -267,9 +269,9 @@ function desenharAvisos() {
   if (document.activeElement?.matches?.('#corpo .av-obs')) return;
   const cartao = a => `<div class="bloco aviso-ml" data-id="${a.id}">
     <div class="bloco-cab"><h2><span class="tg" style="background:${(TIPO_AV[a.tipo] || [])[1] || '#eee'}">${esc((TIPO_AV[a.tipo] || [a.tipo])[0])}</span> ${esc(a.titulo)}</h2>
-      <a href="${linkMl(a.item_id)}" target="_blank" rel="noopener">Abrir no ML ↗</a></div>
+      ${String(a.item_id).startsWith('CONTA-') ? '' : `<a href="${linkMl(a.item_id)}" target="_blank" rel="noopener">Abrir no ML ↗</a>`}</div>
     <p class="relatorio" style="margin:0 0 8px">${esc(a.orientacao)}</p>
-    <p class="dica">${esc(a.item_id)} · ${esc(CANAIS.get(a.canal_id) || '')} · aviso de ${dataHoraBR(a.criado_em)}</p>
+    <p class="dica">${String(a.item_id).startsWith('CONTA-') ? 'Conta inteira' : esc(a.item_id)} · ${esc(CANAIS.get(a.canal_id) || '')} · aviso de ${dataHoraBR(a.criado_em)}</p>
     ${a.situacao === 'aberto' ? `<div class="ferr" style="gap:6px"><input class="av-obs" placeholder="Comentário (o que foi feito)" style="flex:1">
       <button class="btn primario" data-r="feito">Feito</button><button class="btn" data-r="ignorado">Ignorar</button></div>`
       : `<p class="dica"><b>${a.situacao === 'feito' ? 'Feito' : 'Ignorado'}</b> em ${dataHoraBR(a.resolvido_em)}${a.obs ? ' · ' + esc(a.obs) : ''} <button class="btn" data-r="aberto" style="margin-left:6px">Reabrir</button></p>`}
