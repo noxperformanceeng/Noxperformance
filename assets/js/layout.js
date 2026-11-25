@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611251230';
+const VERSAO_TELAS = '202611251553';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 // Menu por ÁREA (nov/2026): cada área tem uma página de cartões (pages/area.html?a=<slug>) com as telas dela.
 // "sub" separa partes dentro da área; arquivo null = tela ainda não feita ("em breve", só o administrador vê).
@@ -269,6 +269,8 @@ async function iniciarTela() {
   if (ctx.pode('perguntas_ml', 'alterar')) alertaPerguntasML(ctx.usuario?.perfil_id === 'comercial');
   // Avisos do analista do ML: contador no menu para quem vê o painel; faixa amarela + som para o analista (quem não é administrador)
   if (ctx.pode('painel_ml')) alertaAnalistaML(!ctx.admin);
+  // Recados e ordens de compra para receber: faixa azul no topo de qualquer tela + contador na Minha mesa + som/aviso
+  alertaRecados(ctx);
   // Venda nova: cartão verde + som para Comercial e Expedição
   if (['comercial', 'expedicao'].includes(ctx.usuario?.perfil_id)) alertaVendas();
   // Menu lateral recolhível (lembra a escolha)
@@ -615,6 +617,41 @@ function alertaPerguntasML(comSom) {
   }
   conferir(); setInterval(conferir, 30000);
   if (typeof ouvirMudancas === 'function') ouvirMudancas(['ml_perguntas'], conferir, { auxiliar: true, mesmoOculto: true });
+}
+
+/* ---------- Recados para mim (faixa azul) ----------
+   Recados da tabela recados ainda não concluídos. As ordens de compra aprovadas (recado automático para o
+   almoxarifado) aparecem destacadas. Pisca e toca enquanto houver recado que a pessoa ainda não viu. */
+function alertaRecados(ctx) {
+  const eu = ctx.usuario?.id; if (!eu) return;
+  const vistos = new Set(); let primeira = true;
+  const faixa = document.createElement('div'); faixa.id = 'alertaRecados'; faixa.className = 'alerta-perg alerta-recados'; faixa.hidden = true;
+  faixasTopo().appendChild(faixa);
+  const notificar = (r, n) => { try { if (window.Notification && Notification.permission === 'granted') {
+    const nt = new Notification(r.link?.includes('pedidos.html') ? 'Ordem de compra nova para receber' : 'Recado novo no sistema', { body: r.texto, tag: 'nox-recados' });
+    nt.onclick = () => { window.focus(); faixa.querySelector('a.btn')?.click(); nt.close(); }; } } catch {} };
+  async function conferir() {
+    const { data, error } = await db.from('recados').select('id, texto, link, visto_em, criado_em').eq('para_id', eu).is('feito_em', null).order('criado_em', { ascending: false });
+    if (error) return;
+    const ls = data || [], n = ls.length, oc = ls.filter(r => (r.link || '').includes('pedidos.html')).length, naoVistos = ls.filter(r => !r.visto_em).length;
+    const novos = ls.filter(r => !vistos.has(r.id)); ls.forEach(r => vistos.add(r.id));
+    document.querySelectorAll('.menu a.item[data-area=""]').forEach(a => {
+      a.querySelectorAll('.cont-perg').forEach(x => x.remove());
+      if (n) a.insertAdjacentHTML('beforeend', `<span class="cont-perg n-aprov${naoVistos ? ' pisca' : ''}" title="${n} recado(s) para você">${n}</span>`);
+    });
+    if (!n) { faixa.hidden = true; medirFaixas(); primeira = false; return; }
+    const outros = n - oc;
+    const oQue = [oc ? `${oc} ordem${oc > 1 ? 'ns' : ''} de compra para receber` : '', outros ? `${outros} recado${outros > 1 ? 's' : ''} para você` : ''].filter(Boolean).join(' · ');
+    faixa.innerHTML = `<span class="sino">${oc ? '📦' : '✉'}</span><b>${oQue}</b>
+      <span class="ult">${naoVistos ? `${naoVistos} ainda não ${naoVistos > 1 ? 'vistos' : 'visto'} · ` : ''}${esc(String(ls[0].texto).slice(0, 110))}</span>
+      <a class="btn" href="${RAIZ}inicio.html">Ver na Minha mesa</a>`;
+    faixa.classList.toggle('novo', naoVistos > 0);
+    faixa.hidden = false; medirFaixas();
+    if (novos.length && !primeira) { notificar(novos[0], n); SOM.tocar([[660, 0], [880, .18]], 'sine', .22, .2); }
+    primeira = false;
+  }
+  conferir(); setInterval(conferir, 60000);
+  if (typeof ouvirMudancas === 'function') ouvirMudancas(['recados'], conferir, { auxiliar: true, mesmoOculto: true });
 }
 
 /* ---------- Avisos do analista do Mercado Livre (faixa amarela) ----------
