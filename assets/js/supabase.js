@@ -38,6 +38,7 @@ const tempoReal = (() => {
   const FONTES = {
     quarentena_pagar: ['titulos_pagar', 'pagamentos', 'categorias_financeiras', 'contas_bancarias'],
     aprovacoes_historico_lista: ['aprovacoes_historico'],
+    recados_pessoas: ['usuarios'],
     compra_conjunto: ['pedidos_compra', 'pedidos_compra_itens', 'produto_arquivos', 'produto_estrutura', 'produtos'],
     desenhos_vigentes: ['produto_arquivos', 'produtos'],
     painel_ml_curva_abc: ['pedidos_venda', 'pedidos_venda_itens', 'produtos'],

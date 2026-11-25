@@ -774,3 +774,17 @@ table.uso .tg-parado { background: #fde8ea; color: var(--destaque-texto); border
 #tEmpresa { margin-top: 26px; }
 .cab-tela .cont-cab { font-weight: 600; color: var(--texto); }
 .menu .marca .marca-nome { display: block; width: 96px; height: auto; margin-bottom: 3px; }
+
+/* Recados (Minha mesa) */
+.mesa-rec { border-color: #c9d2f5; background: #f7f8ff; margin-bottom: 16px; }
+.rc-linha { display: flex; justify-content: space-between; align-items: center; gap: 14px; background: var(--superficie); border: 1px solid #e3e7f7; border-radius: 10px; padding: 12px 14px; margin-top: 8px; flex-wrap: wrap; }
+.rc-txt { flex: 1 1 320px; min-width: 0; } .rc-txt p { margin: 3px 0; font-size: 14.5px; white-space: pre-wrap; }
+.rc-txt small, .rc-env small { display: block; font-size: 12.5px; color: var(--texto-suave); }
+.rc-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+.rc-prazo { display: inline-block; margin-left: 6px; background: #eef1fb; color: #3b4bb5; border-radius: 20px; padding: 1px 8px; font-size: 11.5px; font-weight: 600; }
+.rc-prazo.atrasado { background: #fde8ea; color: var(--destaque-texto); }
+.rc-env { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 9px 0; border-top: 1px solid var(--linha); }
+.rc-env:first-child { border-top: 0; } .rc-env > span:first-child { min-width: 0; }
+.rc-env small { white-space: pre-wrap; } .rc-env .rc-resp { color: var(--texto); }
+.rc-sit { white-space: nowrap; font-size: 12px; font-weight: 600; color: #b45309; background: #fef3e2; border-radius: 20px; padding: 2px 9px; }
+.rc-sit.visto { color: #3b4bb5; background: #eef1fb; } .rc-sit.feito { color: #15803d; background: #e7f6ec; }

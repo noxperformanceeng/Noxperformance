@@ -6,7 +6,7 @@
 <title>NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/style.css?v=202611242325">
+<link rel="stylesheet" href="assets/css/style.css?v=202611250855">
 </head>
 <body data-modulo="" data-titulo="Minha mesa" data-shell="sim">
 <main id="conteudo" class="painel" aria-live="polite">
@@ -15,12 +15,15 @@
     <div class="painel-cab-acoes">
       <div class="seg" id="segEmpresa" role="group" aria-label="Empresa"></div>
       <div class="menu-novo" id="menuNovo" hidden></div>
+      <button type="button" class="btn fino" id="btnRecado">✉ Mandar recado</button>
     </div>
   </div>
+  <section class="bloco mesa-rec" id="blRec" aria-labelledby="tRec" hidden><div class="bloco-cab"><h2 id="tRec">Recados para você</h2></div><div id="rec"></div></section>
   <section class="mesa-grade" id="mesa" aria-label="O que é seu para fazer hoje"></section>
   <section class="bloco mesa-atr" id="blAtr" aria-labelledby="tAtr" hidden><div class="bloco-cab"><h2 id="tAtr"><span class="atr-ico" aria-hidden="true">!</span>Prazo estourado</h2></div><div id="atr"></div></section>
   <div class="mesa-duas">
     <section class="bloco" id="blFav" aria-labelledby="tFav"><div class="bloco-cab"><h2 id="tFav">Meus atalhos</h2></div><div id="fav"></div></section>
+    <section class="bloco" id="blEnv" aria-labelledby="tEnv" hidden><div class="bloco-cab"><h2 id="tEnv">Recados que mandei</h2></div><div id="env"></div></section>
     <section class="bloco" id="blUso" aria-labelledby="tUso" hidden><div class="bloco-cab"><h2 id="tUso">Uso do sistema hoje</h2><a href="pages/config/auditoria.html">Auditoria</a></div><div id="uso"></div></section>
   </div>
   <h2 class="area-sub" id="tEmpresa">Visão da empresa</h2>
@@ -43,10 +46,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/supabase.js?v=202611242325"></script>
-<script src="assets/js/ui.js?v=202611242325"></script>
-<script src="assets/js/auth.js?v=202611242325"></script>
-<script src="assets/js/layout.js?v=202611242325"></script>
+<script src="assets/js/supabase.js?v=202611250855"></script>
+<script src="assets/js/ui.js?v=202611250855"></script>
+<script src="assets/js/auth.js?v=202611250855"></script>
+<script src="assets/js/layout.js?v=202611250855"></script>
 <script>
 /* Visão do gestor — todos os números vêm de public.painel_gestor() (um bloco por permissão). */
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -250,6 +253,62 @@ async function desenharFavoritos() {
     : '<p class="bloco-sub" style="margin:0">Fixe aqui as telas que você mais usa: abra uma área no menu e clique na estrela do cartão da tela.</p>';
 }
 
+/* ---------- Recados (tabela recados: cada um vê os que mandou e os que recebeu) ---------- */
+let PESSOAS = null;
+const nomePessoa = id => ((PESSOAS || []).find(p => p.id === id)?.nome || 'alguém').toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+const prazoTxt = d => { if (!d) return ''; const h = new Date().toISOString().slice(0, 10);
+  return d < h ? `<span class="rc-prazo atrasado">prazo ${dm(d)} · atrasado</span>` : `<span class="rc-prazo">${d === h ? 'para hoje' : 'até ' + dm(d)}</span>`; };
+async function desenharRecados() {
+  if (!PESSOAS) PESSOAS = (await db.rpc('recados_pessoas')).data || [];
+  const eu = CTX.usuario.id, desde = new Date(Date.now() - 7 * 864e5).toISOString();
+  const { data, error } = await db.from('recados').select('*').or(`feito_em.is.null,feito_em.gte.${desde}`).order('criado_em', { ascending: false }).limit(60);
+  if (error) return;
+  const rec = data.filter(r => r.para_id === eu && !r.feito_em), env = data.filter(r => r.de_id === eu);
+  $('blRec').hidden = !rec.length;
+  $('rec').innerHTML = rec.map(r => `<div class="rc-linha" data-id="${r.id}">
+      <div class="rc-txt"><small>${esc(nomePessoa(r.de_id))} · ${dhm(r.criado_em)} ${prazoTxt(r.prazo)}</small><p>${esc(r.texto)}</p>
+        ${r.resposta ? `<small>Sua resposta: ${esc(r.resposta)}</small>` : ''}</div>
+      <div class="rc-acoes">${r.link ? `<a class="btn fino" href="${esc(r.link)}">Abrir tela</a>` : ''}<button class="btn fino" data-resp>Responder</button><button class="btn fino primario" data-feito>✓ Feito</button></div></div>`).join('');
+  $('blEnv').hidden = !env.length;
+  $('env').innerHTML = env.map(r => `<div class="rc-env"><span><b>${esc(nomePessoa(r.para_id))}</b> ${prazoTxt(r.prazo)}<small>${esc(r.texto)}</small>${r.resposta ? `<small class="rc-resp">↳ ${esc(r.resposta)}</small>` : ''}</span>
+      <span class="rc-sit ${r.feito_em ? 'feito' : r.visto_em ? 'visto' : ''}">${r.feito_em ? 'feito ' + dhm(r.feito_em) : r.visto_em ? 'visto ' + dhm(r.visto_em) : 'ainda não viu'}</span></div>`).join('');
+  // quem recebe e está com a Minha mesa aberta já viu
+  const novos = rec.filter(r => !r.visto_em).map(r => r.id);
+  if (novos.length && document.visibilityState === 'visible') await db.from('recados').update({ visto_em: new Date().toISOString() }).in('id', novos);
+}
+function responderRecado(id, feito) {
+  const m = abrirModal(`<h2>${feito ? 'Marcar como feito' : 'Responder recado'}</h2>
+    <div class="campo"><label>${feito ? 'Comentário (opcional)' : 'Resposta'}</label><textarea id="rcR" rows="3" maxlength="2000"></textarea></div>
+    <div class="acoes"><button class="btn" id="rcN">Voltar</button><button class="btn primario" id="rcS">${feito ? '✓ Feito' : 'Enviar resposta'}</button></div>`);
+  m.querySelector('#rcR').focus(); m.querySelector('#rcN').onclick = () => m.remove();
+  m.querySelector('#rcS').onclick = async () => {
+    const t = m.querySelector('#rcR').value.trim();
+    if (!feito && !t) return aviso('Escreva a resposta', true);
+    const dados = { ...(t ? { resposta: t } : {}), ...(feito ? { feito_em: new Date().toISOString() } : {}) };
+    const { error } = await db.from('recados').update(dados).eq('id', id);
+    if (error) return aviso('Não salvou: ' + error.message, true);
+    aviso(feito ? 'Recado concluído' : 'Resposta enviada'); m.remove(); desenharRecados();
+  };
+}
+async function novoRecado() {
+  if (!PESSOAS) PESSOAS = (await db.rpc('recados_pessoas')).data || [];
+  const op = PESSOAS.filter(p => p.id !== CTX.usuario.id);
+  const m = abrirModal(`<h2>Mandar recado</h2>
+    <div class="campo"><label>Para *</label><select id="rcP"><option value="">Escolha a pessoa</option>${op.map(p => `<option value="${p.id}">${esc(nomePessoa(p.id))}</option>`).join('')}</select></div>
+    <div class="campo"><label>Recado *</label><textarea id="rcT" rows="4" maxlength="2000" placeholder="O que a pessoa precisa fazer"></textarea></div>
+    <div class="campo"><label>Prazo (opcional)</label><input type="date" id="rcD"></div>
+    <div class="acoes"><button class="btn" id="rcN">Voltar</button><button class="btn primario" id="rcS">Mandar</button></div>`);
+  m.querySelector('#rcN').onclick = () => m.remove();
+  m.querySelector('#rcS').onclick = async () => {
+    const para = m.querySelector('#rcP').value, texto = m.querySelector('#rcT').value.trim();
+    if (!para || !texto) return aviso('Escolha a pessoa e escreva o recado', true);
+    m.querySelector('#rcS').disabled = true;
+    const { error } = await db.from('recados').insert({ para_id: para, texto, prazo: m.querySelector('#rcD').value || null });
+    if (error) { m.querySelector('#rcS').disabled = false; return aviso('Não mandou: ' + error.message, true); }
+    aviso('Recado enviado: aparece na Minha mesa da pessoa'); m.remove(); desenharRecados();
+  };
+}
+
 /* ---------- Carga ---------- */
 async function carregar() {
   ultimaCarga = Date.now();
@@ -281,6 +340,11 @@ function desenharEmpresas() {
   $('saudacao').textContent = `${h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'}${nome ? ', ' + nome.charAt(0) + nome.slice(1).toLowerCase() : ''}. Aqui está o que é seu para resolver hoje.`;
   desenharMesa(window.NOX_MESA); window.addEventListener('nox:mesa', e => desenharMesa(e.detail));
   desenharFavoritos(); ouvirMudancas(['usuarios_favoritos'], desenharFavoritos);
+  desenharRecados(); ouvirMudancas(['recados'], desenharRecados);
+  $('btnRecado').onclick = novoRecado;
+  $('rec').addEventListener('click', e => { const l = e.target.closest('[data-id]'); if (!l) return;
+    if (e.target.closest('[data-feito]')) responderRecado(Number(l.dataset.id), true);
+    else if (e.target.closest('[data-resp]')) responderRecado(Number(l.dataset.id), false); });
   desenharEmpresas(); desenharNovo(); desenharAcoes();
   $('segEmpresa').addEventListener('click', e => { const b = e.target.closest('[data-emp]'); if (!b) return;
     const sel = document.getElementById('seletorEmpresa');
