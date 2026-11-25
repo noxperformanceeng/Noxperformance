@@ -6,7 +6,7 @@
 <title>Cotações de fornecedores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611250855">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251139">
 <style>
   .mapa { overflow: auto; max-height: 64vh; border: 1px solid var(--linha); border-radius: 10px; }
   .mapa table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 100%; }
@@ -34,6 +34,13 @@
   .chips-arq { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; }
   .chips-arq .tg { font-size: 10.5px; }
   .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
+  .fb-lista { max-height: 46vh; overflow: auto; display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .fb-item { text-align: left; background: var(--superficie); border: 1px solid var(--linha); border-radius: 8px; padding: 8px 12px; cursor: pointer; font: 14px var(--fonte); color: var(--texto); }
+  .fb-item:hover:not([disabled]) { border-color: var(--destaque); background: #fff7f7; }
+  .fb-item[disabled] { opacity: .55; cursor: default; }
+  .fb-item small { display: block; color: var(--texto-suave); font-size: 12px; margin-top: 1px; }
+  .fb-criar { border-style: dashed; color: var(--destaque-texto, var(--destaque)); }
+  .fb-novo { border: 1px solid var(--linha); border-radius: 10px; padding: 12px 14px; }
   .anexos-orc { margin-top: 6px; border-top: 1px dashed var(--linha); padding-top: 4px; }
   .anexos-orc > label { font-size: 10.5px; color: var(--texto-suave); display: block; }
   .anexos-orc .anx { font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin: 2px 0; }
@@ -44,11 +51,11 @@
 <body data-modulo="cotacoes_compra" data-titulo="Cotações de fornecedores">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611250855"></script>
-<script src="../../assets/js/ui.js?v=202611250855"></script>
-<script src="../../assets/js/auth.js?v=202611250855"></script>
-<script src="../../assets/js/layout.js?v=202611250855"></script>
-<script src="../../assets/js/cadastro.js?v=202611250855"></script>
+<script src="../../assets/js/supabase.js?v=202611251139"></script>
+<script src="../../assets/js/ui.js?v=202611251139"></script>
+<script src="../../assets/js/auth.js?v=202611251139"></script>
+<script src="../../assets/js/layout.js?v=202611251139"></script>
+<script src="../../assets/js/cadastro.js?v=202611251139"></script>
 <script>
 /* =====================================================================
    Cotações de fornecedores (entre a solicitação aprovada e o pedido de compra)
@@ -89,6 +96,7 @@ function colForn(f, ed) {
   return `<th class="forn" data-cf="${f.id || ''}">
     <div style="display:flex;gap:4px;align-items:center"><select data-k="fornecedor_id"${dis}>${opts(FORN.filter(x => x.situacao === 'ativo' || x.id === f.fornecedor_id).map(x => ({ id: x.id, nome: nomeComFantasia(x) })), f.fornecedor_id, '— fornecedor —')}</select>
       ${ed ? '<button type="button" class="rm" data-rmf title="Tirar este fornecedor da cotação">×</button>' : ''}</div>
+    ${f.fornecedor_id && !(FORN.find(x => x.id === f.fornecedor_id) || {}).cnpj ? '<div class="nota" style="color:#b45309" title="Fornecedor de prospecção: complete o CNPJ em Cadastros › Fornecedores antes de fechar o pedido">sem CNPJ · cadastro a completar</div>' : ''}
     <div class="cfg">
       <div class="l2"><label>Condição de pagamento</label><select data-k="condicao_pagamento_id" data-simples${dis}>${opts(CONDS, f.condicao_pagamento_id)}</select></div>
       <div class="l2"><label>Forma</label><select data-k="forma_pagamento_id" data-simples${dis}>${opts(FORMAS, f.forma_pagamento_id)}</select></div>
@@ -101,6 +109,65 @@ function colForn(f, ed) {
     ${f.fornecedor_id ? `<button type="button" class="btn fino" data-pdf="${f.fornecedor_id}" style="margin-top:4px" title="PDF do pedido de cotação com o nome deste fornecedor e os desenhos (PDF de corte e dobra) no final">Baixar PDF para o fornecedor</button>` : ''}
     ${f.fornecedor_id ? `<button type="button" class="btn fino discreto" data-copiar style="margin-top:4px" title="Copia a lista de itens para mandar ao fornecedor por WhatsApp ou e-mail">Copiar pedido de cotação</button>` : ''}
     ${f.id ? blocoAnexos(f, ed) : ''}</th>`;
+}
+
+/* ---------- + Fornecedor: busca com lista e cadastro rápido (prospecção) ---------- */
+// ordem: nome que começa com o que foi digitado, depois palavra que começa, depois contém em qualquer parte
+function rankForn(f, b) {
+  const n = semAcento(nomeComFantasia(f)), ps = semAcento(b).split(/\s+/).filter(Boolean);
+  if (!ps.length || !combinaBusca(n, b)) return -1;
+  const palavras = n.split(/[^a-z0-9]+/);
+  return n.startsWith(ps[0]) ? 0 : ps.every(p => palavras.some(w => w.startsWith(p))) ? 1 : 2;
+}
+function escolherFornecedor(r, pai) {
+  const ja = new Set(fornsDe(r).map(x => x.fornecedor_id));
+  const m = abrirModal(`<h2>Incluir fornecedor na cotação</h2>
+    <div class="campo"><label>Buscar pelo nome, nome fantasia ou CNPJ</label><input id="fbB" placeholder="Ex.: Retitec" autocomplete="off"></div>
+    <div id="fbL" class="fb-lista"></div>
+    <div id="fbNovo" class="fb-novo" style="display:none"><b>Fornecedor novo (prospecção)</b><p class="sub" style="margin:2px 0 8px">Só o nome já basta para cotar. CNPJ e endereço podem ser completados depois, em Cadastros › Fornecedores.</p>
+      <div class="grade-campos"><div class="campo l2"><label>Nome *</label><input id="fnN"></div><div class="campo l2"><label>Contato</label><input id="fnC"></div>
+      <div class="campo l2"><label>WhatsApp</label><input id="fnT" inputmode="tel" placeholder="DDD + número"></div><div class="campo l2"><label>E-mail</label><input id="fnE" type="email"></div></div>
+      <div class="acoes"><button class="btn" id="fnV">Voltar à busca</button><button class="btn primario" id="fnS">Incluir na cotação</button></div></div>
+    <div class="acoes" id="fbAc"><button class="btn" id="fbX">Fechar</button></div>`);
+  const $m = s => m.querySelector(s), busca = $m('#fbB');
+  const incluir = async f => {
+    if (ja.has(f.id)) return aviso('Esse fornecedor já está na cotação', true);
+    try { const { forns, itens } = lerMapa(pai); forns.push({ fornecedor_id: f.id, precos: [] });
+      const { error } = await db.rpc('cotacao_salvar', { p_id: r.id, p_cab: lerCab(pai), p_forn: forns, p_itens: itens }); if (error) throw error;
+      aviso(`${nomeComFantasia(f)} incluído na cotação`); m.remove(); reabrir(r);
+    } catch (er) { aviso('Não incluiu: ' + (er.message || er), true); } };
+  const desenhar = () => {
+    const b = busca.value.trim(), dig = b.replace(/\D/g, '');
+    const achados = !b ? [] : FORN.map(f => ({ f, k: dig.length >= 4 && String(f.cnpj || '').replace(/\D/g, '').includes(dig) ? 0 : rankForn(f, b) }))
+      .filter(x => x.k >= 0).sort((a, c) => (a.f.situacao !== 'ativo' || ja.has(a.f.id)) - (c.f.situacao !== 'ativo' || ja.has(c.f.id)) || a.k - c.k || nomeComFantasia(a.f).localeCompare(nomeComFantasia(c.f))).slice(0, 12);
+    $m('#fbL').innerHTML = (!b ? '<p class="sub">Digite parte do nome para ver a lista.</p>'
+      : achados.map(({ f }) => { const off = f.situacao !== 'ativo', dentro = ja.has(f.id);
+          return `<button type="button" class="fb-item" data-f="${f.id}"${off || dentro ? ' disabled' : ''}><b>${esc(nomeComFantasia(f))}</b>
+            <small>${[f.cnpj ? 'CNPJ ' + esc(f.cnpj) : 'sem CNPJ', f.contato ? esc(f.contato) : '', off ? 'inativo' : '', dentro ? 'já está na cotação' : ''].filter(Boolean).join(' · ')}</small></button>`; }).join('')
+        || '<p class="sub">Nenhum fornecedor com esse nome.</p>')
+      + (b ? `<button type="button" class="fb-item fb-criar" data-novo>+ Incluir <b>${esc(b.toUpperCase())}</b> como fornecedor novo</button>` : '');
+  };
+  ligarBusca(busca, desenhar, 120); desenhar(); busca.focus();
+  busca.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); m.querySelector('.fb-item:not([disabled])')?.click(); } });
+  $m('#fbX').onclick = () => m.remove();
+  // busca ⇄ formulário do fornecedor novo (display, porque as classes têm display próprio)
+  const modoNovo = on => { $m('#fbNovo').style.display = on ? 'block' : 'none'; [$m('#fbL'), $m('#fbAc'), busca.closest('.campo')].forEach(el => el.style.display = on ? 'none' : ''); };
+  $m('#fbL').onclick = e => {
+    const it = e.target.closest('.fb-item'); if (!it || it.disabled) return;
+    if (it.hasAttribute('data-novo')) { $m('#fnN').value = busca.value.trim().toUpperCase(); modoNovo(true); return $m('#fnC').focus(); }
+    incluir(FORN.find(f => f.id === Number(it.dataset.f)));
+  };
+  $m('#fnV').onclick = () => { modoNovo(false); busca.focus(); };
+  $m('#fnS').onclick = async () => {
+    const nome = $m('#fnN').value.trim(); if (nome.length < 3) return aviso('Escreva o nome do fornecedor', true);
+    $m('#fnS').disabled = true;
+    try { const { forns, itens } = lerMapa(pai);   // guarda o que já foi digitado no mapa antes de incluir
+      const { error: e1 } = await db.rpc('cotacao_salvar', { p_id: r.id, p_cab: lerCab(pai), p_forn: forns, p_itens: itens }); if (e1) throw e1;
+      const { error } = await db.rpc('cotacao_fornecedor_novo', { p_cotacao: r.id, p_nome: nome, p_contato: $m('#fnC').value, p_telefone: $m('#fnT').value, p_email: $m('#fnE').value });
+      if (error) throw error;
+      aviso(`${nome.toUpperCase()} incluído · cadastro rápido (complete o CNPJ antes do pedido)`); m.remove(); reabrir(r);
+    } catch (er) { $m('#fnS').disabled = false; aviso('Não incluiu: ' + (er.message || er), true); }
+  };
 }
 
 /* ---------- Orçamentos recebidos (PDF, planilha, print do WhatsApp) anexados por fornecedor ---------- */
@@ -411,16 +478,7 @@ const cfg = {
         if (!confirm('Excluir este orçamento anexado?')) return;
         const { data: apg, error } = await db.from('cotacoes_compra_anexos').delete().eq('id', id).select('id'); if (error || !apg?.length) return aviso('Não excluiu: ' + (error?.message || 'só quem anexou (com a cotação aberta) ou o administrador exclui'), true);
         ex.anexos[cfId] = anexosDe(cfId).filter(x => x.id !== id); redesenharAnexos(m, r, cfId); aviso('Anexo excluído'); return; }
-      if (t.id === 'addForn') { // nova coluna (salva e recarrega para montar as células)
-        const sel = prompt('Fornecedor a incluir (digite parte do nome):'); if (!sel) return;
-        const ach = FORN.filter(f => f.situacao === 'ativo' && combinaBusca(nomeComFantasia(f), sel));
-        if (!ach.length) return aviso('Nenhum fornecedor ativo com esse nome. Cadastre em Cadastros › Fornecedores.', true);
-        const f = ach[0]; if (fornsDe(r).some(x => x.fornecedor_id === f.id)) return aviso('Esse fornecedor já está na cotação', true);
-        try { const { forns, itens } = lerMapa(m); forns.push({ fornecedor_id: f.id, precos: [] });
-          const { error } = await db.rpc('cotacao_salvar', { p_id: r.id, p_cab: lerCab(m), p_forn: forns, p_itens: itens }); if (error) throw error;
-          aviso(`${nomeComFantasia(f)} incluído${ach.length > 1 ? ` (havia ${ach.length} parecidos: escolhido o primeiro; troque na coluna se precisar)` : ''}`); reabrir(r);
-        } catch (er) { aviso('Não incluiu: ' + (er.message || er), true); }
-        return; }
+      if (t.id === 'addForn') return escolherFornecedor(r, m);
       if (t.closest('[data-rmf]')) { if (!confirm('Tirar este fornecedor e os preços dele da cotação?')) return;
         const ci = [...m.querySelectorAll('.mapa thead th.forn')].indexOf(t.closest('th'));
         m.querySelectorAll('.mapa tr').forEach(tr => { const c = tr.querySelectorAll(tr.closest('thead') ? 'th.forn' : 'td.cel')[ci]; c?.remove(); });
