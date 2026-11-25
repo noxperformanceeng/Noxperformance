@@ -6,7 +6,7 @@
 <title>Notas fiscais · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251553">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
   .nf-cnpjs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin: 0 0 12px; }
@@ -31,12 +31,12 @@
 <body data-modulo="notas" data-titulo="Notas fiscais" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251553"></script>
-<script src="../../assets/js/ui.js?v=202611251553"></script>
-<script src="../../assets/js/auth.js?v=202611251553"></script>
-<script src="../../assets/js/layout.js?v=202611251553"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611251553"></script>
-<script src="../../assets/js/cadastro.js?v=202611251553"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Notas fiscais de entrada (NF-e emitidas contra a NOX), separadas por CNPJ
@@ -182,7 +182,7 @@ function abrirLancar(r, pai) {
     <p class="sub" style="margin:0 0 8px">NF sem pedido aprovada pelo master, com entrada no estoque já dada pelo almoxarifado. Gera ${dups.length} título(s) pelas duplicatas.</p>
     ${NO_TINY[r.id] ? `<div class="aviso-box">Atenção: esta NF já está no Tiny (${esc(NO_TINY[r.id].situacao_tiny || 'nota de entrada')}). Lançar aqui duplica a conta.</div>` : ''}
     <div class="grade-campos">
-      <div class="campo l2"><label>Categoria financeira <span class="obrig">*</span></label><select id="lCat"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}">${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></div>
+      <div class="campo l2"><label>Categoria financeira <span class="obrig">*</span></label><select data-categoria id="lCat"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
       <div class="campo l2"><label>Conta prevista</label><select id="lConta"><option value="">—</option>${CONTAS.filter(c => c.empresa_id === r.empresa_id).map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>
     </div>
     <table class="lista-mini"><thead><tr><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${dups.map(d => `<tr><td>${dataCurta(d.vencimento)}</td><td class="num">${reais(d.valor)}</td></tr>`).join('')}</tbody></table>

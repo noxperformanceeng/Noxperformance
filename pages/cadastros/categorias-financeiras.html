@@ -6,7 +6,7 @@
 <title>Categorias financeiras · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251553">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .arvore { white-space: nowrap; }
   .arvore.n1 { font-weight: 700; }
@@ -18,11 +18,11 @@
 <body data-modulo="categorias_fin" data-titulo="Categorias financeiras">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251553"></script>
-<script src="../../assets/js/ui.js?v=202611251553"></script>
-<script src="../../assets/js/auth.js?v=202611251553"></script>
-<script src="../../assets/js/layout.js?v=202611251553"></script>
-<script src="../../assets/js/cadastro.js?v=202611251553"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 const TIPOS = [{ v: 'receita', n: 'Receita' }, { v: 'deducao', n: 'Dedução da receita (impostos, taxas de marketplace, devoluções)' },
   { v: 'custo', n: 'Custo de produção / mercadoria' }, { v: 'despesa', n: 'Despesa operacional' }, { v: 'investimento', n: 'Investimento (máquinas, obras)' },
@@ -44,7 +44,7 @@ montarCadastro({
   campos: [
     { id: 'codigo', label: 'Código', lista: true, somenteLeitura: true, ajuda: 'Gerado automaticamente, em sequência dentro do grupo pai (2 › 2.01 › 2.01.008). Ninguém digita.' },
     { id: 'nome', label: 'Nome', obrig: true, col: 3 },
-    { id: 'pai_id', label: 'Categoria pai (grupo)', tipo: 'select', col: 2, cadastro: false, opcoes: () => TODAS.filter(c => !c.aceita_lancamento).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })) },
+    { id: 'pai_id', label: 'Categoria pai (grupo)', tipo: 'select', col: 2, cadastro: false, opcoes: () => TODAS.filter(c => !c.aceita_lancamento).map(c => ({ v: c.id, n: `${c.nome}` })) },
     { id: 'tipo', label: 'Tipo', tipo: 'select', opcoes: TIPOS, obrig: true, col: 2 },
     { id: 'grupo_dre', label: 'Linha no relatório de gestão', tipo: 'select', opcoes: DRE, col: 2, filtro: true, filtroVazio: true,
       ajuda: 'Linha do DRE gerencial (resultado do mês): receita − deduções − custo dos produtos − despesas = resultado. Define em que linha o gasto aparece no relatório de resultado.' },

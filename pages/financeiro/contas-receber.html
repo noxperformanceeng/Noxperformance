@@ -6,7 +6,7 @@
 <title>Contas a receber · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251553">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .pg-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; margin-top: 8px; padding: 10px; border: 1px solid var(--linha); border-radius: 8px; }
   .pg-form label { font-size: 11px; margin-bottom: 2px; }
@@ -17,11 +17,11 @@
 <body data-modulo="receber" data-titulo="Contas a receber" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251553"></script>
-<script src="../../assets/js/ui.js?v=202611251553"></script>
-<script src="../../assets/js/auth.js?v=202611251553"></script>
-<script src="../../assets/js/layout.js?v=202611251553"></script>
-<script src="../../assets/js/cadastro.js?v=202611251553"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Contas a receber — uma lista só, por empresa ou consolidado
@@ -54,8 +54,8 @@ const linkVenda = p => { const c = canal(p?.canal_id); return c?.link_pedido && 
 
 /* ---------- Composição (receita + / encargos −) ---------- */
 const optCats = sel => '<option value="">— categoria —</option>' + CATS.filter(c => c.ativo || c.id === sel)
-  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
-const linhaComp = (x = {}) => `<tr data-tipo="${esc(x.tipo_codigo || '')}"><td><select data-k="categoria_financeira_id">${optCats(x.categoria_financeira_id)}</select></td>
+  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.nome)}</option>`).join('');
+const linhaComp = (x = {}) => `<tr data-tipo="${esc(x.tipo_codigo || '')}"><td><select data-categoria data-k="categoria_financeira_id">${optCats(x.categoria_financeira_id)}</select></td>
   <td><input data-k="observacao" value="${esc(x.observacao || '')}" placeholder="ex.: tarifa de venda"></td>
   <td style="width:140px"><input data-k="valor" inputmode="decimal" value="${x.valor != null ? Number(x.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}"></td>
   <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
@@ -103,7 +103,7 @@ function htmlReceb(r) {
       <div><label>Data</label><input type="date" id="rcData" value="${hoje()}"></div>
       <div><label>Valor abatido (R$)</label><input id="rcValor" inputmode="decimal" value="${String(r.saldo).replace('.', ',')}"></div>
       <div><label>Ajuste (R$, − tarifa / + juros)</label><input id="rcAjuste" inputmode="decimal" placeholder="0,00"></div>
-      <div><label>Categoria do ajuste</label><select id="rcAjCat">${optCats(null)}</select></div>
+      <div><label>Categoria do ajuste</label><select data-categoria id="rcAjCat">${optCats(null)}</select></div>
       <div class="l2"><label>Conta</label><select id="rcConta">${contasEmp.map(c => `<option value="${c.id}"${c.id === r.conta_bancaria_id ? ' selected' : ''}>${esc(c.descricao)}</option>`).join('')}</select></div>
       <div><label>Forma</label><select id="rcForma"><option value="">—</option>${FORMAS.map(f => `<option value="${f.id}"${f.id === r.forma_pagamento_id ? ' selected' : ''}>${esc(f.nome)}</option>`).join('')}</select></div>
       <div><label>Identificador</label><input id="rcIdent"></div>
@@ -160,7 +160,7 @@ const cfg = {
     { id: 'documento', label: 'Documento', placeholder: 'NF, boleto, nº da venda' },
     { id: 'descricao', label: 'Descrição', col: 2 },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
-      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Venda de marketplace usa a composição abaixo (receita e tarifas).' },
+      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.nome}` })), ajuda: 'Venda de marketplace usa a composição abaixo (receita e tarifas).' },
     { id: 'valor', label: 'Valor a receber (R$)', tipo: 'moeda', obrig: true, lista: true },
     { id: 'saldo', label: 'Saldo (R$)', tipo: 'moeda', somenteLeitura: true, lista: true },
     { id: 'conta_bancaria_id', label: 'Conta prevista', tipo: 'select', filtro: true, opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })), secao: 'Como vai ser recebido' },

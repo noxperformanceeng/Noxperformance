@@ -6,7 +6,7 @@
 <title>Pedidos de venda · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251553">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .tot-ped { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 8px; }
   .tot-ped b { font-variant-numeric: tabular-nums; }
@@ -17,11 +17,11 @@
 <body data-modulo="pedidos" data-titulo="Pedidos de venda" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251553"></script>
-<script src="../../assets/js/ui.js?v=202611251553"></script>
-<script src="../../assets/js/auth.js?v=202611251553"></script>
-<script src="../../assets/js/layout.js?v=202611251553"></script>
-<script src="../../assets/js/cadastro.js?v=202611251553"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Pedidos de venda — uma lista só para marketplace e distribuidores
@@ -76,7 +76,7 @@ function lerItens() {
 const tiposDoCanal = canalId => { const p = canal(canalId)?.plataforma; return TIPOS_ENC.filter(t => t.situacao === 'ativo' && (t.plataforma === p || t.plataforma === 'geral') && !t.codigo.startsWith('diferenca_') && t.codigo !== 'frete_cliente'); };
 const linhaEnc = (x = {}, canalId) => `<tr>
   <td><select data-k="tipo_codigo"><option value="">— tipo —</option>${tiposDoCanal(canalId).map(t => `<option value="${esc(t.codigo)}" data-cat="${t.categoria_financeira_id || ''}"${t.codigo === x.tipo_codigo ? ' selected' : ''}>${esc(t.nome)}</option>`).join('')}</select></td>
-  <td><select data-k="categoria_financeira_id"><option value="">— categoria —</option>${CATS.map(c => `<option value="${c.id}"${c.id === x.categoria_financeira_id ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></td>
+  <td><select data-categoria data-k="categoria_financeira_id"><option value="">— categoria —</option>${CATS.map(c => `<option value="${c.id}"${c.id === x.categoria_financeira_id ? ' selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></td>
   <td style="width:120px"><input data-k="valor" inputmode="decimal" value="${num2(x.valor)}"></td>
   <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 function lerEncargos() {

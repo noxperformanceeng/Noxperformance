@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251553">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -48,17 +48,22 @@
   .parc .soma { font-size: 12px; margin-top: 6px; color: var(--texto-suave); }
   .parc .soma.erro { color: var(--erro); font-weight: 600; }
   .parc[hidden] { display: none; }
+  .oque-paga { margin: 0 0 12px; background: #f4f7ff; border-color: #c9d2f5; }
+  .oque-paga ul { margin: 6px 0 2px; padding: 0; list-style: none; }
+  .oque-paga li { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 3px 0; border-top: 1px solid #e3e7f7; }
+  .oque-paga li:first-child { border-top: 0; }
+  .oque-paga li span { font-weight: 600; } .oque-paga li small { color: var(--texto-suave); }
 </style>
 </head>
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251553"></script>
-<script src="../../assets/js/ui.js?v=202611251553"></script>
-<script src="../../assets/js/auth.js?v=202611251553"></script>
-<script src="../../assets/js/layout.js?v=202611251553"></script>
-<script src="../../assets/js/cadastro.js?v=202611251553"></script>
-<script src="../../assets/js/comprovante.js?v=202611251553"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
+<script src="../../assets/js/comprovante.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -96,8 +101,8 @@ const forma = id => FORMAS.find(f => f.id === id);
 
 /* ---------- Rateio (várias categorias no mesmo título) ---------- */
 const optCats = sel => '<option value="">— categoria —</option>' + CATS.filter(c => c.ativo || c.id === sel)
-  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
-const linhaRateio = (x = {}) => `<tr><td><select data-k="categoria_financeira_id">${optCats(x.categoria_financeira_id)}</select></td>
+  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.nome)}</option>`).join('');
+const linhaRateio = (x = {}) => `<tr><td><select data-categoria data-k="categoria_financeira_id">${optCats(x.categoria_financeira_id)}</select></td>
   <td style="width:150px"><input data-k="valor" inputmode="decimal" value="${x.valor != null ? Number(x.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}"></td>
   <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 function lerRateio() {
@@ -259,6 +264,25 @@ function gruposDoBoleto(r, valor, data) {
   return out;
 }
 const mesmoNomeTiny = r => LINHAS.filter(x => x.id !== r.id && !x.fornecedor_id && x.origem_ref?.fornecedor_tiny === r.origem_ref?.fornecedor_tiny && ['aberto', 'programado'].includes(x.situacao));
+
+const ITENS_PC = {};   // pedido de compra → o que foi comprado (1º item + quantos mais), para a lista
+/* ---------- O que está sendo pago: itens do pedido de compra / da NF, logo abaixo do título ---------- */
+async function mostrarOQuePaga(m, r) {
+  if (!r?.id || !(r.pedido_compra_id || r.nf_entrada_id)) return;
+  const [pi, nf] = await Promise.all([
+    r.pedido_compra_id ? db.from('pedidos_compra_itens').select('descricao, quantidade, unidade, valor_unitario, categoria_financeira_id').eq('pedido_id', r.pedido_compra_id).order('id') : { data: [] },
+    r.nf_entrada_id ? db.from('nfe_entrada').select('itens').eq('id', r.nf_entrada_id).maybeSingle() : { data: null }]);
+  let itens = (pi.data || []).map(i => ({ d: i.descricao, q: i.quantidade, u: i.unidade, v: Number(i.quantidade) * Number(i.valor_unitario), c: i.categoria_financeira_id }));
+  if (!itens.length && Array.isArray(nf.data?.itens)) itens = nf.data.itens.map(i => ({ d: i.descricao || i.xProd, q: i.quantidade ?? i.qCom, u: i.unidade ?? i.uCom, v: Number(i.valor_total ?? i.vProd) || null }));
+  if (!itens.length || !m.isConnected) return;
+  const catN = id => { const c = CATS.find(x => x.id === id); return c ? `${c.nome}` : ''; };
+  const difCat = itens.some(i => i.c && r.categoria_financeira_id && i.c !== r.categoria_financeira_id);
+  const box = document.createElement('div'); box.className = 'aviso-box oque-paga';
+  box.innerHTML = `<b>O que está sendo pago</b>${itens.length > 1 ? ` <small>(${itens.length} itens)</small>` : ''}
+    <ul>${itens.slice(0, 8).map(i => `<li><span>${esc(i.d || 'item')}</span><small>${i.q != null ? `${Number(i.q).toLocaleString('pt-BR')} ${esc(i.u || 'un')}` : ''}${i.v ? ` · ${Number(i.v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}${i.c ? ` · ${esc(catN(i.c))}` : ''}</small></li>`).join('')}${itens.length > 8 ? `<li><small>+ ${itens.length - 8} itens: abra o pedido</small></li>` : ''}</ul>
+    ${difCat ? '<small class="tg alerta">A categoria de algum item é diferente da categoria deste título</small>' : ''}`;
+  m.querySelector('h2')?.insertAdjacentElement('afterend', box);
+}
 
 /* ---------- Rastreio da compra até o pagamento ---------- */
 // Títulos do RH: tela de origem › lançamento na folha › título
@@ -549,7 +573,7 @@ async function abrirConferencia(x) {
       ${recebidos.map(i => `<tr><td>${esc(i.descricao || '')}</td>${sp ? '' : `<td>${num2(i.pedido)} ${esc(i.unidade || '')}</td>`}<td>${num2(i.nesta)} ${esc(i.unidade || '')}</td><td class="num">${reais(i.valor)}</td></tr>`).join('')}</tbody></table>
       <p class="sub" style="margin:4px 0 0">Itens ${reais(somaItens)} · valor da NF <b>${reais(x.valor)}</b>${Math.abs(somaItens - Number(x.valor)) > 0.05 ? ' <span class="tg alerta">diferença de ' + reais(Number(x.valor) - somaItens) + ' (frete, impostos ou desconto?)</span>' : ' <span class="tg ok">confere</span>'}</p></div>
     <div class="grade-campos">
-      <div class="campo l2"><label>Categoria financeira ${sp ? '<span class="obrig">*</span>' : '<span class="sub">(vazio = a dos itens do pedido)</span>'}</label><select id="qCat">${optCats(null)}</select></div>
+      <div class="campo l2"><label>Categoria financeira ${sp ? '<span class="obrig">*</span>' : '<span class="sub">(vazio = a dos itens do pedido)</span>'}</label><select data-categoria id="qCat">${optCats(null)}</select></div>
       ${sp ? `<div class="campo l2"><label>Conta prevista</label><select id="qConta"><option value="">—</option>${CONTAS.filter(c => c.empresa_id === x.empresa_id && c.situacao === 'ativo' && c.tipo !== 'historico').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>` : ''}
     </div>
     <div class="sub-ed" id="qParc"><div class="secao">Parcelas (duplicatas da NF ou condição do pedido)</div><table><thead><tr><th>#</th><th>Vencimento</th><th>Valor (R$)</th><th>Código de barras (opcional)</th><th></th></tr></thead>
@@ -638,7 +662,9 @@ const cfg = {
     // Título do RH: no lugar do fornecedor aparece o colaborador (ver aoAbrir)
     { id: 'fornecedor_id', label: 'Fornecedor', tipo: 'select', obrig: true, col: 2, lista: true, filtro: true, opcoes: () => FORN, oculto: r => r.origem === 'rh',
       // sem cadastro: mostra o nome que veio do Tiny (ou o colaborador, nos títulos do RH); embaixo, a descrição
-      listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n, d = r.descricao && r.descricao !== r.documento ? `<small class="sub2 texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</small>` : '';
+      listaHtml: r => { const n = FORN.find(f => f.v === r.fornecedor_id)?.n, it = ITENS_PC[r.pedido_compra_id],
+          d = it ? `<small class="sub2 texto-curto" title="${esc(it)} · ${esc(r.descricao || '')}"><b>${esc(it)}</b></small>`
+            : r.descricao && r.descricao !== r.documento ? `<small class="sub2 texto-curto" title="${esc(r.descricao)}">${esc(r.descricao)}</small>` : '';
         return (n ? `<span class="texto-curto" title="${esc(n)}">${esc(n)}</span>`
           : colaborador(r) ? `<span class="texto-curto" title="Colaborador (título gerado pelo RH)">${esc(colaborador(r))} <small class="tg neutro">colaborador</small></span>`
           : rhTotal(r) ? `<span class="texto-curto" title="Total do RH, pago pela Diretoria. O valor por colaborador fica só no RH.">RH · Diretoria <small class="tg neutro">total</small></span>`
@@ -650,7 +676,7 @@ const cfg = {
         + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '') },
     { id: 'descricao', label: 'Descrição / histórico', col: 2, ajuda: 'Nos títulos do Tiny: o histórico de lá.' },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
-      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Obrigatória. Para dividir em várias categorias, use "Dividir em mais de uma categoria" no fim do formulário.' },
+      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.nome}` })), ajuda: 'Obrigatória. Para dividir em várias categorias, use "Dividir em mais de uma categoria" no fim do formulário.' },
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, ajuda: 'Aparece na lista. No parcelado, vai para todas as parcelas.',
       listaHtml: r => r.observacoes ? `<span class="texto-curto" style="max-width:220px" title="${esc(r.observacoes)}">${esc(r.observacoes)}</span>` : '' },
     { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true, secao: 'Valor e datas' },
@@ -699,11 +725,12 @@ const cfg = {
     const ids = k => [...new Set(linhas.map(r => r[k]).filter(Boolean))];
     const idsPc = ids('pedido_compra_id'), idsNf = ids('nf_entrada_id');
     const [pcs, nfs] = await Promise.all([
-      idsPc.length ? db.from('pedidos_compra').select('id, numero, numero_tiny').in('id', idsPc) : { data: [] },
+      idsPc.length ? db.from('pedidos_compra').select('id, numero, numero_tiny, itens:pedidos_compra_itens(descricao)').in('id', idsPc) : { data: [] },
       idsPc.length || idsNf.length ? db.from('nfe_entrada').select('id, numero, pedido_compra_id')
         .or([idsPc.length && `pedido_compra_id.in.(${idsPc})`, idsNf.length && `id.in.(${idsNf})`].filter(Boolean).join(',')) : { data: [] }]);
     const docsPc = {}, docsNf = {};
-    (pcs.data || []).forEach(x => docsPc[x.id] = `${x.numero || ''} ${x.numero_tiny ? 'OC ' + x.numero_tiny : ''}`);
+    (pcs.data || []).forEach(x => { docsPc[x.id] = `${x.numero || ''} ${x.numero_tiny ? 'OC ' + x.numero_tiny : ''} ${(x.itens || []).map(i => i.descricao).join(' ')}`;
+      if ((x.itens || []).length) ITENS_PC[x.id] = x.itens[0].descricao + (x.itens.length > 1 ? ` (+${x.itens.length - 1})` : ''); });
     (nfs.data || []).forEach(x => { docsNf[x.id] = 'NF ' + x.numero; if (x.pedido_compra_id) docsPc[x.pedido_compra_id] = (docsPc[x.pedido_compra_id] || '') + ' NF ' + x.numero; });
     FORN = f.filter(x => x.situacao === 'ativo' || linhas.some(r => r.fornecedor_id === x.id)).map(x => ({ v: x.id, n: nomeComFantasia(x), nome: x.nome, fantasia: x.nome_fantasia, doc: x.cnpj, ativo: x.situacao === 'ativo',
       impostos: x.categoria === 'Impostos e guias' ? x.impostos || [] : [] }));
@@ -744,6 +771,7 @@ const cfg = {
   aoAbrir(m, r, ctx) {
     window.__ctxNox = ctx;
     modalAtual = m;
+    mostrarOQuePaga(m, r);
     const pode = ctx.pode('pagar', 'editar');
     // Conta prevista: só as contas ativas da empresa escolhida no título
     const fEmp = m.querySelector('#f_empresa_id'), fConta = m.querySelector('#f_conta_bancaria_id');
@@ -984,7 +1012,7 @@ function abrirProjecao(ctx) {
     <div class="grade">
       <div><label>Empresa</label><select id="pjEmp">${empOpts}</select></div>
       <div><label>Fornecedor</label><select id="pjForn"><option value="">—</option>${FORN.map(f => `<option value="${f.v}">${esc(f.n)}</option>`).join('')}</select></div>
-      <div style="grid-column: span 2"><label>Categoria financeira</label><select id="pjCat">${optCats(null)}</select></div>
+      <div style="grid-column: span 2"><label>Categoria financeira</label><select data-categoria id="pjCat">${optCats(null)}</select></div>
       <div><label>Descrição / documento</label><input id="pjDoc" placeholder="ex.: Aluguel galpão"></div>
       <div><label>Valor por mês (R$)</label><input id="pjValor" inputmode="decimal"></div>
       <div><label>Dia do vencimento</label><input id="pjDia" inputmode="numeric" value="10"></div>
