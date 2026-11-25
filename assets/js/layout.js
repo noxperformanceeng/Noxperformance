@@ -7,94 +7,108 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611242100';
+const VERSAO_TELAS = '202611242323';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
+// Menu por ÁREA (nov/2026): cada área tem uma página de cartões (pages/area.html?a=<slug>) com as telas dela.
+// "sub" separa partes dentro da área; arquivo null = tela ainda não feita ("em breve", só o administrador vê).
+// sistema: true = área de administração, separada no rodapé do menu.
 const MENU = [
-  { grupo: 'Vendas', icone: 'vendas', itens: [
-    { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html' },
-    { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html' },
-    { id: 'perguntas_ml',  nome: 'Perguntas do Mercado Livre', arquivo: 'pages/comercial/perguntas-ml.html' },
-    { id: 'painel_ml',     nome: 'Painel do Mercado Livre', arquivo: 'pages/comercial/painel-ml.html' },
-    { id: 'chat_shopee',   nome: 'Chat da Shopee',   arquivo: 'pages/comercial/chat-shopee.html' },
-    { id: 'compatibilidade', nome: 'Compatibilidade',   arquivo: 'pages/comercial/compatibilidade.html' },
-    { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html' },
-    { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null }
+  { grupo: 'Atendimento', slug: 'atendimento', icone: 'chat', itens: [
+    { id: 'perguntas_ml',  nome: 'Perguntas do Mercado Livre', arquivo: 'pages/comercial/perguntas-ml.html', desc: 'Responder compradores com a sugestão da IA' },
+    { id: 'chat_shopee',   nome: 'Chat da Shopee',   arquivo: 'pages/comercial/chat-shopee.html', desc: 'Conversas abertas com compradores' },
+    { id: 'compatibilidade', nome: 'Compatibilidade', arquivo: 'pages/comercial/compatibilidade.html', desc: 'Qual peça serve em qual carro' },
+    { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null, desc: 'Produtos voltando do comprador' }
   ]},
-  // Suprimentos = estoque + compras num grupo só; "sub" desenha um subtítulo discreto entre as partes
-  { grupo: 'Suprimentos', icone: 'estoque', itens: [
-    { id: 'estoque',       nome: 'Posição de estoque', arquivo: 'pages/estoque/posicao.html', sub: 'Estoque' },
-    { id: 'inventario',    nome: 'Inventário',        arquivo: 'pages/estoque/inventario.html', sub: 'Estoque' },
-    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html', sub: 'Estoque' },
-    { id: 'solicitacoes_compra', nome: 'Solicitações de compra', arquivo: 'pages/compras/solicitacoes.html', sub: 'Compras' },
-    { id: 'cotacoes_compra', nome: 'Cotações de fornecedores', arquivo: 'pages/compras/cotacoes.html', sub: 'Compras' },
-    { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html', sub: 'Compras' },
-    { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html', sub: 'Compras' }
+  { grupo: 'Vendas', slug: 'vendas', icone: 'vendas', itens: [
+    { id: 'pedidos',       nome: 'Pedidos de venda',  arquivo: 'pages/comercial/pedidos-venda.html', desc: 'Marketplaces, distribuidores e venda direta' },
+    { id: 'separacao',     nome: 'Expedição',          arquivo: 'pages/expedicao/separacao.html', desc: 'Separar e embalar as vendas' },
+    { id: 'clientes',      nome: 'Clientes',          arquivo: 'pages/cadastros/clientes.html', desc: 'Clientes finais e representantes' }
   ]},
-  { grupo: 'Produção', icone: 'producao', itens: [
-    { id: 'pcp',           nome: 'PCP',                arquivo: null },
-    { id: 'ordens',        nome: 'Ordens de produção', arquivo: 'pages/fabricacao/ordens.html' },
-    { id: 'etapas',        nome: 'Etapas',             arquivo: null },
-    { id: 'apontamento',   nome: 'Apontamento',        arquivo: 'pages/fabricacao/apontamento.html' },
-    { id: 'guias_montagem', nome: 'Guias de montagem',  arquivo: 'pages/fabricacao/guias-montagem.html' },
-    { id: 'embalagem',     nome: 'Embalagem',          arquivo: null },
-    { id: 'desenvolvimento', nome: 'Desenvolvimento', arquivo: null },
-    { id: 'desenhos',        nome: 'Desenho técnico', arquivo: null },
-    { id: 'precificacao',    nome: 'Precificação',    arquivo: null }
+  { grupo: 'Marketplaces', slug: 'marketplaces', icone: 'loja', itens: [
+    { id: 'painel_ml',     nome: 'Painel do Mercado Livre', arquivo: 'pages/comercial/painel-ml.html', desc: 'Vendas, visitas, ADS, curva ABC e avisos do analista' },
+    { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html', desc: 'Qual anúncio é qual produto' },
+    { id: 'canais_venda',  nome: 'Canais de venda', arquivo: 'pages/cadastros/canais-venda.html', desc: 'Contas do Mercado Livre, Shopee e outros' },
+    { id: 'canais_venda',  nome: 'Tarifas de marketplace', arquivo: 'pages/cadastros/tarifas-marketplace.html', desc: 'Comissões e fretes por canal' },
+    { id: 'ind_marketing', nome: 'Indicadores de marketing', arquivo: null, desc: 'Resultado das campanhas' }
   ]},
-  { grupo: 'Financeiro', icone: 'financeiro', itens: [
-    { id: 'pagar',         nome: 'Contas a pagar',    arquivo: 'pages/financeiro/contas-pagar.html' },
-    { id: 'despesas',      nome: 'Despesas sem pedido', arquivo: 'pages/financeiro/despesas.html' },
-    { id: 'receber',       nome: 'Contas a receber',  arquivo: 'pages/financeiro/contas-receber.html' },
-    { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: 'pages/financeiro/fluxo-caixa.html' },
-    { id: 'conciliacao',   nome: 'Extratos e conciliação', arquivo: 'pages/financeiro/conciliacao.html' },
-    { id: 'impostos',      nome: 'Impostos',          arquivo: 'pages/financeiro/impostos.html' }
+  { grupo: 'Compras', slug: 'compras', icone: 'compras', itens: [
+    { id: 'solicitacoes_compra', nome: 'Solicitações de compra', arquivo: 'pages/compras/solicitacoes.html', desc: 'Pedidos da equipe para comprar' },
+    { id: 'cotacoes_compra', nome: 'Cotações de fornecedores', arquivo: 'pages/compras/cotacoes.html', desc: 'Comparar preços e prazos' },
+    { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html', desc: 'Aprovação, envio ao fornecedor e recebimento' },
+    { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html', desc: 'XML das notas ligado ao pedido' },
+    { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html', desc: 'Cadastro e histórico de preços' },
+    { id: 'compras',       nome: 'Serviços terceirizados', arquivo: 'pages/cadastros/servicos.html', desc: 'Usinagem, pintura, corte e dobra' }
   ]},
-  { grupo: 'Pessoas e RH', icone: 'pessoas', itens: [
-    { id: 'funcionarios',  nome: 'Colaboradores',     arquivo: 'pages/cadastros/funcionarios.html' },
-    { id: 'lancamentos',   nome: 'Lançamentos',       arquivo: 'pages/rh/lancamentos.html' },
-    { id: 'lancamentos',   nome: 'Conferência da folha', arquivo: 'pages/rh/conferencia.html' },
-    { id: 'holerites',     nome: 'Holerites',         arquivo: 'pages/rh/holerites.html' },
-    { id: 'adiantamento',  nome: 'Adiantamento salarial', arquivo: 'pages/rh/adiantamento.html' },
-    { id: 'ferias',        nome: 'Férias',            arquivo: 'pages/rh/ferias.html' },
-    { id: 'vale_transporte', nome: 'Vale-transporte', arquivo: 'pages/rh/vale-transporte.html' },
-    { id: 'decimo_terceiro', nome: '13º salário',     arquivo: 'pages/rh/decimo-terceiro.html' },
-    { id: 'escala',        nome: 'Escala',            arquivo: 'pages/rh/escala.html' },
-    { id: 'ponto',         nome: 'Ponto',             arquivo: 'pages/rh/ponto.html' },
-    { id: 'faltas',        nome: 'Faltas',            arquivo: 'pages/rh/faltas.html' },
-    { id: 'advertencias',  nome: 'Documentos e advertências', arquivo: 'pages/rh/documentos.html' },
-    { id: 'rh_eventos',    nome: 'Eventos da folha',  arquivo: 'pages/rh/eventos.html' },
-    { id: 'rh_relatorios', nome: 'Relatórios do RH',  arquivo: 'pages/rh/relatorios.html' }
+  { grupo: 'Estoque', slug: 'estoque', icone: 'estoque', itens: [
+    { id: 'estoque',       nome: 'Posição de estoque', arquivo: 'pages/estoque/posicao.html', desc: 'Saldo por produto e local' },
+    { id: 'inventario',    nome: 'Inventário',        arquivo: 'pages/estoque/inventario.html', desc: 'Contagem e ajuste do estoque' },
+    { id: 'locais',        nome: 'Locais de estoque', arquivo: 'pages/cadastros/locais.html', desc: 'Prateleiras, Full e terceiros' },
+    { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html', desc: 'Cadastro com foto, tipo e categoria' },
+    { id: 'produtos',      nome: 'Grupos de produtos', arquivo: 'pages/cadastros/grupos-produtos.html', desc: 'Organização do cadastro' },
+    { id: 'embalagem',     nome: 'Embalagem',          arquivo: null, desc: 'Caixas e materiais de envio' }
   ]},
-  // Indicadores da empresa toda (painéis por área)
-  { grupo: 'Indicadores', icone: 'grafico', itens: [
-    { id: 'ind_financeiro', nome: 'Financeiro', arquivo: null },
-    { id: 'ind_producao',   nome: 'Produção',   arquivo: 'pages/indicadores/producao.html' },
-    { id: 'ind_marketing',  nome: 'Marketing',  arquivo: null }
+  { grupo: 'Produção', slug: 'producao', icone: 'producao', itens: [
+    { id: 'ordens',        nome: 'Ordens de produção', arquivo: 'pages/fabricacao/ordens.html', desc: 'O que fabricar e em que etapa está' },
+    { id: 'apontamento',   nome: 'Apontamento',        arquivo: 'pages/fabricacao/apontamento.html', desc: 'Registro do que foi produzido' },
+    { id: 'guias_montagem', nome: 'Guias de montagem',  arquivo: 'pages/fabricacao/guias-montagem.html', desc: 'Passo a passo de montagem dos kits' },
+    { id: 'ind_producao',  nome: 'Indicadores de produção', arquivo: 'pages/indicadores/producao.html', desc: 'Produtividade e atrasos' },
+    { id: 'pcp',           nome: 'PCP',                arquivo: null, desc: 'Planejamento da produção' },
+    { id: 'etapas',        nome: 'Etapas',             arquivo: null, desc: 'Fluxo de fabricação de cada produto' },
+    { id: 'desenvolvimento', nome: 'Desenvolvimento', arquivo: null, desc: 'Produtos novos' },
+    { id: 'desenhos',      nome: 'Desenho técnico', arquivo: null, desc: 'PDF e DXF de corte e dobra' },
+    { id: 'precificacao',  nome: 'Precificação',    arquivo: null, desc: 'Custo e preço de venda' }
   ]},
-  { grupo: 'Cadastros', icone: 'cadastros', gerenciar: true, itens: [
-    { id: 'produtos',      nome: 'Produtos',          arquivo: 'pages/cadastros/produtos.html' },
-    { id: 'produtos',      nome: 'Grupos de produtos', arquivo: 'pages/cadastros/grupos-produtos.html' },
-    { id: 'compras',       nome: 'Serviços terceirizados', arquivo: 'pages/cadastros/servicos.html' },
-    { id: 'clientes',      nome: 'Clientes',          arquivo: 'pages/cadastros/clientes.html' },
-    { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html' },
-    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html' },
-    { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html' },
-    { id: 'condicoes_pagamento', nome: 'Formas de pagamento', arquivo: 'pages/financeiro/formas-pagamento.html' },
-    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html' },
-    { id: 'canais_venda', nome: 'Canais de venda', arquivo: 'pages/cadastros/canais-venda.html' },
-    { id: 'canais_venda', nome: 'Tarifas de marketplace', arquivo: 'pages/cadastros/tarifas-marketplace.html' }
+  { grupo: 'Financeiro', slug: 'financeiro', icone: 'financeiro', itens: [
+    { id: 'pagar',         nome: 'Contas a pagar',    arquivo: 'pages/financeiro/contas-pagar.html', desc: 'Títulos, programação e baixa' },
+    { id: 'receber',       nome: 'Contas a receber',  arquivo: 'pages/financeiro/contas-receber.html', desc: 'O que entra das vendas' },
+    { id: 'despesas',      nome: 'Despesas sem pedido', arquivo: 'pages/financeiro/despesas.html', desc: 'Lançamentos avulsos com aprovação' },
+    { id: 'fluxo',         nome: 'Fluxo de caixa',    arquivo: 'pages/financeiro/fluxo-caixa.html', desc: 'Saldo previsto por dia' },
+    { id: 'conciliacao',   nome: 'Extratos e conciliação', arquivo: 'pages/financeiro/conciliacao.html', desc: 'Mercado Pago e bancos' },
+    { id: 'impostos',      nome: 'Impostos',          arquivo: 'pages/financeiro/impostos.html', desc: '% de imposto de cada empresa por mês' },
+    { id: 'ind_financeiro', nome: 'Indicadores financeiros', arquivo: null, desc: 'Resultado do mês (DRE)' },
+    { id: 'contas_bancarias', nome: 'Contas bancárias', arquivo: 'pages/financeiro/contas-bancarias.html', sub: 'Configurações' },
+    { id: 'categorias_fin', nome: 'Categorias financeiras', arquivo: 'pages/cadastros/categorias-financeiras.html', sub: 'Configurações' },
+    { id: 'condicoes_pagamento', nome: 'Formas de pagamento', arquivo: 'pages/financeiro/formas-pagamento.html', sub: 'Configurações' },
+    { id: 'condicoes_pagamento', nome: 'Condições de pagamento', arquivo: 'pages/financeiro/condicoes-pagamento.html', sub: 'Configurações' }
   ]},
-  { grupo: 'Integrações', icone: 'integracoes', gerenciar: true, itens: [
-    { id: 'integracoes',   nome: 'Painel de integrações', arquivo: 'pages/config/integracoes.html' },
-    { id: 'canais_venda',  nome: 'Mercado Livre e Shopee', arquivo: 'pages/cadastros/canais-venda.html', exige: 'integracoes' },
-    { id: 'quarentena',    nome: 'Quarentena das importações', arquivo: 'pages/financeiro/quarentena.html' }
+  { grupo: 'RH', slug: 'rh', icone: 'pessoas', itens: [
+    { id: 'funcionarios',  nome: 'Colaboradores',     arquivo: 'pages/cadastros/funcionarios.html', sub: 'Pessoas', desc: 'Cadastro e histórico' },
+    { id: 'advertencias',  nome: 'Documentos e advertências', arquivo: 'pages/rh/documentos.html', sub: 'Pessoas', desc: 'Arquivo de cada colaborador' },
+    { id: 'lancamentos',   nome: 'Lançamentos',       arquivo: 'pages/rh/lancamentos.html', sub: 'Folha', desc: 'Eventos do mês' },
+    { id: 'lancamentos',   nome: 'Conferência da folha', arquivo: 'pages/rh/conferencia.html', sub: 'Folha', desc: 'Fechar antes de pagar' },
+    { id: 'holerites',     nome: 'Holerites',         arquivo: 'pages/rh/holerites.html', sub: 'Folha' },
+    { id: 'rh_eventos',    nome: 'Eventos da folha',  arquivo: 'pages/rh/eventos.html', sub: 'Folha' },
+    { id: 'adiantamento',  nome: 'Adiantamento salarial', arquivo: 'pages/rh/adiantamento.html', sub: 'Benefícios' },
+    { id: 'vale_transporte', nome: 'Vale-transporte', arquivo: 'pages/rh/vale-transporte.html', sub: 'Benefícios' },
+    { id: 'decimo_terceiro', nome: '13º salário',     arquivo: 'pages/rh/decimo-terceiro.html', sub: 'Benefícios' },
+    { id: 'ponto',         nome: 'Ponto',             arquivo: 'pages/rh/ponto.html', sub: 'Jornada' },
+    { id: 'escala',        nome: 'Escala',            arquivo: 'pages/rh/escala.html', sub: 'Jornada' },
+    { id: 'faltas',        nome: 'Faltas',            arquivo: 'pages/rh/faltas.html', sub: 'Jornada' },
+    { id: 'ferias',        nome: 'Férias',            arquivo: 'pages/rh/ferias.html', sub: 'Jornada' },
+    { id: 'rh_relatorios', nome: 'Relatórios do RH',  arquivo: 'pages/rh/relatorios.html', sub: 'Relatórios' }
   ]},
-  { grupo: 'Configurações', icone: 'config', gerenciar: true, itens: [
-    { id: 'usuarios',      nome: 'Usuários e acessos', arquivo: 'pages/config/usuarios.html' },
-    { id: 'auditoria',     nome: 'Auditoria',          arquivo: 'pages/config/auditoria.html' },
-    { id: 'backups',       nome: 'Backups',            arquivo: 'pages/config/backups.html' }
+  { grupo: 'Sistema', slug: 'sistema', icone: 'sistema', sistema: true, itens: [
+    { id: '',              nome: 'Aprovações',         arquivo: 'pages/config/aprovacoes.html', desc: 'Tudo que espera sua decisão' },
+    { id: 'usuarios',      nome: 'Usuários e acessos', arquivo: 'pages/config/usuarios.html', desc: 'Perfis e telas de cada pessoa' },
+    { id: 'integracoes',   nome: 'Painel de integrações', arquivo: 'pages/config/integracoes.html', desc: 'Tiny, Mercado Livre, Shopee, Mercado Pago' },
+    { id: 'canais_venda',  nome: 'Mercado Livre e Shopee', arquivo: 'pages/cadastros/canais-venda.html', exige: 'integracoes', desc: 'Contas conectadas' },
+    { id: 'quarentena',    nome: 'Quarentena das importações', arquivo: 'pages/financeiro/quarentena.html', desc: 'Dados importados a revisar' },
+    { id: 'auditoria',     nome: 'Auditoria',          arquivo: 'pages/config/auditoria.html', desc: 'Quem mudou o quê e quando' },
+    { id: 'backups',       nome: 'Backups',            arquivo: 'pages/config/backups.html', desc: 'Cópia diária no Google Drive' }
   ]}
 ];
+// Telas que a pessoa pode abrir numa área (e as "em breve", só para o administrador)
+// Cartões da Minha mesa → tela (módulo) a que se referem (para os contadores das áreas)
+const MODULO_CARTAO = { perg: 'perguntas_ml', shopee: 'chat_shopee', avisos: 'painel_ml', exped: 'separacao', sol: 'solicitacoes_compra', solap: 'solicitacoes_compra',
+  cot: 'cotacoes_compra', receb: 'compras', desp: 'despesas', pagar: 'pagar', conc: 'conciliacao', aprov: '' };
+function areaDoModulo(mod) { if (mod === undefined) return null; const g = MENU.find(g => g.itens.some(i => i.id === mod && i.arquivo)); return g ? g.slug : null; }
+function areaDoCaminho(c) {
+  if (!c) return '';
+  const [base, q] = c.split('?');
+  if (base === 'pages/area.html') return new URLSearchParams(q || '').get('a') || '';
+  const g = MENU.find(g => g.itens.some(i => i.arquivo === base)); return g ? g.slug : null;
+}
+function telasDaArea(ctx, g) { return g.itens.filter(i => (!i.id || ctx.pode(i.id)) && (!i.exige || ctx.pode(i.exige)) && (i.arquivo || ctx.admin)); }
 
 // Empresa escolhida no topo: null = Consolidado (as duas somadas)
 function lerEmpresa() { try { const v = localStorage.getItem('nox_empresa'); return v ? Number(v) : null; } catch { return null; } }
@@ -186,31 +200,14 @@ async function iniciarTela() {
   const atual = location.href.split('?')[0].split('#')[0];
   const abertos = lerAbertos();
 
-  let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span class="rotulo"><b>NOX</b><small>Sistema de gestão</small></span></a>
-    <a class="item item-raiz${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html" title="Visão geral">${icone('painel')}<span class="rotulo">Visão geral</span></a>
+  let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span class="rotulo"><img class="marca-nome" src="${RAIZ}assets/img/marca-nox.png" alt="NOX Performance Engineering"><small>Sistema de gestão</small></span></a>
+    <a class="item item-raiz${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html" title="Minha mesa" data-area="">${icone('mesa')}<span class="rotulo">Minha mesa</span></a>
     <a class="item item-raiz item-aprov" id="itemAprov" href="${RAIZ}pages/config/aprovacoes.html" title="Aprovações pendentes" hidden>${icone('aprovar')}<span class="rotulo">Aprovações</span><span class="n-aprov" id="nAprov"></span><span class="av-aprov pisca" id="avAprov" hidden>!</span></a>`;
-
-  let secaoGerenciar = false;
-  MENU.forEach(g => {
-    // Só o que a pessoa pode abrir: tela liberada no perfil/usuário (e a tela que o item exige, quando houver).
-    // Itens "em breve" (sem tela pronta) só aparecem para o administrador.
-    const visiveis = g.itens.filter(i => ctx.pode(i.id) && (!i.exige || ctx.pode(i.exige)) && (i.arquivo || ctx.admin));
-    if (!visiveis.length) return;
-    if (g.gerenciar && !secaoGerenciar) { secaoGerenciar = true; menuHtml += '<div class="menu-secao"><span class="rotulo">Gerenciar</span></div>'; }
-    const temAtivo = visiveis.some(i => i.arquivo && atual === RAIZ + i.arquivo);
-    const id = 'grp-' + g.grupo.normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase();
-    const aberto = temAtivo || abertos.includes(g.grupo);
-    menuHtml += `<div class="grupo${aberto ? '' : ' fechado'}" data-grupo="${g.grupo}">
-      <button class="grupo-titulo" type="button" aria-expanded="${aberto}" aria-controls="${id}" title="${g.grupo}">${icone(g.icone)}<span class="rotulo">${g.grupo}</span><span class="seta-grupo">${icone('baixo', 15)}</span></button><div class="grupo-itens" id="${id}">`;
-    const subs = new Set(visiveis.map(i => i.sub).filter(Boolean)); let sub = null;   // subtítulo só se houver mais de uma parte visível
-    visiveis.forEach(i => {
-      if (subs.size > 1 && i.sub !== sub) { sub = i.sub; menuHtml += `<div class="menu-sub">${esc(sub)}</div>`; }
-      if (!i.arquivo) { menuHtml += `<span class="item breve">${i.nome}<span class="tag">em breve</span></span>`; return; }
-      const url = RAIZ + i.arquivo;
-      menuHtml += `<a class="item${atual === url ? ' ativo' : ''}" href="${url}" data-mod="${i.id}"${atual === url ? ' aria-current="page"' : ''}>${i.nome}</a>`;
-    });
-    menuHtml += '</div></div>';
-  });
+  // Uma linha por área (só as que têm alguma tela liberada para a pessoa); cada uma abre a página de cartões da área.
+  const linhaArea = g => `<a class="item item-raiz item-area${g.sistema ? ' item-sistema' : ''}" href="${RAIZ}pages/area.html?a=${g.slug}" data-area="${g.slug}" title="${esc(g.grupo)}">${icone(g.icone)}<span class="rotulo">${esc(g.grupo)}</span><span class="cont-area" hidden></span></a>`;
+  MENU.filter(g => !g.sistema && telasDaArea(ctx, g).length).forEach(g => { menuHtml += linhaArea(g); });
+  const sis = MENU.filter(g => g.sistema && telasDaArea(ctx, g).length);
+  if (sis.length) menuHtml += '<div class="menu-divisor" role="separator"></div>' + sis.map(linhaArea).join('');
 
   const conteudo = document.getElementById('conteudo');
   const app = document.createElement('div');
@@ -253,21 +250,18 @@ async function iniciarTela() {
   };
   contarAprov(); setInterval(contarAprov, 120000); window.addEventListener('nox:aprovacoes', contarAprov);
   ouvirMudancas(tempoReal.fontes('minhas_aprovacoes'), contarAprov, { auxiliar: true, mesmoOculto: true });
-  // Contadores por tela no menu (ex.: solicitações de compra): amarelo = aguardando aprovação, vermelho = pede ação agora
+  // Contadores por área no menu: o que pede ação agora (mesmos números da Minha mesa)
   const contarTelas = async () => {
-    const { data } = await db.rpc('menu_contadores'); if (!data) return;
-    document.querySelectorAll('.menu a.item[data-mod]').forEach(a => {
-      const c = data[a.dataset.mod]; a.querySelectorAll('.cont-menu').forEach(x => x.remove()); if (!c) return;
-      if (c.amarelo) a.insertAdjacentHTML('beforeend', `<span class="cont-menu av-aprov" title="${c.amarelo} aguardando">${c.amarelo}</span>`);
-      if (c.vermelho) a.insertAdjacentHTML('beforeend', `<span class="cont-menu n-aprov pisca" title="${c.vermelho} para agir">${c.vermelho}</span>`);
-      const g = a.closest('.grupo')?.querySelector('.grupo-titulo'); if (!g) return;   // grupo fechado: mostra no título também
-      g.querySelectorAll('.cont-menu').forEach(x => x.remove());
-      const t = [...a.closest('.grupo').querySelectorAll('a.item .cont-menu.n-aprov')].reduce((s, x) => s + Number(x.textContent), 0);
-      if (t) g.querySelector('.seta-grupo').insertAdjacentHTML('beforebegin', `<span class="cont-menu n-aprov pisca">${t}</span>`);
-    });
+    const { data } = await db.rpc('minha_mesa'); if (!data) return;
+    window.NOX_MESA = data;
+    const porArea = {};
+    (data.cartoes || []).filter(c => c.urg && c.n > 0).forEach(c => { const a = areaDoModulo(MODULO_CARTAO[c.k]); if (a) porArea[a] = (porArea[a] || 0) + Number(c.n); });
+    document.querySelectorAll('.menu .item-area').forEach(a => { const b = a.querySelector('.cont-area'), n = porArea[a.dataset.area] || 0;
+      b.hidden = !n; b.textContent = n > 99 ? '99+' : n; b.title = n + ' para agir agora'; });
+    window.dispatchEvent(new CustomEvent('nox:mesa', { detail: data }));
   };
   contarTelas(); setInterval(contarTelas, 120000); window.addEventListener('nox:aprovacoes', contarTelas);
-  if (typeof ouvirMudancas === 'function') ouvirMudancas(['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'titulos_pagar', 'despesas_diretas'], contarTelas, { auxiliar: true, mesmoOculto: true });
+  if (typeof ouvirMudancas === 'function') ouvirMudancas(tempoReal.fontes('minha_mesa'), contarTelas, { auxiliar: true, mesmoOculto: true });
   // Perguntas do Mercado Livre sem resposta: alerta forte em qualquer tela (faixa vermelha piscando, som,
   // aviso do computador e título da aba piscando). Some quando todas forem respondidas.
   // Som só para quem atende o ML (perfil Comercial: Caio e Kleyton); os demais veem só o aviso visual.
@@ -308,14 +302,6 @@ async function iniciarTela() {
   app.querySelector('.principal').appendChild(conteudo);
   document.title = (document.body.dataset.titulo ? document.body.dataset.titulo + ' · ' : '') + 'NOX ERP';
 
-  app.querySelectorAll('.grupo-titulo').forEach(b => b.addEventListener('click', () => {
-    const g = b.parentElement;
-    // Menu recolhido (só ícones): o clique no grupo abre o menu já com o grupo aberto
-    if (document.body.classList.contains('menu-recolhido') && window.innerWidth > 860) { recolher(false); g.classList.remove('fechado'); }
-    else g.classList.toggle('fechado');
-    b.setAttribute('aria-expanded', String(!g.classList.contains('fechado')));
-    gravarAbertos([...app.querySelectorAll('.grupo:not(.fechado)')].map(x => x.dataset.grupo));
-  }));
   // Troca de empresa (seletor do menu, faixa do topo, botões das telas): todos passam por aqui
   function trocarEmpresa(v) {
     if ((v ?? null) === (ctx.empresa ?? null)) return;
@@ -380,7 +366,7 @@ function montarBarraTelas(ctx, app) {
   const iframeDe = c => painel(c)?.querySelector('iframe');
 
   function desenharBarra() {
-    barra.innerHTML = `<button type="button" class="aba-tela fixa${ativa === '' ? ' ativa' : ''}" data-c="" title="Visão geral">${icone('painel', 15)}<span class="aba-nome">Início</span></button>` +
+    barra.innerHTML = `<button type="button" class="aba-tela fixa${ativa === '' ? ' ativa' : ''}" data-c="" title="Minha mesa">${icone('mesa', 15)}<span class="aba-nome">Minha mesa</span></button>` +
       abas.map(a => `<div class="aba-tela${a.caminho === ativa ? ' ativa' : ''}" data-c="${esc(a.caminho)}" title="${esc(a.titulo)}">
         <span class="aba-nome">${esc(a.titulo)}</span>
         <button type="button" class="aba-acao" data-recarregar title="Recarregar esta tela" aria-label="Recarregar ${esc(a.titulo)}">↻</button>
@@ -398,17 +384,17 @@ function montarBarraTelas(ctx, app) {
     if (c && !painel(c)) criarPainel(abas.find(a => a.caminho === c));
     [...telas.children].forEach(p => { p.hidden = p.dataset.caminho !== c; });
     const base = c.split('?')[0];
+    const area = areaDoCaminho(c);
     app.querySelectorAll('.menu .item[href]').forEach(i => {
-      const on = c ? caminhoTela(i.href) === base : caminhoTela(i.href) === 'inicio.html';
+      const on = i.dataset.area !== undefined ? i.dataset.area === area : (c ? caminhoTela(i.href) === base : false);
       i.classList.toggle('ativo', on); on ? i.setAttribute('aria-current', 'page') : i.removeAttribute('aria-current');
-      if (on) { const g = i.closest('.grupo'); if (g?.classList.contains('fechado')) { g.classList.remove('fechado'); g.querySelector('.grupo-titulo')?.setAttribute('aria-expanded', 'true'); } }
     });
     const nomeEmp = ctx.empresa ? (ctx.empresas.find(e => e.id === ctx.empresa)?.nome || '') : 'Consolidado';
-    const bi = document.getElementById('barraInfo'); if (bi) bi.innerHTML = `<b>${esc(c ? abas.find(a => a.caminho === c).titulo : 'Visão geral')}</b><span>Nox Performance Engineering · ${esc(nomeEmp)}</span>`;
+    const bi = document.getElementById('barraInfo'); if (bi) bi.innerHTML = `<b>${esc(c ? abas.find(a => a.caminho === c).titulo : 'Minha mesa')}</b><span>Nox Performance Engineering · ${esc(nomeEmp)}</span>`;
     const usa = !!(c && info[c]?.empresa);
     const me = document.getElementById('menuEmpresa'); if (me) me.hidden = !usa;
     marcarNeutra();
-    document.title = (ctx.empresa ? dadosEmpresa(ctx).curto + ' · ' : '') + (c ? abas.find(a => a.caminho === c).titulo : 'Visão geral') + ' · NOX ERP';
+    document.title = (ctx.empresa ? dadosEmpresa(ctx).curto + ' · ' : '') + (c ? abas.find(a => a.caminho === c).titulo : 'Minha mesa') + ' · NOX ERP';
     desenharBarra(); guardar();
     if (c) iframeDe(c)?.contentWindow?.postMessage({ nox: 'ativa' }, location.origin);
     else window.dispatchEvent(new CustomEvent('inicio-ativo'));
@@ -455,7 +441,7 @@ function montarBarraTelas(ctx, app) {
     const a = e.target.closest('a[href]'); if (!a || a.target === '_blank' || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
     const c = caminhoTela(a.href); if (!c || !(c.startsWith('pages/') || c === 'inicio.html')) return;
     e.preventDefault(); document.getElementById('menu').classList.remove('aberto');
-    abrir(c, a.closest('.menu') ? a.textContent.trim() : null);
+    abrir(c, a.closest('.menu') ? (a.title || a.textContent.trim()) : null);
   });
 
   // Mensagens das telas abertas nas abas

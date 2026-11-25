@@ -75,6 +75,7 @@ const tempoReal = (() => {
     sc_pedidos: ['pedidos_compra', 'solicitacoes_compra', 'solicitacoes_compra_itens'],
     sc_cotacoes: ['solicitacoes_compra_itens', 'cotacoes_compra'],
     cotacao_analise: ['cotacoes_compra_precos', 'cotacoes_compra_fornecedores', 'cotacoes_compra_itens', 'pedidos_compra_recebimentos'],
+    minha_mesa: ['ml_perguntas', 'shopee_conversas', 'ml_avisos', 'pedidos_venda', 'pedidos_venda_entregas', 'titulos_pagar', 'extrato_lancamentos', 'solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'pedidos_compra_recebimentos', 'nfe_entrada', 'despesas_diretas', 'aprovacoes_historico', 'produtos', 'fornecedores', 'funcionarios', 'rh_vale_transporte', 'categorias_financeiras'],
     menu_contadores: ['solicitacoes_compra', 'solicitacoes_compra_itens', 'cotacoes_compra', 'pedidos_compra', 'pedidos_compra_recebimentos', 'nfe_entrada', 'titulos_pagar', 'despesas_diretas'],
     dd_listas: ['categorias_financeiras', 'fornecedores', 'formas_pagamento', 'despesas_diretas'],
     sugestao_compra: ['estoque_movimentos', 'fornecedores', 'pedidos_compra', 'pedidos_compra_itens', 'pedidos_venda', 'pedidos_venda_entregas', 'pedidos_venda_entregas_itens', 'pedidos_venda_itens', 'produto_fornecedores', 'produtos'],
