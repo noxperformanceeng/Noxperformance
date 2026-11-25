@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611242316';
+const VERSAO_TELAS = '202611242323';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 // Menu por ÁREA (nov/2026): cada área tem uma página de cartões (pages/area.html?a=<slug>) com as telas dela.
 // "sub" separa partes dentro da área; arquivo null = tela ainda não feita ("em breve", só o administrador vê).
@@ -200,7 +200,7 @@ async function iniciarTela() {
   const atual = location.href.split('?')[0].split('#')[0];
   const abertos = lerAbertos();
 
-  let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span class="rotulo"><b>NOX</b><small>Sistema de gestão</small></span></a>
+  let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span class="rotulo"><img class="marca-nome" src="${RAIZ}assets/img/marca-nox.png" alt="NOX Performance Engineering"><small>Sistema de gestão</small></span></a>
     <a class="item item-raiz${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html" title="Minha mesa" data-area="">${icone('mesa')}<span class="rotulo">Minha mesa</span></a>
     <a class="item item-raiz item-aprov" id="itemAprov" href="${RAIZ}pages/config/aprovacoes.html" title="Aprovações pendentes" hidden>${icone('aprovar')}<span class="rotulo">Aprovações</span><span class="n-aprov" id="nAprov"></span><span class="av-aprov pisca" id="avAprov" hidden>!</span></a>`;
   // Uma linha por área (só as que têm alguma tela liberada para a pessoa); cada uma abre a página de cartões da área.

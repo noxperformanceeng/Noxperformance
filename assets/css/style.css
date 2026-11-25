@@ -773,3 +773,4 @@ table.uso .num { text-align: right; font-variant-numeric: tabular-nums; }
 table.uso .tg-parado { background: #fde8ea; color: var(--destaque-texto); border-radius: 20px; padding: 1px 8px; font-size: 11.5px; font-weight: 600; }
 #tEmpresa { margin-top: 26px; }
 .cab-tela .cont-cab { font-weight: 600; color: var(--texto); }
+.menu .marca .marca-nome { display: block; width: 132px; height: auto; margin-bottom: 4px; }
