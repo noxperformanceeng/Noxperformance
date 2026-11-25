@@ -6,16 +6,16 @@
 <title>Tarifas e lançamentos de marketplace · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251627">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 </head>
 <body data-modulo="canais_venda" data-titulo="Tarifas de marketplace">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251627"></script>
-<script src="../../assets/js/ui.js?v=202611251627"></script>
-<script src="../../assets/js/auth.js?v=202611251627"></script>
-<script src="../../assets/js/layout.js?v=202611251627"></script>
-<script src="../../assets/js/cadastro.js?v=202611251627"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 /* Tipos de tarifa/lançamento por plataforma → categoria financeira.
    Usado ao separar os encargos de cada venda e ao classificar as linhas do extrato (palavras da descrição). */
@@ -35,7 +35,7 @@ montarCadastro({
     { id: 'nome', label: 'Nome', obrig: true, col: 2, lista: true },
     { id: 'codigo', label: 'Código interno', obrig: true, lista: true, ajuda: 'Sem espaço (ex.: tarifa_venda). "diferenca_debito" e "diferenca_credito" são usados na conciliação.' },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', obrig: true, col: 2, filtro: true,
-      opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })) },
+      opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.nome}` })) },
     { id: 'termos_txt', label: 'Palavras no extrato', col: 2, semExportar: true, placeholder: 'tarifa de venda, tarifa por venda',
       ajuda: 'Separe por vírgula. Se a descrição da linha do extrato tiver uma delas, a linha vai para esta categoria.' },
     { id: 'situacao', label: 'Situação', tipo: 'select', opcoes: [{ v: 'ativo', n: 'Ativo' }, { v: 'inativo', n: 'Inativo' }], obrig: true, padrao: 'ativo', filtro: true }
@@ -46,7 +46,7 @@ montarCadastro({
     return {};
   },
   colunasExtras: [
-    { label: 'Categoria', texto: r => cat(r.categoria_financeira_id) ? `${cat(r.categoria_financeira_id).codigo} ${cat(r.categoria_financeira_id).nome}` : '' },
+    { label: 'Categoria', texto: r => cat(r.categoria_financeira_id) ? `${cat(r.categoria_financeira_id).nome}` : '' },
     { label: 'Palavras no extrato', texto: r => r.termos_txt || '' }
   ],
   antesSalvar: d => {

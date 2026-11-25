@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251627">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -52,12 +52,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251627"></script>
-<script src="../../assets/js/ui.js?v=202611251627"></script>
-<script src="../../assets/js/auth.js?v=202611251627"></script>
-<script src="../../assets/js/layout.js?v=202611251627"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611251627"></script>
-<script src="../../assets/js/cadastro.js?v=202611251627"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -133,8 +133,8 @@ function optCats(sel) {
   const grupos = {}; l.forEach(c => (grupos[c.codigo.split('.').slice(0, 2).join('.')] ||= []).push(c));
   return '<option value="">— categoria —</option>' + Object.entries(grupos).map(([g, cs]) => {
     const mae = PAIS.find(p => p.codigo === g);
-    const ops = cs.map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
-    return mae ? `<optgroup label="${esc(mae.codigo + ' ' + mae.nome)}">${ops}</optgroup>` : ops;
+    const ops = cs.map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.nome)}</option>`).join('');
+    return mae ? `<optgroup label="${esc(mae.nome)}">${ops}</optgroup>` : ops;
   }).join('');
 }
 /* ---------- Histórico de preços ----------
@@ -210,7 +210,7 @@ const linhaServ = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-tip
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
-  <td style="min-width:230px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id)}</select></td>
+  <td style="min-width:230px"><select data-categoria data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id)}</select></td>
   ${celEntrega(x)}
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}
@@ -227,7 +227,7 @@ const linhaServico = (x = {}, rec = false) => `<tr data-id="${x.id || ''}" data-
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
-  <td style="min-width:230px"><select data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id || CATS.find(c => c.codigo === CAT_USINAGEM)?.id)}</select></td>
+  <td style="min-width:230px"><select data-categoria data-k="categoria_financeira_id" data-simples disabled title="Categoria do cadastro do serviço">${optCats(x.categoria_financeira_id || serv(x.servico_id)?.categoria_financeira_id || CATS.find(c => c.codigo === CAT_USINAGEM)?.id)}</select></td>
   ${celEntrega(x)}
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}
@@ -306,7 +306,7 @@ const linhaProduto = (x = {}, rec = false) => `<tr data-id="${x.id || ''}">
   <td style="width:92px"><input data-k="valor_unitario" inputmode="decimal" value="${num(x.valor_unitario)}"></td>
   <td style="width:76px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num(x.desconto) : ''}" placeholder="0,00"></td>
   <td style="width:58px"><input data-k="ipi_pct" inputmode="decimal" value="${Number(x.ipi_pct) ? num(x.ipi_pct) : ''}" placeholder="0" title="IPI % do item (sobre quantidade × unitário − desconto). Entra no total do pedido"></td>
-  <td style="min-width:230px"><select data-k="categoria_financeira_id"${x.produto_id && !x.uso_consumo && prod(x.produto_id)?.categoria_financeira_id ? ' disabled title="Categoria do cadastro do produto"' : ''}>${optCats(x.categoria_financeira_id)}</select></td>
+  <td style="min-width:230px"><select data-categoria data-k="categoria_financeira_id"${x.produto_id && !x.uso_consumo && prod(x.produto_id)?.categoria_financeira_id ? ' disabled title="Categoria do cadastro do produto"' : ''}>${optCats(x.categoria_financeira_id)}</select></td>
   ${celEntrega(x)}
   <td class="num" data-k="total"></td>
   ${rec ? celRec(x) : ''}

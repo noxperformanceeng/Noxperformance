@@ -550,3 +550,71 @@ function semCaps(t) {
       .replace(/(^\s*|[.!?]\s+|\n\s*)(\p{L})/gu, (m, a, c) => a + c.toUpperCase()))
     .join('');
 }
+
+/* ---------- Escolha de categoria financeira: lista em grupos, sem números ----------
+   Todo <select data-categoria> vira um botão que abre a lista agrupada (grupo em negrito, maior) com busca.
+   O <select> continua por baixo (valor, change e envio do formulário não mudam). */
+let _catArvore = null;
+function categoriasArvore() {
+  return _catArvore ||= (async () => {
+    const { data } = await db.from('categorias_financeiras').select('id, codigo, nome, aceita_lancamento, situacao');
+    const porCod = new Map((data || []).map(c => [c.codigo, c]));
+    const ord = c => String(c).split('.').map(n => n.padStart(4, '0')).join('.');
+    return new Map((data || []).map(c => { const seg = c.codigo.split('.');
+      return [String(c.id), { ...c, ord: ord(c.codigo), grupo: porCod.get(seg.slice(0, 2).join('.'))?.nome || '', topo: porCod.get(seg[0])?.nome || '' }]; }));
+  })();
+}
+const nomeCategoria = c => c ? c.nome : '';
+function seletorCategoria(sel) {
+  if (sel._cat) return; sel._cat = true;
+  const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'cat-sel';
+  sel.style.display = 'none'; sel.insertAdjacentElement('afterend', bt);
+  let arv = new Map();
+  const rotulo = () => { const o = sel.selectedOptions[0], c = arv.get(sel.value);
+    bt.innerHTML = c ? `<span>${esc(c.nome)}</span><small>${esc(c.grupo)}</small>` : `<span class="vazio">${esc(o?.text || '— categoria —')}</span>`;
+    bt.disabled = sel.disabled; bt.title = sel.title || (c ? `${c.topo} › ${c.grupo} › ${c.nome}` : ''); sel._ult = sel.value + '|' + sel.disabled; };
+  categoriasArvore().then(a => { arv = a; rotulo(); }); rotulo();
+  bt.onclick = () => abrirListaCategoria(sel, arv, rotulo);
+  (window._catSels ||= new Set()).add(sel);
+  window._catSync ||= setInterval(() => window._catSels.forEach(s => { if (!s.isConnected) return window._catSels.delete(s);
+    if (s._ult !== s.value + '|' + s.disabled) s._rotulo?.(); }), 400);
+  sel._rotulo = rotulo;
+}
+function abrirListaCategoria(sel, arv, rotulo) {
+  document.querySelector('.cat-pop')?.remove();
+  const ops = [...sel.options].map(o => ({ v: o.value, t: o.text, c: arv.get(o.value) }));
+  const vazias = ops.filter(o => !o.c), cats = ops.filter(o => o.c).sort((a, b) => a.c.ord.localeCompare(b.c.ord));
+  const pop = document.createElement('div'); pop.className = 'cat-pop';
+  pop.innerHTML = `<input type="search" placeholder="Buscar categoria…" autocomplete="off"><div class="cat-lista"></div>`;
+  document.body.appendChild(pop);
+  const r = sel.nextElementSibling.getBoundingClientRect(), larg = Math.max(r.width, 340);
+  pop.style.width = larg + 'px'; pop.style.left = Math.min(r.left, innerWidth - larg - 8) + 'px';
+  const abaixo = innerHeight - r.bottom; pop.style.maxHeight = Math.max(Math.max(abaixo, r.top) - 16, 220) + 'px';
+  if (abaixo >= 300 || abaixo >= r.top) pop.style.top = r.bottom + 4 + 'px'; else pop.style.bottom = innerHeight - r.top + 4 + 'px';
+  const busca = pop.querySelector('input'), lista = pop.querySelector('.cat-lista');
+  const desenhar = () => {
+    const b = busca.value.trim(); let topo = null, grupo = null, h = '';
+    vazias.filter(o => !b).forEach(o => h += `<button type="button" class="cat-op${o.v === sel.value ? ' atual' : ''}" data-v="${esc(o.v)}">${esc(o.t)}</button>`);
+    cats.filter(o => !b || combinaBusca(`${o.c.nome} ${o.c.grupo} ${o.c.topo}`, b)).forEach(o => {
+      if (o.c.topo !== topo) { topo = o.c.topo; grupo = null; h += `<div class="cat-topo">${esc(topo)}</div>`; }
+      if (o.c.grupo !== grupo) { grupo = o.c.grupo; if (grupo && grupo !== topo) h += `<div class="cat-grupo">${esc(grupo)}</div>`; }
+      h += `<button type="button" class="cat-op${o.v === sel.value ? ' atual' : ''}${o.c.situacao !== 'ativo' ? ' inativa' : ''}" data-v="${esc(o.v)}">${esc(o.c.nome)}</button>`;
+    });
+    lista.innerHTML = h || '<p class="sub" style="padding:10px">Nenhuma categoria com esse nome.</p>';
+  };
+  const fechar = () => { pop.remove(); document.removeEventListener('mousedown', fora, true); };
+  const fora = e => { if (!pop.contains(e.target)) fechar(); };
+  const escolher = v => { sel.value = v; sel.dispatchEvent(new Event('input', { bubbles: true })); sel.dispatchEvent(new Event('change', { bubbles: true })); rotulo(); fechar(); };
+  lista.onclick = e => { const b = e.target.closest('.cat-op'); if (b) escolher(b.dataset.v); };
+  busca.oninput = desenhar;
+  busca.onkeydown = e => { if (e.key === 'Escape') fechar(); if (e.key === 'Enter') { e.preventDefault(); const b = lista.querySelector('.cat-op'); if (b) escolher(b.dataset.v); } };
+  setTimeout(() => document.addEventListener('mousedown', fora, true));
+  desenhar(); busca.focus();
+  lista.querySelector('.cat-op.atual')?.scrollIntoView({ block: 'center' });
+}
+// liga sozinho em todo <select data-categoria> que aparecer na tela
+(() => { const ligar = raiz => raiz.querySelectorAll?.('select[data-categoria]').forEach(seletorCategoria);
+  const ir = () => { ligar(document); new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType !== 1) return;
+    if (n.matches?.('select[data-categoria]')) seletorCategoria(n); else ligar(n); }))).observe(document.body, { childList: true, subtree: true }); };
+  if (document.body) ir(); else document.addEventListener('DOMContentLoaded', ir);
+})();

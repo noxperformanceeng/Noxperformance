@@ -6,7 +6,7 @@
 <title>Quarentena das importações · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251627">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .filtros-q { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; padding: 10px 12px; margin-bottom: 8px; }
   .filtros-q label { font-size: 11px; margin-bottom: 2px; }
@@ -25,10 +25,10 @@
 <body data-modulo="quarentena" data-titulo="Quarentena das importações" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251627"></script>
-<script src="../../assets/js/ui.js?v=202611251627"></script>
-<script src="../../assets/js/auth.js?v=202611251627"></script>
-<script src="../../assets/js/layout.js?v=202611251627"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Quarentena: títulos importados do Tiny com algo a revisar — numa lista só.
@@ -84,7 +84,7 @@ const v = id => document.getElementById(id).value;
 })();
 
 const nomeEmp = id => CTX.empresas.find(e => e.id === id)?.nome || id;
-const catNome = id => { const c = CATS.find(x => x.id === id); return c ? `${c.codigo} ${c.nome}` : ''; };
+const catNome = id => { const c = CATS.find(x => x.id === id); return c ? `${c.nome}` : ''; };
 async function carregar() { DADOS = await buscarTodos(() => db.from('quarentena_pagar').select('*').order('data_vencimento')); desenhar(); }
 const pendencias = (r, inclusiveRevisadas = false) => Object.keys(MOTIVOS).filter(m => r[m] && (inclusiveRevisadas || !(r.revisado || []).includes(m)));
 
@@ -142,7 +142,7 @@ function desenharLote() {
   const campo = () => {
     const a = el.querySelector('#qAcao').value, emp = [...new Set(sel.map(r => r.empresa_id))];
     el.querySelector('#qCampo').innerHTML =
-      a === 'categoria' ? `<select id="qVal"><option value="">— categoria —</option>${CATS.filter(c => c.aceita_lancamento && !String(c.codigo).startsWith('99') && c.situacao !== 'inativo').map(c => `<option value="${c.id}">${esc(c.codigo)} · ${esc(c.nome)}</option>`).join('')}</select>`
+      a === 'categoria' ? `<select id="qVal"><option value="">— categoria —</option>${CATS.filter(c => c.aceita_lancamento && !String(c.codigo).startsWith('99') && c.situacao !== 'inativo').map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select>`
       : a === 'fornecedor' ? `<select id="qVal"><option value="">— fornecedor —</option>${FORN.map(f => `<option value="${f.id}">${esc(nomeComFantasia(f))}${f.cnpj ? ' · ' + esc(f.cnpj) : ''}</option>`).join('')}</select>`
       : a === 'conta' ? (emp.length > 1 ? '<span class="n">Marque títulos de uma empresa só.</span>' : `<select id="qVal"><option value="">— conta —</option>${CONTAS.filter(c => !emp.length || c.empresa_id === emp[0]).map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select>`)
       : a === 'data_pagamento' ? '<input type="date" id="qVal">'

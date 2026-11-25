@@ -6,7 +6,7 @@
 <title>Extratos e conciliação · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251627">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .map-grade { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; margin: 10px 0; }
   .map-grade label { font-size: 11px; }
@@ -18,11 +18,11 @@
 <body data-modulo="conciliacao" data-titulo="Extratos e conciliação" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251627"></script>
-<script src="../../assets/js/ui.js?v=202611251627"></script>
-<script src="../../assets/js/auth.js?v=202611251627"></script>
-<script src="../../assets/js/layout.js?v=202611251627"></script>
-<script src="../../assets/js/cadastro.js?v=202611251627"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Extratos e conciliação (Mercado Pago e bancos)
@@ -266,7 +266,7 @@ function janelaCategoria(sel, pronto) {
   const ok = sel.filter(r => r.conciliacao === 'pendente');
   if (!ok.length) return aviso('Selecione linhas pendentes', true);
   const m = abrirModal(`<div class="mini-modal"><h2>Classificar ${ok.length} linha(s) · ${reais(ok.reduce((s, r) => s + Number(r.valor), 0))}</h2>
-    <div class="grade"><div style="grid-column: span 2"><label>Categoria</label><select id="clCat"><option value="">—</option>${CATS.map(c => `<option value="${c.id}">${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></div>
+    <div class="grade"><div style="grid-column: span 2"><label>Categoria</label><select data-categoria id="clCat"><option value="">—</option>${CATS.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
     <div style="grid-column: span 2"><label>Observação</label><input id="clObs" placeholder="ex.: Mercado Ads outubro"></div></div>
     <div class="acoes"><button class="btn" id="clFechar">Cancelar</button><button class="btn primario" id="clOk">Classificar</button></div></div>`);
   m.querySelector('#clFechar').onclick = () => m.remove();
@@ -345,7 +345,7 @@ async function lancarTitulo(linhas, pronto) {
     <div class="grade-campos">
       <div class="campo l2"><label>${saida ? 'Fornecedor *' : 'Cliente (opcional)'} <a class="link-cad" data-link-cad href="${RAIZ}pages/cadastros/${saida ? 'fornecedores' : 'clientes'}.html?novo=1">+ cadastrar</a></label>
         <select id="ltP"><option value="">— ${saida ? 'escolher fornecedor' : 'sem cliente'} —</option>${pessoas.map(p => `<option value="${p.id}">${esc(nomeComFantasia(p))}</option>`).join('')}</select></div>
-      <div class="campo l2"><label>Categoria financeira *</label><select id="ltC"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}"${c.id === sug ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</select></div>
+      <div class="campo l2"><label>Categoria financeira *</label><select data-categoria id="ltC"><option value="">— escolher —</option>${CATS.map(c => `<option value="${c.id}"${c.id === sug ? ' selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></div>
       <div class="campo l2"><label>Documento</label><input id="ltD" placeholder="em branco: EXTRATO + ID da operação"></div>
       <div class="campo l2"><label>Descrição / histórico</label><input id="ltH" value="${esc(tipos.length === 1 ? DESC_SUGERIDA[tipos[0]] || '' : '')}" placeholder="em branco: tipo e descrição da linha"></div>
     </div>

@@ -6,7 +6,7 @@
 <title>Fluxo de caixa · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251627">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .fc-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
   .fc-filtros > div { display: flex; flex-direction: column; }
@@ -62,10 +62,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251627"></script>
-<script src="../../assets/js/ui.js?v=202611251627"></script>
-<script src="../../assets/js/auth.js?v=202611251627"></script>
-<script src="../../assets/js/layout.js?v=202611251627"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
 <script>
 let ctx, CATS = [], dados = null, visao = 'mes', modo = 'ambos', fechados = new Set();
 const ORIG = { rec: 'Recebimento', rec_ajuste: 'Ajuste no recebimento', pag: 'Pagamento', pag_juros: 'Juros/multa pagos', extrato: 'Extrato classificado', prev_rec: 'Previsto a receber', prev_pag: 'Previsto a pagar', prev_pag_pc: 'Pedido de compra aprovado · aguardando NF' };
@@ -169,13 +169,13 @@ function desenhar() {
       const ids = grupos[g], gc = cat(g);
       const valG = k => ids.reduce((s2, id) => s2 + (soma[id][k] || 0), 0);
       const totG = cols.reduce((s2, c) => s2 + valG(c.k), 0);
-      html += `<tr class="grp${fechados.has(String(g)) ? ' fechado' : ''}" data-g="${g}"><td title="${esc(gc ? gc.codigo + ' ' + gc.nome : 'Sem categoria')}">${esc(gc ? gc.codigo + ' · ' + gc.nome : 'Sem categoria')}</td>
+      html += `<tr class="grp${fechados.has(String(g)) ? ' fechado' : ''}" data-g="${g}"><td title="${esc(gc ? gc.nome : 'Sem categoria')}">${esc(gc ? gc.nome : 'Sem categoria')}</td>
         ${cols.map(c => celula(valG(c.k), ids, c.k, ids.some(id => temPrev[id]?.[c.k]))).join('')}${celula(totG, ids, '', false)}</tr>`;
       cols.forEach(c => totSec[s][c.k] = (totSec[s][c.k] || 0) + valG(c.k));
       if (!fechados.has(String(g)) && !(ids.length === 1 && ids[0] === g))
         ids.sort((a, b) => (cat(a)?.codigo || '').localeCompare(cat(b)?.codigo || '', 'pt', { numeric: true })).forEach(id => {
           const c0 = cat(id), tot = cols.reduce((s2, c) => s2 + (soma[id][c.k] || 0), 0);
-          html += `<tr class="cat"><td title="${esc(c0 ? c0.codigo + ' ' + c0.nome : '')}">${esc(c0 ? c0.codigo + ' · ' + c0.nome : 'Sem categoria')}</td>
+          html += `<tr class="cat"><td title="${esc(c0 ? c0.nome : '')}">${esc(c0 ? c0.nome : 'Sem categoria')}</td>
             ${cols.map(c => celula(soma[id][c.k] || 0, [id], c.k, temPrev[id]?.[c.k])).join('')}${celula(tot, [id], '', false)}</tr>`;
         });
     });
@@ -208,7 +208,7 @@ async function detalhe(cats, k) {
     lote(peds, ids => db.from('pedidos_venda').select('id, numero_externo, cliente_nome').in('id', ids))]);
   const TR = Object.fromEntries(tr.map(x => [x.id, x])), TP = Object.fromEntries(tp.map(x => [x.id, x])), PV = Object.fromEntries(pv.map(x => [x.id, x]));
   const tot = ls.reduce((s, x) => s + Number(x.v), 0);
-  const nomesCat = [...new Set(cats)].map(id => cat(id)).filter(Boolean).map(c => c.codigo + ' ' + c.nome);
+  const nomesCat = [...new Set(cats)].map(id => cat(id)).filter(Boolean).map(c => c.nome);
   const m = abrirModal(`<h2>Origem do valor</h2>
     <p class="sub" style="margin:0 0 8px">${esc(nomesCat.length > 3 ? nomesCat.length + ' categorias' : nomesCat.join(', ') || 'Sem categoria')}${k ? ' · ' + esc(k.length === 7 ? k.split('-').reverse().join('/') : k.split('-').reverse().join('/')) : ' · período inteiro'} · <b>${reais(tot)}</b> em ${ls.length} lançamento(s)</p>
     <div class="tabela-rolagem" style="max-height:60vh"><table class="det"><thead><tr><th>Data</th><th>Origem</th><th>Título</th><th>Venda / fornecedor</th><th>Categoria</th><th class="num">Valor (R$)</th><th></th></tr></thead><tbody>

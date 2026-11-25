@@ -6,16 +6,16 @@
 <title>Canais de venda · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251627">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 </head>
 <body data-modulo="canais_venda" data-titulo="Canais de venda" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251627"></script>
-<script src="../../assets/js/ui.js?v=202611251627"></script>
-<script src="../../assets/js/auth.js?v=202611251627"></script>
-<script src="../../assets/js/layout.js?v=202611251627"></script>
-<script src="../../assets/js/cadastro.js?v=202611251627"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 /* Canais de venda: cada conta de marketplace (ML 30, ML 37, Shopee…) é de uma empresa e tem a conta onde o dinheiro cai.
    Os links montam o caminho direto para a venda dentro da plataforma (rastreio). */
@@ -108,7 +108,7 @@ montarCadastro({
     { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'select', lista: true, filtro: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })),
       ajuda: 'Conta de marketplace: a empresa dona da conta. Em branco = serve às duas (distribuidores, venda direta).' },
     { id: 'conta_bancaria_id', label: 'Conta de repasse (onde o dinheiro cai)', tipo: 'select', col: 2, lista: true, opcoes: () => CONTAS.map(c => ({ v: c.id, n: c.descricao })) },
-    { id: 'categoria_receita_id', label: 'Categoria da receita', tipo: 'select', col: 2, opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })) },
+    { id: 'categoria_receita_id', label: 'Categoria da receita', tipo: 'select', col: 2, opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.nome}` })) },
     { id: 'prazo_repasse_dias', label: 'Prazo de repasse (dias)', tipo: 'numero', padrao: 0, ajuda: 'Previsão de liberação quando o pedido não traz a data.' },
     { id: 'integracao', label: 'Como os pedidos entram', tipo: 'select', lista: true, padrao: 'planilha',
       opcoes: [{ v: 'manual', n: 'Digitados aqui' }, { v: 'planilha', n: 'Importação de planilha' }, { v: 'tiny', n: 'Via Tiny' }, { v: 'api', n: 'Direto pela API' }] },

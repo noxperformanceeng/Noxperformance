@@ -6,7 +6,7 @@
 <title>Despesas sem pedido · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251627">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .ds-fluxo { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; margin: 4px 0 8px; }
   .ds-fluxo span { padding: 3px 8px; border-radius: 10px; background: var(--fundo); color: var(--texto-suave); }
@@ -22,11 +22,11 @@
 <body data-modulo="despesas" data-titulo="Despesas sem pedido">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251627"></script>
-<script src="../../assets/js/ui.js?v=202611251627"></script>
-<script src="../../assets/js/auth.js?v=202611251627"></script>
-<script src="../../assets/js/layout.js?v=202611251627"></script>
-<script src="../../assets/js/cadastro.js?v=202611251627"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Despesas sem pedido de compra (SQL 152)
@@ -87,7 +87,7 @@ function optCats(sel) {
   const grupos = {};
   CATS.filter(c => c.ativa || c.id === sel).forEach(c => (grupos[c.grupo || ''] ||= []).push(c));
   return '<option value="">— escolha a categoria —</option>' + Object.entries(grupos).map(([g, cs]) =>
-    `<optgroup label="${esc(g)}">${cs.map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('')}</optgroup>`).join('');
+    `<optgroup label="${esc(g)}">${cs.map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.nome)}</option>`).join('')}</optgroup>`).join('');
 }
 
 const cfg = {
@@ -115,7 +115,7 @@ const cfg = {
     { id: 'descricao', label: 'Descrição', obrig: true, col: 2, lista: true, placeholder: 'ex.: Gasolina Kagoo · Café e açúcar · Conta de luz out/26',
       listaHtml: r => `<span class="texto-curto" style="max-width:240px" title="${esc(r.descricao)}">${esc(r.descricao)}</span>` },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', obrig: true, col: 2, cadastro: false,
-      opcoes: () => CATS.map(c => ({ v: c.id, n: c.codigo + ' ' + c.nome })),
+      opcoes: () => CATS.map(c => ({ v: c.id, n: c.nome })),
       ajuda: 'É ela que leva o gasto para a linha certa dos relatórios. Só aparecem as categorias de despesa liberadas no cadastro de categorias (marca "Despesa sem pedido"). Compra para produção ou estoque continua pelo pedido de compra.' },
     { id: 'fornecedor_id', label: 'Fornecedor (se tiver cadastro)', tipo: 'select', col: 2, cadastro: false,
       opcoes: () => FORN.map(f => ({ v: f.id, n: f.nome })) },
@@ -138,7 +138,7 @@ const cfg = {
     return {};
   },
   colunasExtras: [
-    { label: 'Categoria', texto: r => { const c = cat(r.categoria_financeira_id); return c ? c.codigo + ' ' + c.nome : ''; } },
+    { label: 'Categoria', texto: r => { const c = cat(r.categoria_financeira_id); return c ? c.nome : ''; } },
     { label: 'Onde', texto: r => quem(r) },
     { label: 'Forma', texto: r => FORMAS.find(f => f.id === r.forma_pagamento_id)?.nome || '' },
     { label: 'Lançada por', texto: r => usu(r.criado_por) }

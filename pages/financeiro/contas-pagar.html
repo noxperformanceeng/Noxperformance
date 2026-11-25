@@ -6,7 +6,7 @@
 <title>Contas a pagar · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251627">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251635">
 <style>
   .aviso-box { background: #fff4e5; color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -58,12 +58,12 @@
 <body data-modulo="pagar" data-titulo="Contas a pagar" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251627"></script>
-<script src="../../assets/js/ui.js?v=202611251627"></script>
-<script src="../../assets/js/auth.js?v=202611251627"></script>
-<script src="../../assets/js/layout.js?v=202611251627"></script>
-<script src="../../assets/js/cadastro.js?v=202611251627"></script>
-<script src="../../assets/js/comprovante.js?v=202611251627"></script>
+<script src="../../assets/js/supabase.js?v=202611251635"></script>
+<script src="../../assets/js/ui.js?v=202611251635"></script>
+<script src="../../assets/js/auth.js?v=202611251635"></script>
+<script src="../../assets/js/layout.js?v=202611251635"></script>
+<script src="../../assets/js/cadastro.js?v=202611251635"></script>
+<script src="../../assets/js/comprovante.js?v=202611251635"></script>
 <script>
 /* =====================================================================
    Contas a pagar
@@ -101,8 +101,8 @@ const forma = id => FORMAS.find(f => f.id === id);
 
 /* ---------- Rateio (várias categorias no mesmo título) ---------- */
 const optCats = sel => '<option value="">— categoria —</option>' + CATS.filter(c => c.ativo || c.id === sel)
-  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.codigo + ' ' + c.nome)}</option>`).join('');
-const linhaRateio = (x = {}) => `<tr><td><select data-k="categoria_financeira_id">${optCats(x.categoria_financeira_id)}</select></td>
+  .map(c => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(c.nome)}</option>`).join('');
+const linhaRateio = (x = {}) => `<tr><td><select data-categoria data-k="categoria_financeira_id">${optCats(x.categoria_financeira_id)}</select></td>
   <td style="width:150px"><input data-k="valor" inputmode="decimal" value="${x.valor != null ? Number(x.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''}"></td>
   <td style="width:28px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 function lerRateio() {
@@ -275,7 +275,7 @@ async function mostrarOQuePaga(m, r) {
   let itens = (pi.data || []).map(i => ({ d: i.descricao, q: i.quantidade, u: i.unidade, v: Number(i.quantidade) * Number(i.valor_unitario), c: i.categoria_financeira_id }));
   if (!itens.length && Array.isArray(nf.data?.itens)) itens = nf.data.itens.map(i => ({ d: i.descricao || i.xProd, q: i.quantidade ?? i.qCom, u: i.unidade ?? i.uCom, v: Number(i.valor_total ?? i.vProd) || null }));
   if (!itens.length || !m.isConnected) return;
-  const catN = id => { const c = CATS.find(x => x.id === id); return c ? `${c.codigo} ${c.nome}` : ''; };
+  const catN = id => { const c = CATS.find(x => x.id === id); return c ? `${c.nome}` : ''; };
   const difCat = itens.some(i => i.c && r.categoria_financeira_id && i.c !== r.categoria_financeira_id);
   const box = document.createElement('div'); box.className = 'aviso-box oque-paga';
   box.innerHTML = `<b>O que está sendo pago</b>${itens.length > 1 ? ` <small>(${itens.length} itens)</small>` : ''}
@@ -573,7 +573,7 @@ async function abrirConferencia(x) {
       ${recebidos.map(i => `<tr><td>${esc(i.descricao || '')}</td>${sp ? '' : `<td>${num2(i.pedido)} ${esc(i.unidade || '')}</td>`}<td>${num2(i.nesta)} ${esc(i.unidade || '')}</td><td class="num">${reais(i.valor)}</td></tr>`).join('')}</tbody></table>
       <p class="sub" style="margin:4px 0 0">Itens ${reais(somaItens)} · valor da NF <b>${reais(x.valor)}</b>${Math.abs(somaItens - Number(x.valor)) > 0.05 ? ' <span class="tg alerta">diferença de ' + reais(Number(x.valor) - somaItens) + ' (frete, impostos ou desconto?)</span>' : ' <span class="tg ok">confere</span>'}</p></div>
     <div class="grade-campos">
-      <div class="campo l2"><label>Categoria financeira ${sp ? '<span class="obrig">*</span>' : '<span class="sub">(vazio = a dos itens do pedido)</span>'}</label><select id="qCat">${optCats(null)}</select></div>
+      <div class="campo l2"><label>Categoria financeira ${sp ? '<span class="obrig">*</span>' : '<span class="sub">(vazio = a dos itens do pedido)</span>'}</label><select data-categoria id="qCat">${optCats(null)}</select></div>
       ${sp ? `<div class="campo l2"><label>Conta prevista</label><select id="qConta"><option value="">—</option>${CONTAS.filter(c => c.empresa_id === x.empresa_id && c.situacao === 'ativo' && c.tipo !== 'historico').map(c => `<option value="${c.id}">${esc(c.descricao)}</option>`).join('')}</select></div>` : ''}
     </div>
     <div class="sub-ed" id="qParc"><div class="secao">Parcelas (duplicatas da NF ou condição do pedido)</div><table><thead><tr><th>#</th><th>Vencimento</th><th>Valor (R$)</th><th>Código de barras (opcional)</th><th></th></tr></thead>
@@ -676,7 +676,7 @@ const cfg = {
         + (r.documento ? `<span class="texto-curto" style="max-width:150px" title="${esc(r.documento)}">${esc(r.documento)}</span>` : '') },
     { id: 'descricao', label: 'Descrição / histórico', col: 2, ajuda: 'Nos títulos do Tiny: o histórico de lá.' },
     { id: 'categoria_financeira_id', label: 'Categoria financeira', tipo: 'select', col: 2, filtro: true, filtroVazio: true,
-      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.codigo} ${c.nome}` })), ajuda: 'Obrigatória. Para dividir em várias categorias, use "Dividir em mais de uma categoria" no fim do formulário.' },
+      opcoes: () => CATS.filter(c => c.ativo).map(c => ({ v: c.id, n: `${c.nome}` })), ajuda: 'Obrigatória. Para dividir em várias categorias, use "Dividir em mais de uma categoria" no fim do formulário.' },
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, ajuda: 'Aparece na lista. No parcelado, vai para todas as parcelas.',
       listaHtml: r => r.observacoes ? `<span class="texto-curto" style="max-width:220px" title="${esc(r.observacoes)}">${esc(r.observacoes)}</span>` : '' },
     { id: 'valor', label: 'Valor (R$)', tipo: 'moeda', obrig: true, lista: true, secao: 'Valor e datas' },
@@ -1012,7 +1012,7 @@ function abrirProjecao(ctx) {
     <div class="grade">
       <div><label>Empresa</label><select id="pjEmp">${empOpts}</select></div>
       <div><label>Fornecedor</label><select id="pjForn"><option value="">—</option>${FORN.map(f => `<option value="${f.v}">${esc(f.n)}</option>`).join('')}</select></div>
-      <div style="grid-column: span 2"><label>Categoria financeira</label><select id="pjCat">${optCats(null)}</select></div>
+      <div style="grid-column: span 2"><label>Categoria financeira</label><select data-categoria id="pjCat">${optCats(null)}</select></div>
       <div><label>Descrição / documento</label><input id="pjDoc" placeholder="ex.: Aluguel galpão"></div>
       <div><label>Valor por mês (R$)</label><input id="pjValor" inputmode="decimal"></div>
       <div><label>Dia do vencimento</label><input id="pjDia" inputmode="numeric" value="10"></div>
