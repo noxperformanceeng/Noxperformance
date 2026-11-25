@@ -96,7 +96,7 @@ revoke all on function public.pc_pendencias(bigint) from public, anon;
 grant execute on function public.pc_pendencias(bigint) to authenticated;
 
 -- ---------- Ações do pedido: diretoria que lança já aprova ----------
-create or replace function public.pedido_compra_acao(p_id bigint, p_acao text, p_motivo text, p_dados jsonb)
+create or replace function public.pedido_compra_acao(p_id bigint, p_acao text, p_motivo text default null, p_dados jsonb default null)
 returns text language plpgsql security definer set search_path to 'public' as $function$
 declare p public.pedidos_compra; v_nivel int; v_nome text; v_niveis int[];
 begin
