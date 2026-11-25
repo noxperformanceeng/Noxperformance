@@ -186,7 +186,7 @@ async function montarCadastro(cfg) {
   /* ---------- Esqueleto da tela ---------- */
   const filtrosCampo = campos.filter(c => c.filtro);
   cont.innerHTML = `
-    <div class="cab-tela"><div style="min-width:0"><h1>${esc(cfg.titulo)}</h1><p class="sub uma-linha" title="${esc(cfg.subtitulo || '')}">${esc(cfg.subtitulo || '')}</p></div>
+    <div class="cab-tela"><div style="min-width:0"><h1>${esc(cfg.titulo)}</h1><p class="sub uma-linha" title="${esc(cfg.subtitulo || '')}"><b id="cContCab" class="cont-cab"></b>${esc(cfg.subtitulo || '')}</p></div>
       ${podeCriar ? `<button class="btn primario" id="cNovo">${esc(cfg.textoNovo || '+ Novo ' + cfg.singular)}</button>` : ''}</div>
     <div class="barra-ferr">
       ${cfg.abas ? '<div class="abas" id="cAbas"></div>' : '<div></div>'}
@@ -396,6 +396,7 @@ async function montarCadastro(cfg) {
       $('#cTotais').innerHTML = visiveis.length ? `<tr>${podeEditar ? '<td class="nao-imprimir"></td>' : ''}${colunas.map((c, i) => `<td class="${cfg.totais.includes(c.id) ? 'num' : ''}">${i === 0 ? 'Total' : cfg.totais.includes(c.id) ? esc(mostrar(c, tot(c))) : ''}</td>`).join('')}<td colspan="${listaExtras.length + (cfg.revisao ? 1 : 0) + 1}"></td></tr>` : '';
     }
     $('#cCont').textContent = `${visiveis.length} ${visiveis.length === 1 ? cfg.singular : (cfg.plural || cfg.singular + 's')}`;
+    $('#cContCab').textContent = `${visiveis.length.toLocaleString('pt-BR')} ${visiveis.length === 1 ? cfg.singular : (cfg.plural || cfg.singular + 's')}${cfg.subtitulo ? ' · ' : ''}`;
     if (cfg.resumo) { let el = $('#cResumo'); if (!el) { $('#cCont').insertAdjacentHTML('afterend', '<span class="resumo" id="cResumo"></span>'); el = $('#cResumo'); } el.innerHTML = cfg.resumo(visiveis, extra); }
     if (cfg.arvore) $('#cCont').textContent += mostrados.length < visiveis.length ? ` · ${mostrados.length} à vista (grupos recolhidos)` : '';
     $('#cRodape').textContent = mostrados.length > LIM ? `Mostrando os ${LIM} primeiros. Use os filtros para refinar (o Exportar Excel leva todos).` : '';

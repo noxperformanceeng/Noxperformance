@@ -6,17 +6,24 @@
 <title>NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/style.css?v=202611242100">
+<link rel="stylesheet" href="assets/css/style.css?v=202611242316">
 </head>
-<body data-modulo="" data-titulo="Visão geral" data-shell="sim">
+<body data-modulo="" data-titulo="Minha mesa" data-shell="sim">
 <main id="conteudo" class="painel" aria-live="polite">
   <div class="painel-cab">
-    <div><h1>Seu negócio, em movimento.</h1><p id="saudacao">&nbsp;</p></div>
+    <div><h1>Minha mesa</h1><p id="saudacao">&nbsp;</p></div>
     <div class="painel-cab-acoes">
       <div class="seg" id="segEmpresa" role="group" aria-label="Empresa"></div>
       <div class="menu-novo" id="menuNovo" hidden></div>
     </div>
   </div>
+  <section class="mesa-grade" id="mesa" aria-label="O que é seu para fazer hoje"></section>
+  <section class="bloco mesa-atr" id="blAtr" aria-labelledby="tAtr" hidden><div class="bloco-cab"><h2 id="tAtr"><span class="atr-ico" aria-hidden="true">!</span>Prazo estourado</h2></div><div id="atr"></div></section>
+  <div class="mesa-duas">
+    <section class="bloco" id="blFav" aria-labelledby="tFav"><div class="bloco-cab"><h2 id="tFav">Meus atalhos</h2></div><div id="fav"></div></section>
+    <section class="bloco" id="blUso" aria-labelledby="tUso" hidden><div class="bloco-cab"><h2 id="tUso">Uso do sistema hoje</h2><a href="pages/config/auditoria.html">Auditoria</a></div><div id="uso"></div></section>
+  </div>
+  <h2 class="area-sub" id="tEmpresa">Visão da empresa</h2>
   <section class="kpis" id="kpis" aria-label="Indicadores principais"></section>
   <div class="painel-grade">
     <div class="painel-col">
@@ -36,10 +43,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/supabase.js?v=202611242100"></script>
-<script src="assets/js/ui.js?v=202611242100"></script>
-<script src="assets/js/auth.js?v=202611242100"></script>
-<script src="assets/js/layout.js?v=202611242100"></script>
+<script src="assets/js/supabase.js?v=202611242316"></script>
+<script src="assets/js/ui.js?v=202611242316"></script>
+<script src="assets/js/auth.js?v=202611242316"></script>
+<script src="assets/js/layout.js?v=202611242316"></script>
 <script>
 /* Visão do gestor — todos os números vêm de public.painel_gestor() (um bloco por permissão). */
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -217,6 +224,32 @@ function desenharCanais(lista) {
     return `<li><div class="c-nome"><b>${esc(c.nome)}</b><small>${esc(det)}</small>${s.cls === 'atencao' || s.cls === 'desconectado' ? `<small style="color:var(--erro)">${esc(s.motivo)}</small>` : ''}</div><span class="est ${s.cls}">${s.t}</span></li>`; }).join('')}</ul>`;
 }
 
+/* ---------- Minha mesa (public.minha_mesa(): só o que é desta pessoa) ---------- */
+const COR_MESA = { vermelho: '#cf3543', laranja: '#d97706', azul: '#4f62d8', verde: '#15803d', cinza: '#64748b' };
+const tempoAtras = s => { const m = Math.round(Number(s) / 60); return m < 60 ? `${Math.max(1, m)} min` : m < 1440 ? `${Math.floor(m / 60)} h` : `${Math.floor(m / 1440)} dia${m >= 2880 ? 's' : ''}`; };
+function desenharMesa(m) {
+  if (!m) return;
+  const cs = m.cartoes || [];
+  $('mesa').innerHTML = cs.length ? cs.map(c => `<a class="mesa-cartao${c.urg ? ' urg' : ''}" href="${esc(c.href)}">
+      <span class="mc-ico" style="background:${COR_MESA[c.cor] || COR_MESA.cinza}">${icone(c.ic || 'painel', 22)}</span>
+      <span class="mc-txt"><span class="mc-tit">${esc(c.tit)}</span><span class="mc-n">${Number(c.n).toLocaleString('pt-BR')}${c.valor != null ? `<small> · ${reais(c.valor)}</small>` : ''}</span><span class="mc-sub">${esc(c.sub || '')}</span></span></a>`).join('')
+    : `<div class="bloco prio-tranquilo" style="grid-column:1/-1">${icone('ok', 18)}Nada esperando por você agora.</div>`;
+  const at = m.atrasados || [];
+  $('blAtr').hidden = !at.length;
+  $('atr').innerHTML = at.map(a => `<a class="atr-linha" href="${esc(a.href)}"><span><b>${esc(a.tit)}</b><small>${esc(a.sub)}</small></span><span class="atr-tempo">${tempoAtras(a.tempo)}</span></a>`).join('');
+  $('blUso').hidden = !m.uso;
+  if (m.uso) $('uso').innerHTML = `<table class="uso"><thead><tr><th>Pessoa</th><th class="num">Ações hoje</th><th class="num">Respostas</th><th>Último uso</th></tr></thead><tbody>${m.uso.map(u => {
+      const parado = !Number(u.acoes) && !Number(u.respostas);
+      return `<tr class="${parado ? 'parado' : ''}"><td><b>${esc(u.nome)}</b><small>${esc(u.perfil || '')}</small></td><td class="num">${u.acoes}</td><td class="num">${u.respostas}</td>
+        <td>${parado ? '<span class="tg-parado">sem uso hoje</span>' : ''}${u.ultima ? ' ' + dhm(u.ultima) : ''}</td></tr>`; }).join('')}</tbody></table>
+      <p class="bloco-sub" style="margin:8px 0 0">Ações = registros criados ou alterados no sistema (auditoria). Respostas = perguntas do ML e conversas da Shopee.</p>`;
+}
+async function desenharFavoritos() {
+  const { data } = await db.from('usuarios_favoritos').select('caminho, nome').order('ordem').order('criado_em');
+  $('fav').innerHTML = (data || []).length ? `<div class="fav-lista">${data.map(f => `<a class="fav" href="${esc(f.caminho)}">${icone('estrela', 15)}${esc(f.nome)}</a>`).join('')}</div>`
+    : '<p class="bloco-sub" style="margin:0">Fixe aqui as telas que você mais usa: abra uma área no menu e clique na estrela do cartão da tela.</p>';
+}
+
 /* ---------- Carga ---------- */
 async function carregar() {
   ultimaCarga = Date.now();
@@ -245,7 +278,9 @@ function desenharEmpresas() {
   CTX = await iniciarTela();
   if (!CTX) return;
   const h = new Date().getHours(), nome = (CTX.usuario.nome || '').split(' ')[0];
-  $('saudacao').textContent = `${h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'}${nome ? ', ' + nome : ''}. Veja o que merece sua atenção.`;
+  $('saudacao').textContent = `${h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'}${nome ? ', ' + nome.charAt(0) + nome.slice(1).toLowerCase() : ''}. Aqui está o que é seu para resolver hoje.`;
+  desenharMesa(window.NOX_MESA); window.addEventListener('nox:mesa', e => desenharMesa(e.detail));
+  desenharFavoritos(); ouvirMudancas(['usuarios_favoritos'], desenharFavoritos);
   desenharEmpresas(); desenharNovo(); desenharAcoes();
   $('segEmpresa').addEventListener('click', e => { const b = e.target.closest('[data-emp]'); if (!b) return;
     const sel = document.getElementById('seletorEmpresa');

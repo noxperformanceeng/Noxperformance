@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Área · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/style.css?v=202611242100">
+</head>
+<body data-modulo="" data-titulo="Área">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1 id="titulo">Área</h1><p class="sub" id="sub"></p></div></div>
+  <div id="corpo"></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../assets/js/supabase.js?v=202611242100"></script>
+<script src="../assets/js/ui.js?v=202611242100"></script>
+<script src="../assets/js/auth.js?v=202611242100"></script>
+<script src="../assets/js/layout.js?v=202611242100"></script>
+<script>
+// Página de uma área do menu (ex.: Compras): um cartão por tela, com o que pede ação agora e a estrela de atalho.
+const $ = id => document.getElementById(id);
+const SLUG = new URLSearchParams(location.search).get('a') || '';
+const AREA = MENU.find(g => g.slug === SLUG) || MENU[0];
+document.body.dataset.titulo = AREA.grupo;
+let CTX, FAV = new Set();
+
+function contagens() {   // tela → { n, urg, txt } a partir da Minha mesa (mesmos números do menu)
+  const m = {}, mesa = window.top.NOX_MESA || window.NOX_MESA;
+  (mesa?.cartoes || []).forEach(c => { const mod = MODULO_CARTAO[c.k]; if (mod === undefined || !c.n) return;
+    const x = m[mod] || (m[mod] = { n: 0, urg: false }); x.n += Number(c.n); x.urg = x.urg || !!c.urg; });
+  return m;
+}
+function desenhar() {
+  const telas = telasDaArea(CTX, AREA), cont = contagens();
+  const pend = telas.reduce((s, t) => s + (t.arquivo && cont[t.id ?? ''] ? cont[t.id].n : 0), 0), breve = telas.filter(t => !t.arquivo).length;
+  $('titulo').textContent = AREA.grupo;
+  $('sub').textContent = [telas.filter(t => t.arquivo).length + ' telas', pend ? pend + ' pendências' : '', breve ? breve + ' em breve' : ''].filter(Boolean).join(' · ');
+  const partes = []; let atual = null;
+  telas.forEach(t => { const s = t.sub || ''; if (!atual || atual.sub !== s) partes.push(atual = { sub: s, telas: [] }); atual.telas.push(t); });
+  const cartao = t => {
+    if (!t.arquivo) return `<div class="area-cartao breve"><span class="ac-topo"><span class="ac-ico">${icone(AREA.icone, 20)}</span><span class="ac-breve">em breve</span></span>
+      <b>${esc(t.nome)}</b><small>${esc(t.desc ? t.desc + ' · ainda não habilitada' : 'Ainda não habilitada')}</small></div>`;
+    const c = cont[t.id ?? ''], fav = FAV.has(t.arquivo);
+    return `<a class="area-cartao" href="../${t.arquivo}"><span class="ac-topo"><span class="ac-ico">${icone(AREA.icone, 20)}</span>${c?.n ? `<span class="ac-n${c.urg ? '' : ' calmo'}" title="${c.urg ? 'para agir agora' : 'aguardando'}">${c.n}</span>` : ''}</span>
+      <b>${esc(t.nome)}</b>${t.desc ? `<small>${esc(t.desc)}</small>` : ''}
+      <button type="button" class="ac-fav${fav ? ' on' : ''}" data-fav="${esc(t.arquivo)}" data-nome="${esc(t.nome)}" title="${fav ? 'Tirar dos meus atalhos' : 'Fixar nos meus atalhos (Minha mesa)'}" aria-label="${fav ? 'Tirar dos atalhos' : 'Fixar nos atalhos'}: ${esc(t.nome)}">${icone('estrela', 16)}</button></a>`;
+  };
+  $('corpo').innerHTML = partes.map(p => `${p.sub ? `<h2 class="area-sub">${esc(p.sub)}</h2>` : ''}<div class="area-grade">${p.telas.map(cartao).join('')}</div>`).join('')
+    || '<div class="cartao vazio">Nenhuma tela desta área liberada para você. Fale com o administrador.</div>';
+}
+async function carregarFav() {
+  const { data } = await db.from('usuarios_favoritos').select('caminho');
+  FAV = new Set((data || []).map(x => x.caminho));
+}
+async function carregar() {   // tempo real: favoritos mudaram em outra tela
+  await carregarFav(); desenhar();
+}
+$('corpo').addEventListener('click', async e => {
+  const b = e.target.closest('[data-fav]'); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const c = b.dataset.fav;
+  if (FAV.has(c)) { const { error } = await db.from('usuarios_favoritos').delete().eq('usuario_id', CTX.usuario.id).eq('caminho', c); if (error) return aviso(error.message, true); FAV.delete(c); }
+  else { const { error } = await db.from('usuarios_favoritos').insert({ usuario_id: CTX.usuario.id, caminho: c, nome: b.dataset.nome, ordem: FAV.size }); if (error) return aviso(error.message, true); FAV.add(c); }
+  desenhar();
+});
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  await carregarFav(); desenhar();
+  try { window.top.addEventListener('nox:mesa', desenhar); } catch {}
+})();
+</script>
+</body>
+</html>
