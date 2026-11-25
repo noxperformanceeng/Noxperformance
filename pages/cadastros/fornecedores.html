@@ -6,17 +6,17 @@
 <title>Fornecedores · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251139">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251230">
 </head>
 <body data-modulo="fornecedores" data-titulo="Fornecedores">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251139"></script>
-<script src="../../assets/js/ui.js?v=202611251139"></script>
-<script src="../../assets/js/auth.js?v=202611251139"></script>
-<script src="../../assets/js/layout.js?v=202611251139"></script>
-<script src="../../assets/js/cadastro.js?v=202611251139"></script>
-<script src="../../assets/js/comprovante.js?v=202611251139"></script>
+<script src="../../assets/js/supabase.js?v=202611251230"></script>
+<script src="../../assets/js/ui.js?v=202611251230"></script>
+<script src="../../assets/js/auth.js?v=202611251230"></script>
+<script src="../../assets/js/layout.js?v=202611251230"></script>
+<script src="../../assets/js/cadastro.js?v=202611251230"></script>
+<script src="../../assets/js/comprovante.js?v=202611251230"></script>
 <script>
 /* Outros nomes no comprovante (SQL 114/136): sócio, pessoa física, intermediador (ex.: Mercado Pago).
    O comprovante em nome de um deles passa na conferência. Incluir/excluir: só o master (um nome aqui libera pagamentos sem alerta). */
@@ -99,6 +99,7 @@ montarCadastro({
     { id: 'condicao_pagamento', label: 'Condição de pagamento', secao: 'Comercial', col: 2, placeholder: 'ex.: 28 dias boleto, à vista PIX' },
     { id: 'prazo_pagamento_dias', label: 'Prazo médio de pagamento (dias)', tipo: 'numero' },
     { id: 'prazo_entrega_dias', label: 'Prazo médio de entrega (dias)', tipo: 'numero' },
+    { id: 'compra_sem_cotacao', label: 'Loja / marketplace?', tipo: 'bool', textoBool: 'Sim, preço público (Mercado Livre, Shopee…): compra sem cotação', col: 2 },
     { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 4, secao: 'Observações' }
   ],
   async carregarExtra(linhas, ctx) {

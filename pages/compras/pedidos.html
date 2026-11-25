@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251139">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251230">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -52,12 +52,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251139"></script>
-<script src="../../assets/js/ui.js?v=202611251139"></script>
-<script src="../../assets/js/auth.js?v=202611251139"></script>
-<script src="../../assets/js/layout.js?v=202611251139"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611251139"></script>
-<script src="../../assets/js/cadastro.js?v=202611251139"></script>
+<script src="../../assets/js/supabase.js?v=202611251230"></script>
+<script src="../../assets/js/ui.js?v=202611251230"></script>
+<script src="../../assets/js/auth.js?v=202611251230"></script>
+<script src="../../assets/js/layout.js?v=202611251230"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611251230"></script>
+<script src="../../assets/js/cadastro.js?v=202611251230"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -69,8 +69,8 @@
    ===================================================================== */
 const SIT = [
   { v: 'rascunho', n: 'Rascunho', cor: 'neutro' }, { v: 'em_aprovacao', n: 'Em aprovação', cor: 'alerta' },
-  { v: 'recusado', n: 'Recusado (ajustar)', cor: 'erro' }, { v: 'aprovado', n: 'Aprovado · enviar', cor: 'ok' },
-  { v: 'enviado', n: 'Enviado · aguardando entrega', cor: 'pc' }, { v: 'recebido_parcial', n: 'Entregue parcial · falta saldo', cor: 'alerta' },
+  { v: 'recusado', n: 'Recusado (ajustar)', cor: 'erro' }, { v: 'aprovado', n: 'Aprovado · aguardando entrega', cor: 'pc' },
+  { v: 'enviado', n: 'Aguardando entrega', cor: 'pc' }, { v: 'recebido_parcial', n: 'Entregue parcial · falta saldo', cor: 'alerta' },
   { v: 'recebido', n: 'Recebido', cor: 'ok' }, { v: 'cancelado', n: 'Cancelado', cor: 'neutro' }];
 const EDITAVEL = ['rascunho', 'recusado'], FINAL = ['recebido', 'cancelado'];
 // Entrega parcial: quanto falta (ou foi cancelado ao encerrar o saldo) de cada item
@@ -628,8 +628,8 @@ function secaoPedido(r) {
   (r.niveis_exigidos || []).forEach(nv => etapas.push(`<span class="${aprov.includes(nv) ? 'ok' : nv === n && s === 'em_aprovacao' ? 'agora' : ''}">${esc(nomeNivel(r, nv))}${aprov.includes(nv) ? ' ✓' : ''}</span>`));
   if (!(r.niveis_exigidos || []).length && s !== 'recusado') etapas.push('<span>Aprovação</span>');
   const pos = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'];
-  etapas.push(`<span class="${pos.includes(s) ? (s === 'aprovado' ? 'agora' : 'ok') : ''}">Enviar ao fornecedor${r.enviado_em ? ' ✓' : ''}</span>`);
-  etapas.push(`<span class="${s === 'recebido' ? 'ok' : ['enviado', 'recebido_parcial'].includes(s) ? 'agora' : ''}">Entrada da NF (almoxarifado)${s === 'recebido_parcial' ? ' (entregue parcial)' : s === 'recebido' ? (r.saldo_encerrado_em ? ' ✓ · saldo encerrado' : ' ✓') : ''}</span>`);
+  if (r.enviado_em) etapas.push('<span class="ok">Mandado ao fornecedor ✓</span>');
+  etapas.push(`<span class="${s === 'recebido' ? 'ok' : ['aprovado', 'enviado', 'recebido_parcial'].includes(s) ? 'agora' : ''}">Entrada da NF (almoxarifado)${s === 'recebido_parcial' ? ' (entregue parcial)' : s === 'recebido' ? (r.saldo_encerrado_em ? ' ✓ · saldo encerrado' : ' ✓') : ''}</span>`);
   const recsFin = ex.recebimentos[r.id] || [];
   if (recsFin.length) etapas.push(`<span class="${recsFin.some(x => x.situacao_financeiro === 'devolvido') ? 'erro' : recsFin.every(x => x.situacao_financeiro === 'lancado') ? 'ok' : 'agora'}">Financeiro lança${recsFin.every(x => x.situacao_financeiro === 'lancado') ? ' ✓' : ''}</span>`);
   if (s === 'cancelado') etapas.push('<span class="erro">Cancelado</span>');
@@ -638,12 +638,12 @@ function secaoPedido(r) {
   const btn = (id, txt, cls = '') => `<button type="button" class="btn ${cls}" data-pc="${id}">${txt}</button>`;
   const acoes = [];
   if (EDITAVEL.includes(s) && avulsosPendentes(r).length && possoLiberar()) acoes.push(btn('liberar_avulso', 'Liberar item sem cadastro…', 'primario'));
-  if (EDITAVEL.includes(s) && podeCriar) acoes.push(btn('enviar_aprovacao', 'Enviar para aprovação', avulsosPendentes(r).length ? '' : 'primario'));
+  if (EDITAVEL.includes(s) && podeCriar) acoes.push(btn('enviar_aprovacao', CTX.admin || ACOES.has('compras.aprovar') ? 'Aprovar e lançar a compra' : 'Enviar para aprovação', avulsosPendentes(r).length ? '' : 'primario'));
   if (s === 'em_aprovacao' && possoAprovar(r)) { acoes.push(btn('aprovar', 'Aprovar' + (n ? ' · ' + esc(nomeNivel(r, n)) : ''), 'primario')); acoes.push(btn('recusar', 'Recusar…')); }
   if (pos.includes(s) && s !== 'recebido') {
     acoes.push(btn('pdf', 'Baixar PDF'));
-    if (podeCriar) acoes.push(btn('enviar_fornecedor', r.enviado_em ? 'Reenviar ao fornecedor…' : 'Enviar ao fornecedor…', s === 'aprovado' ? 'primario' : ''));
-    if (podeEntrada) acoes.push(btn('receber', 'Dar entrada da NF…', ['enviado', 'recebido_parcial'].includes(s) ? 'primario' : ''));
+    if (podeEntrada) acoes.push(btn('receber', 'Dar entrada da NF…', 'primario'));
+    if (podeCriar) acoes.push(btn('enviar_fornecedor', r.enviado_em ? 'Mandar de novo ao fornecedor…' : 'Mandar ao fornecedor (opcional)…', 'discreto'));
   }
   if (s === 'recebido') acoes.push(btn('pdf', 'Baixar PDF'));
   if (temDesenho(r)) acoes.push(btn('desenhos', 'Baixar desenhos (ZIP)'));
@@ -698,7 +698,7 @@ function pedirTexto(titulo, rotulo, obrig = true, botao = 'Confirmar') {
 async function executarAcao(r, a, m) {
   if (sujo && ['liberar_avulso', 'enviar_aprovacao', 'aprovar', 'enviar_fornecedor', 'pdf', 'receber', 'desenhos'].includes(a)) return aviso('Salve as alterações antes', true);
   const fim = txt => { aviso(txt); m.remove(); cfg.recarregar(); };
-  if (a === 'enviar_aprovacao') { if (await acao(r, a)) fim('Enviado para aprovação'); }
+  if (a === 'enviar_aprovacao') { const s = await acao(r, a); if (s) fim(s === 'aprovado' ? 'Compra aprovada · o almoxarifado já foi avisado na Minha mesa' : 'Enviado para aprovação'); }
   else if (a === 'aprovar') { const c = await pedirTexto('Aprovar ' + r.numero, 'Comentário (opcional)', false, 'Aprovar'); if (c === null) return; const s = await acao(r, a, c); if (s) fim(s === 'aprovado' ? 'Pedido aprovado · previsão lançada no contas a pagar' : 'Aprovado neste nível · segue para o próximo'); }
   else if (a === 'recusar') { const c = await pedirTexto('Recusar ' + r.numero, 'Motivo (volta para o comprador ajustar; não cancela)', true, 'Recusar'); if (c && await acao(r, a, c)) fim('Pedido recusado'); }
   else if (a === 'reabrir') {   // Alterar depois de aprovado: volta a rascunho, a aprovação anterior é desfeita e passa de novo por toda a escala
@@ -1205,9 +1205,8 @@ function desenharAlertas(linhas) {
     ...(possoLiberar() ? [{ aba: 'liberar', n: ls.filter(r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length).length, t: 'com item sem cadastro para liberar', cls: 'erro' }] : []),
     { aba: 'recusados', n: ls.filter(r => r.situacao === 'recusado').length, t: 'recusado(s) para ajustar', cls: 'erro' },
     { aba: 'aprovacao', n: ls.filter(r => r.situacao === 'em_aprovacao').length, t: 'em aprovação', cls: 'alerta' },
-    { aba: 'enviar', n: ls.filter(r => r.situacao === 'aprovado').length, t: 'aprovado(s) sem envio ao fornecedor', cls: 'alerta' },
     { aba: 'atrasados', n: ls.filter(atrasado).length, t: 'com entrega atrasada', cls: 'erro' },
-    { aba: 'receber', n: ls.filter(r => ['enviado', 'recebido_parcial'].includes(r.situacao)).length, t: 'aguardando entrega/NF', cls: 'info' }
+    { aba: 'receber', n: ls.filter(r => ['aprovado', 'enviado', 'recebido_parcial'].includes(r.situacao)).length, t: 'aguardando entrega/NF', cls: 'info' }
   ].filter(x => x.n);
   box.innerHTML = a.map(x => `<button type="button" class="${x.cls}" ${x.acao ? `data-acao="${x.acao}"` : `data-aba="${x.aba}"`}><b>${x.n}</b> ${esc(x.t)}</button>`).join('');
   box.querySelector('[data-acao=sugestao]')?.addEventListener('click', abrirSugestao);
@@ -1237,8 +1236,7 @@ const cfg = {
     { v: 'liberar', n: 'Item sem cadastro', teste: r => EDITAVEL.includes(r.situacao) && avulsosPendentes(r).length > 0 },
     { v: 'recusados', n: 'Recusados', teste: r => r.situacao === 'recusado' },
     { v: 'pendencia', n: '⚠ Com pendência', teste: r => !FINAL.includes(r.situacao) && r.origem !== 'tiny' && [...(r._pend || [])].some(x => x !== 'nao_revisado') },
-    { v: 'enviar', n: 'Para enviar', teste: r => r.situacao === 'aprovado' },
-    { v: 'receber', n: 'Aguardando entrega', teste: r => ['enviado', 'recebido_parcial'].includes(r.situacao) },
+    { v: 'receber', n: 'Aguardando entrega', teste: r => ['aprovado', 'enviado', 'recebido_parcial'].includes(r.situacao) },
     { v: 'atrasados', n: 'Atrasados', teste: atrasado },
     { v: 'historico', n: 'Histórico (recebidos e cancelados)', teste: r => FINAL.includes(r.situacao) },
     { v: 'tiny', n: 'Do Tiny', teste: r => r.origem === 'tiny' },
@@ -1267,7 +1265,7 @@ const cfg = {
     { id: 'pagamento_antecipado', label: 'Pagar antes de receber?', tipo: 'bool', textoBool: 'Sim, pagamento antecipado (ex.: Mercado Livre, Pix na hora)', col: 2, secao: 'Pagamento antecipado',
       ajuda: 'Marcado: quando o pedido for aprovado, já entra no Contas a pagar liberado para o financeiro pagar na data abaixo. Na entrada da mercadoria não nasce outra conta.' },
     { id: 'pagamento_urgente', label: 'Urgência', tipo: 'bool', textoBool: 'URGENTE (financeiro paga primeiro)' },
-    { id: 'pagamento_data', label: 'Pagar até', tipo: 'data' },
+    { id: 'pagamento_data', label: 'Pagar até (ou data em que já pagou)', tipo: 'data' },
     { id: 'pagamento_pix', label: 'Pix (chave ou copia e cola)', col: 2 },
     { id: 'pagamento_codigo_barras', label: 'Boleto: código de barras / linha digitável', col: 2 },
     { id: 'pagamento_link', label: 'Link de pagamento (ex.: Mercado Livre)', col: 2 },
@@ -1338,9 +1336,8 @@ const cfg = {
     { id: 'sem_cat', nome: 'Item sem categoria financeira', cor: 'erro', teste: (r, e) => !FINAL.includes(r.situacao) && (e.itens[r.id] || []).some(i => !i.categoria_financeira_id) },
     { id: 'sem_itens', nome: 'Sem itens', cor: 'erro', teste: (r, e) => r.situacao !== 'cancelado' && !(e.itens[r.id] || []).length },
     { id: 'atrasado', nome: 'Entrega atrasada', cor: 'erro', teste: atrasado },
-    { id: 'nao_enviado', nome: 'Aprovado sem envio', cor: 'alerta', teste: r => r.situacao === 'aprovado' },
     { id: 'sem_entrega', nome: 'Sem data de entrega', cor: 'neutro', teste: r => !FINAL.includes(r.situacao) && !r.data_entrega_prevista && r.origem !== 'tiny' },
-    { id: 'antecipado_incompleto', nome: 'Pagamento antecipado sem data ou sem Pix/boleto/link', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && r.pagamento_antecipado && (!r.pagamento_data || !(r.pagamento_pix || r.pagamento_codigo_barras || r.pagamento_link)) },
+    { id: 'antecipado_incompleto', nome: 'Pagamento antecipado sem data', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && r.pagamento_antecipado && !r.pagamento_data },
     { id: 'sem_forma', nome: 'Sem forma de pagamento (não vai para aprovação)', cor: 'erro', teste: r => EDITAVEL.includes(r.situacao) && !r.forma_pagamento_id && r.origem !== 'tiny' },
     { id: 'aumento', nome: 'Preço acima da última compra', cor: 'alerta', teste: (r, e) => !FINAL.includes(r.situacao) && r.origem !== 'tiny' && (e.itens[r.id] || []).some(i => {
         const u = historico(i.produto_id, i.servico_id, false, r.id)[0]; return u && Number(i.valor_unitario) > Number(u.valor_unitario) + 0.005; }) },
