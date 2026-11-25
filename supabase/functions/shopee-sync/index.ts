@@ -1,5 +1,6 @@
 // ERP NOX · shopee-sync — busca as vendas da Shopee
-// Interno (cron/banco, chave x-nox-chave): {acao:'recentes'} = alteradas nas últimas 48 h; {acao:'periodo', canal_id, dias|de/ate}.
+// Interno (cron/banco, chave x-nox-chave): {acao:'recentes'} = alteradas nas últimas 48 h; {acao:'periodo', canal_id, dias|de/ate};
+//   {acao:'diario', ads_dias?} = foto do dia dos anúncios (visitas/vendas acumuladas) e ADS por dia (painel da Shopee).
 // Tela (login, quem pode editar Canais de venda): {canal_id, de, ate} = busca o período (aaaa-mm-dd).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { adminDb, buscarEGravarVendas, cors, listarVendas, shopeeGet, ContaShopee } from '../_shared/shopee.ts';
@@ -12,6 +13,45 @@ async function rodar(db: ReturnType<typeof adminDb>, conta: ContaShopee, de: num
   const r = await buscarEGravarVendas(db, conta, lista);
   await db.from('shopee_contas').update({ ultima_sync: new Date().toISOString(), ...(r.erros.length ? { ultimo_erro: r.erros[0] } : { ultimo_erro: null }) }).eq('id', conta.id);
   return { encontradas: lista.length, ...r };
+}
+
+// Foto diária dos anúncios (visitas e vendas acumuladas que a Shopee informa) e o ADS por dia → painel da Shopee
+const hojeSP = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const somaDias = (d: string, n: number) => new Date(Date.parse(d + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+const dmy = (d: string) => `${d.slice(8, 10)}-${d.slice(5, 7)}-${d.slice(0, 4)}`;
+async function diario(db: ReturnType<typeof adminDb>, conta: ContaShopee, adsDias = 30) {
+  const hoje = hojeSP(), ids: number[] = [];
+  for (let off = 0; ; ) {
+    const r = await shopeeGet(db, conta, '/api/v2/product/get_item_list', { offset: off, page_size: 100, item_status: 'NORMAL' });
+    for (const x of r?.item ?? []) ids.push(x.item_id);
+    if (!r?.has_next_page) break; off = r.next_offset;
+  }
+  let fotos = 0;
+  for (let k = 0; k < ids.length; k += 50) {
+    const lote = ids.slice(k, k + 50).join(',');
+    const [base, extra] = await Promise.all([
+      shopeeGet(db, conta, '/api/v2/product/get_item_base_info', { item_id_list: lote }).catch(() => null),
+      shopeeGet(db, conta, '/api/v2/product/get_item_extra_info', { item_id_list: lote })]);
+    const nomes = new Map((base?.item_list ?? []).map((b: any) => [String(b.item_id), b]));
+    const linhas = (extra?.item_list ?? []).map((x: any) => { const b: any = nomes.get(String(x.item_id)) ?? {};
+      return { item_id: String(x.item_id), dia: hoje, canal_id: conta.canal_id, titulo: b.item_name ?? null,
+        preco: b.price_info?.[0]?.current_price ?? null, situacao: b.item_status ?? null, visitas_total: x.views ?? null, vendas_total: x.sale ?? null,
+        curtidas: x.likes ?? null, nota: x.rating_star != null ? Math.round(x.rating_star * 100) / 100 : null, avaliacoes: x.comment_count ?? null,
+        atualizado_em: new Date().toISOString() }; });
+    if (linhas.length) { const { error } = await db.from('shopee_item_dia').upsert(linhas, { onConflict: 'item_id,dia' }); if (error) throw error; fotos += linhas.length; }
+  }
+  // ADS: a Shopee aceita no máximo 1 mês por consulta e guarda uns 6 meses
+  let ads = 0;
+  for (let fim = hoje, falta = Math.min(adsDias, 180); falta > 0; ) {
+    const n = Math.min(falta, 30), ini = somaDias(fim, -(n - 1));
+    const r = await shopeeGet(db, conta, '/api/v2/ads/get_all_cpc_ads_daily_performance', { start_date: dmy(ini), end_date: dmy(fim) }).catch(() => null);
+    const linhas = (Array.isArray(r) ? r : []).map((d: any) => ({ canal_id: conta.canal_id, dia: `${d.date.slice(6, 10)}-${d.date.slice(3, 5)}-${d.date.slice(0, 2)}`,
+      impressoes: d.impression ?? 0, cliques: d.clicks ?? 0, gasto: d.expense ?? 0, pedidos: d.direct_order ?? 0, itens: d.direct_item_sold ?? 0, vendas: d.direct_gmv ?? 0,
+      atualizado_em: new Date().toISOString() }));
+    if (linhas.length) { await db.from('shopee_ads_dia').upsert(linhas, { onConflict: 'canal_id,dia' }); ads += linhas.length; }
+    fim = somaDias(ini, -1); falta -= n;
+  }
+  return { anuncios: ids.length, fotos, ads_dias: ads };
 }
 
 Deno.serve(async req => {
@@ -46,7 +86,8 @@ Deno.serve(async req => {
         if (corpo.canal_id && conta.canal_id !== Number(corpo.canal_id)) continue;
         const fim = Math.floor(Date.now() / 1000);
         try {
-          if (corpo.acao === 'recentes') await rodar(db, conta, fim - 2 * 86400, fim, 'update_time');
+          if (corpo.acao === 'diario') { const r = await diario(db, conta, Number(corpo.ads_dias ?? 30)); console.log('shopee diario', JSON.stringify(r)); }
+          else if (corpo.acao === 'recentes') await rodar(db, conta, fim - 2 * 86400, fim, 'update_time');
           else if (corpo.acao === 'periodo') await rodar(db, conta, corpo.de ? seg(corpo.de) : fim - Number(corpo.dias ?? 30) * 86400, corpo.ate ? seg(corpo.ate, true) : fim, 'create_time');
         } catch (e) { await db.from('shopee_contas').update({ ultimo_erro: String((e as Error).message ?? e).slice(0, 500) }).eq('id', conta.id); }
       }

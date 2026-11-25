@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel da Shopee · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611251814">
+<style>
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .perso { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; } .perso input { width: 140px; }
+  .periodo { font-size: 12.5px; color: var(--texto-suave); margin: -4px 0 10px; }
+  .evol { margin: 0 0 14px; } .evol td, .evol th { padding: 5px 10px; font-size: 13px; }
+  td.tit { max-width: 380px; } td.tit small { display: block; color: var(--texto-suave); font-size: 11.5px; }
+  .dica { font-size: 12.5px; color: var(--texto-suave); margin: 0 0 10px; }
+  .var-pos { color: var(--ok); font-weight: 600; font-size: 12px; } .var-neg { color: var(--erro); font-weight: 600; font-size: 12px; }
+</style>
+</head>
+<body data-modulo="painel_shopee" data-titulo="Painel da Shopee">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Painel da Shopee</h1>
+    <p class="sub">Vendas da Shopee por semana, mês ou período, a evolução para projetar e os anúncios que mais vendem. Visitas e ADS entram com a foto diária dos anúncios (6h40). Aqui só se olha: nada é mudado na Shopee.</p></div>
+  </div>
+  <div class="barra-ferr">
+    <div></div>
+    <div class="ferr">
+      <select id="fModo" title="Período"><option value="semana">Semana</option><option value="mes" selected>Mês</option><option value="perso">Personalizado</option></select>
+      <select id="fSemana" title="Semana" hidden></select>
+      <select id="fMes" title="Mês"></select>
+      <span id="fPerso" class="perso" hidden><input type="date" id="fDe" title="De"> até <input type="date" id="fAte" title="Até"></span>
+    </div>
+  </div>
+  <div id="kpis" class="kpis"></div>
+  <div id="periodo"></div>
+  <div id="corpo"><div class="vazio">Carregando…</div></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611251814"></script>
+<script src="../../assets/js/ui.js?v=202611251814"></script>
+<script src="../../assets/js/auth.js?v=202611251814"></script>
+<script src="../../assets/js/layout.js?v=202611251814"></script>
+<script>
+/* =====================================================================
+   Painel da Shopee (só leitura) · rpc painel_shopee(de, até): vendas por dia (pedidos do sistema),
+   anúncios do período (com visitas pela diferença das fotos diárias de shopee_item_dia) e ADS por dia.
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const R$ = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const R$2 = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const N = v => Number(v || 0).toLocaleString('pt-BR');
+const pct = (v, d = 1) => v == null || !isFinite(v) ? '—' : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: d }) + '%';
+const dm = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '';
+const somaDias = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const hoje = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const segunda = d => { const x = new Date(d + 'T12:00:00Z'); return somaDias(d, -((x.getUTCDay() + 6) % 7)); };
+const fimMes = m => somaDias(somaDias(m + '-01', 32).slice(0, 7) + '-01', -1);
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const MES3 = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+function variacao(a, b) { if (!b) return ''; const v = (a - b) / b; return ` <span class="${v >= 0 ? 'var-pos' : 'var-neg'}">${v >= 0 ? '▲' : '▼'} ${pct(Math.abs(v), 0)}</span>`; }
+
+let DESDE = '2026-01-01', ATUAL = null, ANT = null, PER = null, busca = '', ordem = { campo: 'vendas', asc: false };
+
+function montarFiltros() {
+  const h = hoje(), sems = [], meses = [];
+  for (let s = segunda(h); s >= segunda(DESDE); s = somaDias(s, -7)) sems.push(s);
+  for (let m = h.slice(0, 7); m >= DESDE.slice(0, 7); m = somaDias(m + '-01', -1).slice(0, 7)) meses.push(m);
+  const fS = $('#fSemana'), fM = $('#fMes'), sS = fS.value, sM = fM.value;
+  fS.innerHTML = sems.map((s, i) => `<option value="${s}">${i === 0 ? 'Esta semana' : 'Semana'} ${dm(s)} a ${dm(somaDias(s, 6))}</option>`).join('');
+  fM.innerHTML = meses.map((m, i) => `<option value="${m}">${MESES[Number(m.slice(5)) - 1]} de ${m.slice(0, 4)}${i === 0 ? ' (em andamento)' : ''}</option>`).join('');
+  if (sS) fS.value = sS; if (sM) fM.value = sM;
+  if (!$('#fDe').value) { $('#fDe').value = DESDE; $('#fAte').value = h; }
+}
+function periodo() {
+  const modo = $('#fModo').value, h = hoje();
+  let de, ate;
+  if (modo === 'semana') { de = $('#fSemana').value; ate = somaDias(de, 6); }
+  else if (modo === 'mes') { de = $('#fMes').value + '-01'; ate = fimMes($('#fMes').value); }
+  else { de = $('#fDe').value; ate = $('#fAte').value; }
+  if (ate > h) ate = h;
+  const dias = Math.round((Date.parse(ate) - Date.parse(de)) / 864e5) + 1;
+  return { de, ate, dias, antDe: somaDias(de, -dias), antAte: somaDias(de, -1) };
+}
+async function carregar() {
+  PER = periodo();
+  if (!PER.de || !PER.ate || PER.ate < PER.de) { $('#corpo').innerHTML = '<div class="vazio">Escolha um período válido.</div>'; return; }
+  const [a, b] = await Promise.all([db.rpc('painel_shopee', { p_de: PER.de, p_ate: PER.ate }), db.rpc('painel_shopee', { p_de: PER.antDe, p_ate: PER.antAte })]);
+  if (a.error) { $('#corpo').innerHTML = `<div class="vazio">Não carregou: ${esc(a.error.message)}</div>`; return; }
+  ATUAL = a.data || {}; ANT = b.data || {};
+  if (ATUAL.vendas_desde && ATUAL.vendas_desde !== DESDE) { DESDE = ATUAL.vendas_desde; montarFiltros(); }
+  desenhar();
+}
+const tot = d => { const s = k => (d.dias || []).reduce((t, x) => t + Number(x[k] || 0), 0), g = k => (d.ads || []).reduce((t, x) => t + Number(x[k] || 0), 0),
+  vis = (d.anuncios || []).filter(x => x.visitas != null);
+  return { v: s('vendas'), l: s('liquido'), un: s('unidades'), ped: s('pedidos'), ag: g('gasto'), ar: g('vendas'), vis: vis.length ? vis.reduce((t, x) => t + Number(x.visitas), 0) : null,
+    unVis: vis.reduce((t, x) => t + Number(x.unidades || 0), 0) }; };
+function desenhar() {
+  const t = tot(ATUAL), p = tot(ANT), k = (tit, valor, ctx) => `<div class="kpi"><div class="kpi-tit">${tit}</div><div class="kpi-valor">${valor}</div><div class="kpi-ctx">${ctx}</div></div>`;
+  const andamento = PER.ate === hoje() ? ' <small>(período em andamento)</small>' : '';
+  const kp = [
+    k('Vendas', R$(t.v), `${variacao(t.v, p.v)} vs ${R$(p.v)} no período anterior${andamento}`),
+    k('Unidades', N(t.un), `${variacao(t.un, p.un)} vs ${N(p.un)} antes`),
+    k('Pedidos', N(t.ped), `${variacao(t.ped, p.ped)} vs ${N(p.ped)} antes`),
+    k('Ticket médio', t.ped ? R$2(t.v / t.ped) : '—', p.ped ? `antes ${R$2(p.v / p.ped)}` : ''),
+    k('Líquido (após tarifas)', R$(t.l), t.v ? `${pct(1 - t.l / t.v, 1)} ficaram com a Shopee` : ''),
+  ];
+  if (t.vis != null) kp.push(k('Visitas', N(t.vis), `conversão ${pct(t.vis ? t.unVis / t.vis : null, 2)} (anúncios com foto diária)`));
+  if (t.ag || p.ag) kp.push(k('ADS: gasto', R$(t.ag), `vendeu ${R$(t.ar)} pelo ADS`),
+    k('ADS: ROAS', t.ag ? `<span style="color:${t.ar / t.ag >= 30 ? '#2e9e55' : '#d93025'}">${(t.ar / t.ag).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>` : '—', 'venda do ADS ÷ gasto · meta: acima de 30'));
+  $('#kpis').innerHTML = kp.join('');
+  // evolução: semana a semana até ~10 semanas; depois mês a mês
+  const porMes = PER.dias > 70, grupos = new Map();
+  const g = d => porMes ? d.slice(0, 7) : segunda(d);
+  for (const x of ATUAL.dias || []) { const e = grupos.get(g(x.dia)) || grupos.set(g(x.dia), { v: 0, un: 0, ped: 0, ag: 0, ar: 0 }).get(g(x.dia)); e.v += Number(x.vendas); e.un += Number(x.unidades || 0); e.ped += Number(x.pedidos); }
+  for (const x of ATUAL.ads || []) { const e = grupos.get(g(x.dia)) || grupos.set(g(x.dia), { v: 0, un: 0, ped: 0, ag: 0, ar: 0 }).get(g(x.dia)); e.ag += Number(x.gasto); e.ar += Number(x.vendas); }
+  const ev = [...grupos].sort((a, b) => a[0].localeCompare(b[0])), temAds = ev.some(([, e]) => e.ag);
+  const rot = c => porMes ? `${MES3[Number(c.slice(5)) - 1]}/${c.slice(2, 4)}` : `${dm(c)} a ${dm(somaDias(c, 6))}`;
+  $('#periodo').innerHTML = `<p class="periodo">Período: ${dm(PER.de)}/${PER.de.slice(0, 4)} a ${dm(PER.ate)}/${PER.ate.slice(0, 4)} (${PER.dias} dias). Comparação com os ${PER.dias} dias anteriores.${
+    ATUAL.fotos_desde ? ` Visitas medidas desde ${dm(ATUAL.fotos_desde)}.` : ' Visitas: a primeira foto dos anúncios sai na próxima manhã.'}</p>${ev.length > 1 ? `<div class="cartao tabela-rolagem evol"><table><thead><tr><th>${porMes ? 'Mês' : 'Semana'}</th><th class="num">Vendas (R$)</th><th class="num">Unidades</th><th class="num">Pedidos</th><th class="num">Ticket médio</th>${temAds ? '<th class="num">ADS gasto</th><th class="num">ROAS</th>' : ''}</tr></thead><tbody>${
+    ev.map(([c, e]) => `<tr><td>${rot(c)}</td><td class="num">${R$(e.v)}</td><td class="num">${N(e.un)}</td><td class="num">${N(e.ped)}</td><td class="num">${e.ped ? R$2(e.v / e.ped) : ''}</td>${temAds ? `<td class="num">${R$(e.ag)}</td><td class="num">${e.ag ? (e.ar / e.ag).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : ''}</td>` : ''}</tr>`).join('')}</tbody></table></div>` : ''}`;
+  desenharAnuncios();
+}
+function desenharAnuncios() {
+  const corpo = $('#corpo');
+  if (!corpo.querySelector('#tbAn')) {
+    corpo.innerHTML = `<div class="barra-ferr" style="margin-bottom:8px"><div><b>Anúncios no período</b></div><div class="ferr"><input id="fBusca" class="busca" type="search" placeholder="Buscar: título ou código do anúncio…"><span id="relAn"></span></div></div>
+      <div class="cartao tabela-rolagem"><table><thead><tr><th data-ord="titulo">Anúncio</th><th data-ord="preco" class="num">Preço</th><th data-ord="visitas" class="num">Visitas</th>
+      <th data-ord="unidades" class="num">Unidades</th><th data-ord="vendas" class="num">Vendas (R$)</th><th data-ord="pedidos" class="num">Pedidos</th><th data-ord="conv" class="num">Conversão</th><th data-ord="nota" class="num">Nota</th></tr></thead><tbody id="tbAn"></tbody></table></div>`;
+    const fb = $('#fBusca'); fb.value = busca; fb.oninput = () => { busca = fb.value; desenharAnuncios(); };
+    botoesRelatorio('relAn', () => ({ titulo: 'Anúncios da Shopee', arquivo: 'anuncios_shopee', colunas: ['Código', 'Título', 'Preço', 'Visitas', 'Unidades', 'Vendas R$', 'Pedidos', 'Nota'],
+      linhas: lista().map(x => [x.item_id, x.titulo, x.preco, x.visitas, x.unidades, x.vendas, x.pedidos, x.nota]) }));
+  }
+  const ls = ordenarLista(lista(), ordem, { conv: x => x.visitas ? x.unidades / x.visitas : null });
+  $('#tbAn').innerHTML = ls.slice(0, 500).map(x => `<tr><td class="tit">${esc(x.titulo || 'Anúncio ' + x.item_id)}<small>${esc(String(x.item_id || ''))}</small></td>
+    <td class="num">${x.preco != null ? R$2(x.preco) : ''}</td><td class="num">${x.visitas != null ? N(x.visitas) : ''}</td><td class="num">${N(x.unidades)}</td>
+    <td class="num">${x.vendas ? R$(x.vendas) : ''}</td><td class="num">${x.pedidos ? N(x.pedidos) : ''}</td><td class="num">${x.visitas ? pct(x.unidades / x.visitas, 1) : ''}</td>
+    <td class="num">${x.nota != null ? Number(x.nota).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="vazio">Nenhum anúncio neste período.</td></tr>';
+  ligarOrdenacao($('#corpo'), ordem, desenharAnuncios);
+}
+const lista = () => (ATUAL?.anuncios || []).map(x => ({ ...x, unidades: Number(x.unidades || 0), vendas: Number(x.vendas || 0), pedidos: Number(x.pedidos || 0),
+  visitas: x.visitas == null ? null : Number(x.visitas), preco: x.preco == null ? null : Number(x.preco) }))
+  .filter(x => (x.unidades || x.visitas) && (!busca || combinaBusca(`${x.titulo} ${x.item_id}`, busca)));
+
+function mostrarCampos() { const m = $('#fModo').value; $('#fSemana').hidden = m !== 'semana'; $('#fMes').hidden = m !== 'mes'; $('#fPerso').hidden = m !== 'perso'; }
+(async () => {
+  const ctx = await iniciarTela(); if (!ctx) return;
+  montarFiltros(); mostrarCampos();
+  $('#fModo').onchange = () => { mostrarCampos(); carregar(); };
+  ['#fSemana', '#fMes', '#fDe', '#fAte'].forEach(s => $(s).onchange = carregar);
+  await carregar();
+})();
+</script>
+</body>
+</html>
