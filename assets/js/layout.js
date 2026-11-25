@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611251743';
+const VERSAO_TELAS = '202611251814';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 // Menu por ÁREA (nov/2026): cada área tem uma página de cartões (pages/area.html?a=<slug>) com as telas dela.
 // "sub" separa partes dentro da área; arquivo null = tela ainda não feita ("em breve", só o administrador vê).
@@ -26,6 +26,7 @@ const MENU = [
   ]},
   { grupo: 'Marketplaces', slug: 'marketplaces', icone: 'loja', itens: [
     { id: 'painel_ml',     nome: 'Painel do Mercado Livre', arquivo: 'pages/comercial/painel-ml.html', desc: 'Vendas, visitas, ADS, curva ABC e avisos do analista' },
+    { id: 'painel_shopee', nome: 'Painel da Shopee', arquivo: 'pages/comercial/painel-shopee.html', desc: 'Vendas por semana, mês ou período, evolução e anúncios' },
     { id: 'marketplaces',  nome: 'Anúncios × produtos', arquivo: 'pages/comercial/anuncios.html', desc: 'Qual anúncio é qual produto' },
     { id: 'canais_venda',  nome: 'Canais de venda', arquivo: 'pages/cadastros/canais-venda.html', desc: 'Contas do Mercado Livre, Shopee e outros' },
     { id: 'canais_venda',  nome: 'Tarifas de marketplace', arquivo: 'pages/cadastros/tarifas-marketplace.html', desc: 'Comissões e fretes por canal' },
