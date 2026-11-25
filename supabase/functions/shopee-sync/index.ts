@@ -28,6 +28,18 @@ Deno.serve(async req => {
         return resp({ ok: true, conversas: (r?.conversations ?? []).length, mais: r?.page_result?.more ?? null }); }
       catch (e) { return resp({ erro: String((e as Error).message ?? e) }); }
     }
+    // sondagem (só leitura, não grava nada): testa endpoints da Shopee e devolve o começo da resposta
+    if (corpo.acao === 'sondar') {
+      const { data: c } = await db.from('shopee_contas').select('*').eq('situacao', 'ativo').limit(1).maybeSingle();
+      if (!c) return resp({ erro: 'sem loja autorizada' });
+      const out: Record<string, unknown> = {};
+      for (const x of (corpo.caminhos ?? []) as { path: string; params?: Record<string, unknown> }[]) {
+        if (!/^\/api\/v2\/(product|ads|shop)\/get_[a-z_]+$/.test(x.path)) { out[x.path] = 'caminho não permitido'; continue; }
+        try { const r = await shopeeGet(db, c as ContaShopee, x.path, (x.params ?? {}) as Record<string, string | number>); out[x.path] = JSON.stringify(r).slice(0, 1500); }
+        catch (e) { out[x.path] = 'ERRO ' + String((e as Error).message ?? e).slice(0, 300); }
+      }
+      return resp(out);
+    }
     const tarefa = (async () => {
       const { data: contas } = await db.from('shopee_contas').select('*').eq('situacao', 'ativo');
       for (const conta of (contas ?? []) as ContaShopee[]) {
