@@ -6,12 +6,12 @@
 <title>NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/style.css?v=202611251902">
+<link rel="stylesheet" href="assets/css/style.css?v=202611252216">
 </head>
-<body data-modulo="" data-titulo="Minha mesa" data-shell="sim">
+<body data-modulo="" data-titulo="Dashboard" data-shell="sim">
 <main id="conteudo" class="painel" aria-live="polite">
   <div class="painel-cab">
-    <div><h1>Minha mesa</h1><p id="saudacao">&nbsp;</p></div>
+    <div><h1>Dashboard</h1><p id="saudacao">&nbsp;</p></div>
     <div class="painel-cab-acoes">
       <div class="seg" id="segEmpresa" role="group" aria-label="Empresa"></div>
       <div class="menu-novo" id="menuNovo" hidden></div>
@@ -46,10 +46,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/supabase.js?v=202611251902"></script>
-<script src="assets/js/ui.js?v=202611251902"></script>
-<script src="assets/js/auth.js?v=202611251902"></script>
-<script src="assets/js/layout.js?v=202611251902"></script>
+<script src="assets/js/supabase.js?v=202611252216"></script>
+<script src="assets/js/ui.js?v=202611252216"></script>
+<script src="assets/js/auth.js?v=202611252216"></script>
+<script src="assets/js/layout.js?v=202611252216"></script>
 <script>
 /* Visão do gestor — todos os números vêm de public.painel_gestor() (um bloco por permissão). */
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -227,7 +227,7 @@ function desenharCanais(lista) {
     return `<li><div class="c-nome"><b>${esc(c.nome)}</b><small>${esc(det)}</small>${s.cls === 'atencao' || s.cls === 'desconectado' ? `<small style="color:var(--erro)">${esc(s.motivo)}</small>` : ''}</div><span class="est ${s.cls}">${s.t}</span></li>`; }).join('')}</ul>`;
 }
 
-/* ---------- Minha mesa (public.minha_mesa(): só o que é desta pessoa) ---------- */
+/* ---------- Dashboard (public.minha_mesa(): só o que é desta pessoa) ---------- */
 const COR_MESA = { vermelho: '#cf3543', laranja: '#d97706', azul: '#4f62d8', verde: '#15803d', cinza: '#64748b' };
 const tempoAtras = s => { const m = Math.round(Number(s) / 60); return m < 60 ? `${Math.max(1, m)} min` : m < 1440 ? `${Math.floor(m / 60)} h` : `${Math.floor(m / 1440)} dia${m >= 2880 ? 's' : ''}`; };
 function desenharMesa(m) {
@@ -272,7 +272,7 @@ async function desenharRecados() {
   $('blEnv').hidden = !env.length;
   $('env').innerHTML = env.map(r => `<div class="rc-env"><span><b>${esc(nomePessoa(r.para_id))}</b> ${prazoTxt(r.prazo)}<small>${esc(r.texto)}</small>${r.resposta ? `<small class="rc-resp">↳ ${esc(r.resposta)}</small>` : ''}</span>
       <span class="rc-sit ${r.feito_em ? 'feito' : r.visto_em ? 'visto' : ''}">${r.feito_em ? 'feito ' + dhm(r.feito_em) : r.visto_em ? 'visto ' + dhm(r.visto_em) : 'ainda não viu'}</span></div>`).join('');
-  // quem recebe e está com a Minha mesa aberta já viu
+  // quem recebe e está com o Dashboard aberto já viu
   const novos = rec.filter(r => !r.visto_em).map(r => r.id);
   if (novos.length && document.visibilityState === 'visible') await db.from('recados').update({ visto_em: new Date().toISOString() }).in('id', novos);
 }
@@ -305,7 +305,7 @@ async function novoRecado() {
     m.querySelector('#rcS').disabled = true;
     const { error } = await db.from('recados').insert({ para_id: para, texto, prazo: m.querySelector('#rcD').value || null });
     if (error) { m.querySelector('#rcS').disabled = false; return aviso('Não mandou: ' + error.message, true); }
-    aviso('Recado enviado: aparece na Minha mesa da pessoa'); m.remove(); desenharRecados();
+    aviso('Recado enviado: aparece no Dashboard da pessoa'); m.remove(); desenharRecados();
   };
 }
 

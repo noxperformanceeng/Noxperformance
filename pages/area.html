@@ -26,7 +26,7 @@ const AREA = MENU.find(g => g.slug === SLUG) || MENU[0];
 document.body.dataset.titulo = AREA.grupo;
 let CTX, FAV = new Set();
 
-function contagens() {   // tela → { n, urg, txt } a partir da Minha mesa (mesmos números do menu)
+function contagens() {   // tela → { n, urg, txt } a partir do Dashboard (mesmos números do menu)
   const m = {}, mesa = window.top.NOX_MESA || window.NOX_MESA;
   (mesa?.cartoes || []).forEach(c => { const mod = MODULO_CARTAO[c.k]; if (mod === undefined || !c.n) return;
     const x = m[mod] || (m[mod] = { n: 0, urg: false }); x.n += Number(c.n); x.urg = x.urg || !!c.urg; });
@@ -45,7 +45,7 @@ function desenhar() {
     const c = cont[t.id ?? ''], fav = FAV.has(t.arquivo);
     return `<a class="area-cartao" href="../${t.arquivo}"><span class="ac-topo"><span class="ac-ico">${icone(AREA.icone, 20)}</span>${c?.n ? `<span class="ac-n${c.urg ? '' : ' calmo'}" title="${c.urg ? 'para agir agora' : 'aguardando'}">${c.n}</span>` : ''}</span>
       <b>${esc(t.nome)}</b>${t.desc ? `<small>${esc(t.desc)}</small>` : ''}
-      <button type="button" class="ac-fav${fav ? ' on' : ''}" data-fav="${esc(t.arquivo)}" data-nome="${esc(t.nome)}" title="${fav ? 'Tirar dos meus atalhos' : 'Fixar nos meus atalhos (Minha mesa)'}" aria-label="${fav ? 'Tirar dos atalhos' : 'Fixar nos atalhos'}: ${esc(t.nome)}">${icone('estrela', 16)}</button></a>`;
+      <button type="button" class="ac-fav${fav ? ' on' : ''}" data-fav="${esc(t.arquivo)}" data-nome="${esc(t.nome)}" title="${fav ? 'Tirar dos meus atalhos' : 'Fixar nos meus atalhos (Dashboard)'}" aria-label="${fav ? 'Tirar dos atalhos' : 'Fixar nos atalhos'}: ${esc(t.nome)}">${icone('estrela', 16)}</button></a>`;
   };
   $('corpo').innerHTML = partes.map(p => `${p.sub ? `<h2 class="area-sub">${esc(p.sub)}</h2>` : ''}<div class="area-grade">${p.telas.map(cartao).join('')}</div>`).join('')
     || '<div class="cartao vazio">Nenhuma tela desta área liberada para você. Fale com o administrador.</div>';

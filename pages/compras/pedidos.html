@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611251902">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611252216">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -52,12 +52,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611251902"></script>
-<script src="../../assets/js/ui.js?v=202611251902"></script>
-<script src="../../assets/js/auth.js?v=202611251902"></script>
-<script src="../../assets/js/layout.js?v=202611251902"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611251902"></script>
-<script src="../../assets/js/cadastro.js?v=202611251902"></script>
+<script src="../../assets/js/supabase.js?v=202611252216"></script>
+<script src="../../assets/js/ui.js?v=202611252216"></script>
+<script src="../../assets/js/auth.js?v=202611252216"></script>
+<script src="../../assets/js/layout.js?v=202611252216"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611252216"></script>
+<script src="../../assets/js/cadastro.js?v=202611252216"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -698,7 +698,7 @@ function pedirTexto(titulo, rotulo, obrig = true, botao = 'Confirmar') {
 async function executarAcao(r, a, m) {
   if (sujo && ['liberar_avulso', 'enviar_aprovacao', 'aprovar', 'enviar_fornecedor', 'pdf', 'receber', 'desenhos'].includes(a)) return aviso('Salve as alterações antes', true);
   const fim = txt => { aviso(txt); m.remove(); cfg.recarregar(); };
-  if (a === 'enviar_aprovacao') { const s = await acao(r, a); if (s) fim(s === 'aprovado' ? 'Compra aprovada · o almoxarifado já foi avisado na Minha mesa' : 'Enviado para aprovação'); }
+  if (a === 'enviar_aprovacao') { const s = await acao(r, a); if (s) fim(s === 'aprovado' ? 'Compra aprovada · o almoxarifado já foi avisado no Dashboard' : 'Enviado para aprovação'); }
   else if (a === 'aprovar') { const c = await pedirTexto('Aprovar ' + r.numero, 'Comentário (opcional)', false, 'Aprovar'); if (c === null) return; const s = await acao(r, a, c); if (s) fim(s === 'aprovado' ? 'Pedido aprovado · previsão lançada no contas a pagar' : 'Aprovado neste nível · segue para o próximo'); }
   else if (a === 'recusar') { const c = await pedirTexto('Recusar ' + r.numero, 'Motivo (volta para o comprador ajustar; não cancela)', true, 'Recusar'); if (c && await acao(r, a, c)) fim('Pedido recusado'); }
   else if (a === 'reabrir') {   // Alterar depois de aprovado: volta a rascunho, a aprovação anterior é desfeita e passa de novo por toda a escala

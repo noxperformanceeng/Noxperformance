@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611251902';
+const VERSAO_TELAS = '202611252216';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 // Menu por ÁREA (nov/2026): cada área tem uma página de cartões (pages/area.html?a=<slug>) com as telas dela.
 // "sub" separa partes dentro da área; arquivo null = tela ainda não feita ("em breve", só o administrador vê).
@@ -99,7 +99,7 @@ const MENU = [
   ]}
 ];
 // Telas que a pessoa pode abrir numa área (e as "em breve", só para o administrador)
-// Cartões da Minha mesa → tela (módulo) a que se referem (para os contadores das áreas)
+// Cartões do Dashboard → tela (módulo) a que se referem (para os contadores das áreas)
 const MODULO_CARTAO = { perg: 'perguntas_ml', shopee: 'chat_shopee', avisos: 'painel_ml', exped: 'separacao', sol: 'solicitacoes_compra', solap: 'solicitacoes_compra',
   cot: 'cotacoes_compra', receb: 'compras', desp: 'despesas', pagar: 'pagar', conc: 'conciliacao', aprov: '' };
 function areaDoModulo(mod) { if (mod === undefined) return null; const g = MENU.find(g => g.itens.some(i => i.id === mod && i.arquivo)); return g ? g.slug : null; }
@@ -202,7 +202,7 @@ async function iniciarTela() {
   const abertos = lerAbertos();
 
   let menuHtml = `<a class="marca" href="${RAIZ}inicio.html"><img src="${RAIZ}assets/img/logo-nox.png" alt="NOX"><span class="rotulo"><img class="marca-nome" src="${RAIZ}assets/img/marca-nox.png" alt="NOX Performance Engineering"><small>Sistema de gestão</small></span></a>
-    <a class="item item-raiz${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html" title="Minha mesa" data-area="">${icone('mesa')}<span class="rotulo">Minha mesa</span></a>
+    <a class="item item-raiz${atual.endsWith('inicio.html') ? ' ativo' : ''}" href="${RAIZ}inicio.html" title="Dashboard" data-area="">${icone('mesa')}<span class="rotulo">Dashboard</span></a>
     <a class="item item-raiz item-aprov" id="itemAprov" href="${RAIZ}pages/config/aprovacoes.html" title="Aprovações pendentes" hidden>${icone('aprovar')}<span class="rotulo">Aprovações</span><span class="n-aprov" id="nAprov"></span><span class="av-aprov pisca" id="avAprov" hidden>!</span></a>`;
   // Uma linha por área (só as que têm alguma tela liberada para a pessoa); cada uma abre a página de cartões da área.
   const linhaArea = g => `<a class="item item-raiz item-area${g.sistema ? ' item-sistema' : ''}" href="${RAIZ}pages/area.html?a=${g.slug}" data-area="${g.slug}" title="${esc(g.grupo)}">${icone(g.icone)}<span class="rotulo">${esc(g.grupo)}</span><span class="cont-area" hidden></span></a>`;
@@ -251,7 +251,7 @@ async function iniciarTela() {
   };
   contarAprov(); setInterval(contarAprov, 120000); window.addEventListener('nox:aprovacoes', contarAprov);
   ouvirMudancas(tempoReal.fontes('minhas_aprovacoes'), contarAprov, { auxiliar: true, mesmoOculto: true });
-  // Contadores por área no menu: o que pede ação agora (mesmos números da Minha mesa)
+  // Contadores por área no menu: o que pede ação agora (mesmos números do Dashboard)
   const contarTelas = async () => {
     const { data } = await db.rpc('minha_mesa'); if (!data) return;
     window.NOX_MESA = data;
@@ -270,7 +270,7 @@ async function iniciarTela() {
   if (ctx.pode('perguntas_ml', 'alterar')) alertaPerguntasML(ctx.usuario?.perfil_id === 'comercial');
   // Avisos do analista do ML: contador no menu para quem vê o painel; faixa amarela + som para o analista (quem não é administrador)
   if (ctx.pode('painel_ml')) alertaAnalistaML(!ctx.admin);
-  // Recados e ordens de compra para receber: faixa azul no topo de qualquer tela + contador na Minha mesa + som/aviso
+  // Recados e ordens de compra para receber: faixa azul no topo de qualquer tela + contador no Dashboard + som/aviso
   alertaRecados(ctx);
   // Venda nova: cartão verde + som para Comercial e Expedição
   if (['comercial', 'expedicao'].includes(ctx.usuario?.perfil_id)) alertaVendas();
@@ -369,7 +369,7 @@ function montarBarraTelas(ctx, app) {
   const iframeDe = c => painel(c)?.querySelector('iframe');
 
   function desenharBarra() {
-    barra.innerHTML = `<button type="button" class="aba-tela fixa${ativa === '' ? ' ativa' : ''}" data-c="" title="Minha mesa">${icone('mesa', 15)}<span class="aba-nome">Minha mesa</span></button>` +
+    barra.innerHTML = `<button type="button" class="aba-tela fixa${ativa === '' ? ' ativa' : ''}" data-c="" title="Dashboard">${icone('mesa', 15)}<span class="aba-nome">Dashboard</span></button>` +
       abas.map(a => `<div class="aba-tela${a.caminho === ativa ? ' ativa' : ''}" data-c="${esc(a.caminho)}" title="${esc(a.titulo)}">
         <span class="aba-nome">${esc(a.titulo)}</span>
         <button type="button" class="aba-acao" data-recarregar title="Recarregar esta tela" aria-label="Recarregar ${esc(a.titulo)}">↻</button>
@@ -393,11 +393,11 @@ function montarBarraTelas(ctx, app) {
       i.classList.toggle('ativo', on); on ? i.setAttribute('aria-current', 'page') : i.removeAttribute('aria-current');
     });
     const nomeEmp = ctx.empresa ? (ctx.empresas.find(e => e.id === ctx.empresa)?.nome || '') : 'Consolidado';
-    const bi = document.getElementById('barraInfo'); if (bi) bi.innerHTML = `<b>${esc(c ? abas.find(a => a.caminho === c).titulo : 'Minha mesa')}</b><span>Nox Performance Engineering · ${esc(nomeEmp)}</span>`;
+    const bi = document.getElementById('barraInfo'); if (bi) bi.innerHTML = `<b>${esc(c ? abas.find(a => a.caminho === c).titulo : 'Dashboard')}</b><span>Nox Performance Engineering · ${esc(nomeEmp)}</span>`;
     const usa = !!(c && info[c]?.empresa);
     const me = document.getElementById('menuEmpresa'); if (me) me.hidden = !usa;
     marcarNeutra();
-    document.title = (ctx.empresa ? dadosEmpresa(ctx).curto + ' · ' : '') + (c ? abas.find(a => a.caminho === c).titulo : 'Minha mesa') + ' · NOX ERP';
+    document.title = (ctx.empresa ? dadosEmpresa(ctx).curto + ' · ' : '') + (c ? abas.find(a => a.caminho === c).titulo : 'Dashboard') + ' · NOX ERP';
     desenharBarra(); guardar();
     if (c) iframeDe(c)?.contentWindow?.postMessage({ nox: 'ativa' }, location.origin);
     else window.dispatchEvent(new CustomEvent('inicio-ativo'));
@@ -645,7 +645,7 @@ function alertaRecados(ctx) {
     const oQue = [oc ? `${oc} ordem${oc > 1 ? 'ns' : ''} de compra para receber` : '', outros ? `${outros} recado${outros > 1 ? 's' : ''} para você` : ''].filter(Boolean).join(' · ');
     faixa.innerHTML = `<span class="sino">${oc ? '📦' : '✉'}</span><b>${oQue}</b>
       <span class="ult">${naoVistos ? `${naoVistos} ainda não ${naoVistos > 1 ? 'vistos' : 'visto'} · ` : ''}${esc(String(ls[0].texto).slice(0, 110))}</span>
-      <a class="btn" href="${RAIZ}inicio.html">Ver na Minha mesa</a>`;
+      <a class="btn" href="${RAIZ}inicio.html">Ver no Dashboard</a>`;
     faixa.classList.toggle('novo', naoVistos > 0);
     faixa.hidden = false; medirFaixas();
     if (novos.length && !primeira) { notificar(novos[0], n); SOM.tocar([[660, 0], [880, .18]], 'sine', .22, .2); }
