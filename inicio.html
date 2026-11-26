@@ -6,7 +6,7 @@
 <title>NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/style.css?v=202611260840">
+<link rel="stylesheet" href="assets/css/style.css?v=202611260955">
 </head>
 <body data-modulo="" data-titulo="Dashboard" data-shell="sim">
 <main id="conteudo" class="painel" aria-live="polite">
@@ -46,10 +46,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/supabase.js?v=202611260840"></script>
-<script src="assets/js/ui.js?v=202611260840"></script>
-<script src="assets/js/auth.js?v=202611260840"></script>
-<script src="assets/js/layout.js?v=202611260840"></script>
+<script src="assets/js/supabase.js?v=202611260955"></script>
+<script src="assets/js/ui.js?v=202611260955"></script>
+<script src="assets/js/auth.js?v=202611260955"></script>
+<script src="assets/js/layout.js?v=202611260955"></script>
 <script>
 /* Visão do gestor — todos os números vêm de public.painel_gestor() (um bloco por permissão). */
 const reais = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -268,7 +268,7 @@ async function desenharRecados() {
   $('rec').innerHTML = rec.map(r => `<div class="rc-linha" data-id="${r.id}">
       <div class="rc-txt"><small>${esc(nomePessoa(r.de_id))} · ${dhm(r.criado_em)} ${prazoTxt(r.prazo)}</small><p>${esc(r.texto)}</p>
         ${r.resposta ? `<small>Sua resposta: ${esc(r.resposta)}</small>` : ''}</div>
-      <div class="rc-acoes">${r.link ? `<a class="btn fino" href="${esc(r.link)}">Abrir tela</a>` : ''}<button class="btn fino" data-resp>Responder</button><button class="btn fino primario" data-feito>✓ Feito</button></div></div>`).join('');
+      <div class="rc-acoes">${/pedidos\.html\?abrir=\d+/.test(r.link || '') ? `<a class="btn fino" href="${esc(r.link)}&imprimir=1" title="Abre o PDF do pedido já pronto para imprimir">🖨 Imprimir pedido</a>` : ''}${r.link ? `<a class="btn fino" href="${esc(r.link)}">Abrir tela</a>` : ''}<button class="btn fino" data-resp>Responder</button><button class="btn fino primario" data-feito>✓ Feito</button></div></div>`).join('');
   $('blEnv').hidden = !env.length;
   $('env').innerHTML = env.map(r => `<div class="rc-env"><span><b>${esc(nomePessoa(r.para_id))}</b> ${prazoTxt(r.prazo)}<small>${esc(r.texto)}</small>${r.resposta ? `<small class="rc-resp">↳ ${esc(r.resposta)}</small>` : ''}</span>
       <span class="rc-sit ${r.feito_em ? 'feito' : r.visto_em ? 'visto' : ''}">${r.feito_em ? 'feito ' + dhm(r.feito_em) : r.visto_em ? 'visto ' + dhm(r.visto_em) : 'ainda não viu'}</span></div>`).join('');

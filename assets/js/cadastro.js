@@ -513,7 +513,8 @@ async function montarCadastro(cfg) {
     formAberto = { id: novo ? null : r.id, m, assinatura: novo ? null : assinatura(r) };
     const q = s => m.querySelector(s);
     q('#mFechar').onclick = () => m.remove();
-    if (!podeGravar) return;
+    // só leitura: a tela pode pedir para montar o resto mesmo assim (itens, botões de ação como PDF e entrada da NF)
+    if (!podeGravar) { if (cfg.aoAbrirSemEdicao) { try { cfg.aoAbrir?.(m, r, ctx); } catch (e) { console.error(e); } } return; }
 
     // Cadastro rápido (cfg.rapido = ids dos campos): o formulário novo abre só com o essencial
     if (novo && cfg.rapido) {

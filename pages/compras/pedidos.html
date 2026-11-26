@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611260840">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611260955">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -52,12 +52,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611260840"></script>
-<script src="../../assets/js/ui.js?v=202611260840"></script>
-<script src="../../assets/js/auth.js?v=202611260840"></script>
-<script src="../../assets/js/layout.js?v=202611260840"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611260840"></script>
-<script src="../../assets/js/cadastro.js?v=202611260840"></script>
+<script src="../../assets/js/supabase.js?v=202611260955"></script>
+<script src="../../assets/js/ui.js?v=202611260955"></script>
+<script src="../../assets/js/auth.js?v=202611260955"></script>
+<script src="../../assets/js/layout.js?v=202611260955"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611260955"></script>
+<script src="../../assets/js/cadastro.js?v=202611260955"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -641,11 +641,11 @@ function secaoPedido(r) {
   if (EDITAVEL.includes(s) && podeCriar) acoes.push(btn('enviar_aprovacao', CTX.admin || ACOES.has('compras.aprovar') ? 'Aprovar e lançar a compra' : 'Enviar para aprovação', avulsosPendentes(r).length ? '' : 'primario'));
   if (s === 'em_aprovacao' && possoAprovar(r)) { acoes.push(btn('aprovar', 'Aprovar' + (n ? ' · ' + esc(nomeNivel(r, n)) : ''), 'primario')); acoes.push(btn('recusar', 'Recusar…')); }
   if (pos.includes(s) && s !== 'recebido') {
-    acoes.push(btn('pdf', 'Baixar PDF'));
+    acoes.push(btn('imprimir', 'Imprimir pedido'), btn('pdf', 'Baixar PDF'));
     if (podeEntrada) acoes.push(btn('receber', 'Dar entrada da NF…', 'primario'));
     if (podeCriar) acoes.push(btn('enviar_fornecedor', r.enviado_em ? 'Mandar de novo ao fornecedor…' : 'Mandar ao fornecedor (opcional)…', 'discreto'));
   }
-  if (s === 'recebido') acoes.push(btn('pdf', 'Baixar PDF'));
+  if (s === 'recebido') acoes.push(btn('imprimir', 'Imprimir pedido'), btn('pdf', 'Baixar PDF'));
   if (temDesenho(r)) acoes.push(btn('desenhos', 'Baixar desenhos (ZIP)'));
   if (s === 'recebido_parcial' && podeAlt) acoes.push(btn('encerrar', 'Encerrar saldo…'));
   if (['em_aprovacao', 'aprovado', 'enviado'].includes(s) && podeAlt && !Number(r.valor_recebido)) acoes.push(btn('reabrir', 'Alterar pedido…', s === 'em_aprovacao' ? 'discreto' : ''));
@@ -713,6 +713,7 @@ async function executarAcao(r, a, m) {
     const c = await pedirTexto('Encerrar saldo de ' + r.numero, `Motivo (fica cancelado, não será entregue: ${fl})`, true, 'Encerrar'); if (!c) return;
     const { error } = await db.rpc('pedido_compra_encerrar', { p_id: r.id, p_motivo: c }); if (error) return aviso('Não deu: ' + error.message, true); fim('Saldo encerrado · projeção removida'); }
   else if (a === 'pdf') { const d = await gerarPdf(r, true); if (d) aviso('PDF gerado'); }
+  else if (a === 'imprimir') imprimirPdf(r);
   else if (a === 'desenhos') await baixarDesenhos(r);
   else if (a === 'enviar_fornecedor') abrirEnvio(r, m);
   else if (a === 'receber') abrirRecebimento(r, m);
@@ -772,12 +773,26 @@ async function gerarPdf(r, baixar) {
   const fo = forn(r.fornecedor_id), nomeForn = String(fo?.nome_fantasia || fo?.nome || 'FORNECEDOR').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
   const blob = doc.output('blob'), nome = `${nomeForn} - ${r.numero}.pdf`;
   if (baixar) doc.save(nome);
-  // guarda uma cópia (rastreio) e devolve o caminho
+  // guarda uma cópia (rastreio) e devolve o caminho; quem só vê compras (almoxarifado) só baixa/imprime
+  if (!CTX.pode('compras', 'criar')) return { blob, path: null };
   const path = `${r.empresa_id}/${r.numero}/${r.numero}-${Date.now()}.pdf`;
   const up = await db.storage.from('compras').upload(path, blob, { contentType: 'application/pdf', upsert: false });
   if (up.error) { aviso('PDF gerado, mas não salvou cópia: ' + up.error.message, true); return { blob, path: null }; }
   await acao(r, 'pdf', null, { pdf: path });
   return { blob, path };
+}
+
+// Imprimir: mostra o PDF aqui mesmo (sem baixar) e já abre a janela de impressão
+async function imprimirPdf(r) {
+  const d = await gerarPdf(r, false); if (!d) return;
+  const url = URL.createObjectURL(d.blob);
+  const m = abrirModal(`<h2>${esc(r.numero)} · imprimir</h2>
+    <iframe id="ipPdf" src="${url}" title="Pedido ${esc(r.numero)}" style="width:100%;height:72vh;border:1px solid var(--borda);border-radius:8px;background:#fff"></iframe>
+    <div class="acoes"><button class="btn" id="ipF">Fechar</button><a class="btn" id="ipB" href="${url}" download="${esc(r.numero)}.pdf">Baixar PDF</a><button class="btn primario" id="ipI">Imprimir</button></div>`);
+  const md = m.querySelector('.modal'); if (md) { md.style.width = 'min(960px, 96vw)'; md.style.maxWidth = '96vw'; }
+  const fr = m.querySelector('#ipPdf'), imprimir = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch { window.open(url); } };
+  m.querySelector('#ipI').onclick = imprimir; m.querySelector('#ipF').onclick = () => { m.remove(); URL.revokeObjectURL(url); };
+  fr.addEventListener('load', () => setTimeout(imprimir, 400), { once: true });
 }
 
 /* ---------- Envio ao fornecedor (com confirmação do comprador) ---------- */
@@ -1391,12 +1406,15 @@ const cfg = {
     m.querySelectorAll('.campo input, .campo select, .campo textarea, #itens input, #itens select').forEach(i => i.addEventListener('input', () => { sujo = true; }));
     recalcular();
     m.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => executarAcao(r, b.dataset.pc, m));
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('imprimir') && qs.get('abrir') === String(r.id) && !window.__impFeito) { window.__impFeito = true; imprimirPdf(r); }
     m.querySelectorAll('[data-reenviar]').forEach(b => b.onclick = async () => {
       const t = await pedirTexto('Reenviar NF ao financeiro', 'O que foi acertado? (opcional)', false, 'Reenviar'); if (t === null) return;
       const { error } = await db.rpc('pc_recebimento_acao', { p_rec: Number(b.dataset.reenviar), p_acao: 'reenviar', p_motivo: t });
       if (error) return aviso('Não deu: ' + error.message, true);
       aviso('NF reenviada ao financeiro'); m.remove(); cfg.recarregar(); });
   },
+  aoAbrirSemEdicao: true,   // almoxarifado (só vê compras) também vê os itens e usa PDF / imprimir / entrada da NF
   secaoExtra: r => secaoPedido(r),
   antesSalvar: (d, r) => {
     ['fornecedor_id', 'condicao_pagamento_id', 'forma_pagamento_id', 'conta_bancaria_id', 'empresa_id'].forEach(k => { if (d[k]) d[k] = Number(d[k]); });
