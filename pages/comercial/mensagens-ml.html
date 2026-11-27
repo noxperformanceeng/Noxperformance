@@ -72,6 +72,10 @@ const LIMITE = 350;
 const ABAS = [{ v: 'esp', n: 'Aguardando resposta' }, { v: '', n: 'Todas' }];
 const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 const semAc = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const BLOQUEIO = { blocked_by_conversation_initiated_by_seller_limited: 'a loja não pode começar a conversa; o comprador ainda pode escrever',
+  blocked_by_fulfillment: 'venda Full: o Mercado Livre cuida do contato', blocked_by_cancelled_order: 'venda cancelada',
+  blocked_by_cancelled_order_by_fraud: 'venda cancelada por fraude', blocked_by_cancelled_order_hidden: 'venda cancelada',
+  blocked_by_time: 'prazo para conversar encerrado', blocked_by_mediation: 'venda em mediação', blocked_by_claim: 'venda em reclamação' };
 const MODERACAO = { IN_MODERATION: 'em análise pelo ML', REJECTED: 'bloqueada pelo ML', MODERATED: 'moderada pelo ML' };
 let CTX = null, CONVS = [], MSGS = [], CANAIS = new Map(), aba = 'esp', sel = null, esperando = null;
 const RASC = new Map();   // rascunho por conversa
@@ -95,11 +99,12 @@ async function carregarMsgs() {
 
 function filtradas() {
   const b = semAc($('#fBusca').value).split(/\s+/).filter(Boolean);
-  return CONVS.filter(c => (!aba || c.aguardando) && b.every(w => semAc([c.comprador_nome, c.ultima_msg_texto, c.order_id, c.id, c.produto].join(' ')).includes(w)));
+  // conversa sem mensagem (venda buscada pelo nº do pedido) só aparece quando está aberta
+  return CONVS.filter(c => (c.ultima_msg_id || c.id === sel) && (!aba || c.aguardando) && b.every(w => semAc([c.comprador_nome, c.ultima_msg_texto, c.order_id, c.id, c.produto].join(' ')).includes(w)));
 }
 
 function desenhar() {
-  const n = { esp: CONVS.filter(c => c.aguardando).length, '': CONVS.length };
+  const n = { esp: CONVS.filter(c => c.aguardando).length, '': CONVS.filter(c => c.ultima_msg_id).length };
   $('#abas').innerHTML = ABAS.map(x => `<button type="button" class="aba${aba === x.v ? ' ativa' : ''}" data-aba="${x.v}">${x.n} <span class="n">${n[x.v]}</span></button>`).join('');
   $('#abas').querySelectorAll('button').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
   const l = filtradas();
@@ -128,7 +133,7 @@ function painel() {
   $('#painel').innerHTML = `<div class="cab"><b>${esc(c.comprador_nome || 'Comprador')}</b> <span class="conta-ml">${esc(conta?.nome || 'Mercado Livre')}</span>
       · pedido ${venda}${c.produto ? ` · ${esc(c.produto)}` : ''}
       ${c.reclamacao_id ? ` · <span class="tg alerta">em reclamação ${esc(c.reclamacao_id)}</span>` : ''}
-      ${bloq ? `<br><span class="tg erro">Conversa bloqueada pelo ML${c.subsituacao ? `: ${esc(c.subsituacao)}` : ''}</span>` : ''}
+      ${bloq ? `<br><span class="tg erro">Bloqueada pelo ML${c.subsituacao ? `: ${esc(BLOQUEIO[c.subsituacao] || c.subsituacao)}` : ''}</span>` : ''}
       ${c.resolvida_em && !c.aguardando ? `<br><small style="color:var(--texto-suave)">Resolvida sem resposta em ${quando(c.resolvida_em)}</small>` : ''}</div>
     <div class="msgs" id="msgs">${MSGS.map(m => `<div class="msg ${m.de_loja ? 'loja' : 'cli'}">${esc(m.texto)}${(m.anexos || []).length ? `\n📎 ${m.anexos.length} anexo(s) — veja no Mercado Livre` : ''}
         <small>${m.de_loja ? (m.origem === 'sistema' ? 'Loja · pelo sistema' : 'Loja') : 'Comprador'} · ${quando(m.enviada_em)}${m.moderacao ? ` · <b>${esc(MODERACAO[m.moderacao] || m.moderacao)}</b>` : ''}</small></div>`).join('') || '<div class="vazio">Sem mensagens nesta venda.</div>'}</div>

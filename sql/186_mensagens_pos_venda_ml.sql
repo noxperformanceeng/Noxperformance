@@ -7,7 +7,7 @@
 --    caracteres, regra do ML). Fica registrado quem respondeu. Nada é enviado sozinho.
 --  · "Buscar conversa de um pedido": traz a conversa de qualquer venda pelo nº do pedido, mesmo já lida no ML.
 --  · "Resolvida sem resposta": tira da fila uma conversa que não precisa de resposta (ex.: "obrigado").
---  · Quem vê e responde: perfil Pós-venda (e administradores). As mensagens vêm do ML: como as perguntas
+--  · Quem vê e responde: perfis Pós-venda e Comercial / Atendimento (Caio e Kleyton) e administradores. As mensagens vêm do ML: como as perguntas
 --    (SQL 125) e o chat da Shopee (SQL 159), ficam fora do histórico de auditoria para não encher o banco;
 --    quem enviou e quando fica na própria mensagem.
 --  · Tabelas novas; nada existente muda. Para desfazer: pausar o agendamento 'nox-ml-mensagens'.
@@ -67,6 +67,10 @@ do $$ begin
 end $$;
 -- escrita só pelo servidor (sincronização) e pelas funções abaixo
 revoke insert, update, delete on public.ml_conversas, public.ml_mensagens from anon, authenticated;
+
+-- Comercial / Atendimento também vê e responde (o Pós-venda já recebeu no SQL 185)
+insert into public.permissoes (perfil_id, modulo_id, nivel) values ('comercial', 'mensagens_ml', 'alterar')
+on conflict do nothing;
 
 -- ---------- Responder (botão Enviar da tela) ----------
 create or replace function public.ml_mensagem_responder(p_id text, p_texto text)
