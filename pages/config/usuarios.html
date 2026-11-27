@@ -6,7 +6,7 @@
 <title>Usuários e acessos · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611270847">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611271003">
 </head>
 <body data-modulo="usuarios" data-titulo="Usuários e acessos">
 <main id="conteudo">
@@ -75,12 +75,12 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611270847"></script>
-<script src="../../assets/js/ui.js?v=202611270847"></script>
-<script src="../../assets/js/auth.js?v=202611270847"></script>
-<script src="../../assets/js/layout.js?v=202611270847"></script>
+<script src="../../assets/js/supabase.js?v=202611271003"></script>
+<script src="../../assets/js/ui.js?v=202611271003"></script>
+<script src="../../assets/js/auth.js?v=202611271003"></script>
+<script src="../../assets/js/layout.js?v=202611271003"></script>
 <script>
-let ctx, gestor = false, perfis = [], modulos = [], permissoes = [], ajustes = [], usuarios = [];
+let ctx, gestor = false, podeInativar = false, perfis = [], modulos = [], permissoes = [], ajustes = [], usuarios = [];
 let acoes = [], perfilAcoes = [], usuarioAcoes = [];   // ações sensíveis (estornar, cancelar…), por perfil e por pessoa
 const GRUPOS = { cadastros: 'Cadastros', comercial: 'Comercial', suprimentos: 'Suprimentos', producao: 'Produção', engenharia: 'Engenharia', financeiro: 'Financeiro', rh: 'RH', indicadores: 'Indicadores', config: 'Configurações' };
 const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, incluir e alterar', editar: 'Tudo (inclusive inativar)', nenhum: 'Bloqueado' };
@@ -88,9 +88,11 @@ const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, inc
 (async () => {
   ctx = await iniciarTela();
   if (!ctx) return;
-  // Gestor de usuários: administrador ou "Usuários e acessos" no nível Tudo (SQL 185). Perfis, empresas e ações
-  // sensíveis continuam só com o administrador; o gestor não mexe em administradores nem em si mesmo.
-  gestor = ctx.admin || ctx.niveis.usuarios === 'editar' || ctx.niveis.usuarios === 'total';
+  // Gestor de usuários: administrador ou "Usuários e perfis" no nível "Ver, incluir e alterar" (SQL 185); inativar
+  // pede o nível Tudo. Perfis, empresas e ações sensíveis continuam só com o administrador; o gestor não mexe em
+  // administradores nem em si mesmo.
+  gestor = ctx.admin || ctx.pode('usuarios', 'alterar');
+  podeInativar = ctx.admin || ctx.pode('usuarios', 'total');
   if (!ctx.admin) document.querySelectorAll('.btn.primario').forEach(b => b.hidden = true);
 
   document.querySelectorAll('.aba').forEach(b => b.addEventListener('click', () => {
@@ -222,7 +224,7 @@ function editarUsuario(id) {
   const modal = abrirModal(`
     <h2>${esc(u.email)}</h2>
     <div class="campo"><label>Nome</label><input id="mNome" value="${esc(u.nome)}"></div>
-    <div class="campo"><label>Situação</label><select id="mAtivo"><option value="1"${u.ativo ? ' selected' : ''}>Ativo</option><option value="0"${u.ativo ? '' : ' selected'}>Inativo (não entra no sistema)</option></select></div>
+    <div class="campo"><label>Situação</label><select id="mAtivo"><option value="1"${u.ativo ? ' selected' : ''}>Ativo</option><option value="0"${u.ativo ? '' : ' selected'}${u.ativo && !podeInativar ? ' disabled' : ''}>Inativo (não entra no sistema)${u.ativo && !podeInativar ? ' — só o administrador' : ''}</option></select></div>
     <input id="mBusca" class="busca" type="search" placeholder="Buscar tela ou ação: ex. usuário, nota fiscal, ponto" style="width:100%;margin:4px 0 10px">
     <label>Telas deste usuário — perfil base: <b>${esc(nomePerfil)}</b></label>
     <div style="max-height:40vh;overflow:auto;margin-bottom:12px"><table>${linhas}</table></div>

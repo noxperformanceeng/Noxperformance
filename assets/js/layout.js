@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611270847';
+const VERSAO_TELAS = '202611271003';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 // Menu por ÁREA (nov/2026): cada área tem uma página de cartões (pages/area.html?a=<slug>) com as telas dela.
 // "sub" separa partes dentro da área; arquivo null = tela ainda não feita ("em breve", só o administrador vê).
@@ -17,6 +17,8 @@ const MENU = [
     { id: 'perguntas_ml',  nome: 'Perguntas do Mercado Livre', arquivo: 'pages/comercial/perguntas-ml.html', desc: 'Responder compradores com a sugestão da IA' },
     { id: 'chat_shopee',   nome: 'Chat da Shopee',   arquivo: 'pages/comercial/chat-shopee.html', desc: 'Conversas abertas com compradores' },
     { id: 'compatibilidade', nome: 'Compatibilidade', arquivo: 'pages/comercial/compatibilidade.html', desc: 'Qual peça serve em qual carro' },
+    { id: 'mensagens_ml',  nome: 'Mensagens pós-venda do ML', arquivo: null, desc: 'Conversas com o comprador depois da compra' },
+    { id: 'reclamacoes',   nome: 'Reclamações',       arquivo: null, desc: 'Reclamações do Mercado Livre e da Shopee' },
     { id: 'devolucoes',    nome: 'Devoluções',        arquivo: null, desc: 'Produtos voltando do comprador' }
   ]},
   { grupo: 'Vendas', slug: 'vendas', icone: 'vendas', itens: [

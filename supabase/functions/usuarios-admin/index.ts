@@ -3,7 +3,7 @@
 // pela página senha.html, com o convite (vale 48 h, uma vez só). Abrir o link ou a prévia do WhatsApp não gasta o convite.
 //   { acao: 'criar', email, nome, perfil_id }   (gestor) → cria (ou reaproveita) o login e devolve { link }
 //   { acao: 'link',  usuario_id }                (gestor) → convite novo para um usuário existente
-// Gestor = administrador ou quem tem "Usuários e acessos" no nível Tudo (SQL 185). O gestor que não é
+// Gestor = administrador ou quem tem "Usuários e perfis" no nível "Ver, incluir e alterar" (SQL 185). O gestor que não é
 // administrador não cria administrador nem mexe em administrador nem em si mesmo (pode_gerir_usuario).
 //   { acao: 'ver_convite', convite }             (qualquer um)   → { nome, email, expira_em } se o convite vale
 //   { acao: 'definir_senha', convite, senha }    (qualquer um)   → grava a senha e encerra o convite
@@ -58,7 +58,7 @@ Deno.serve(async req => {
     // ---------- Daqui para baixo: só gestor de usuários ----------
     const usuario = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } });
     const { data: gestor } = await usuario.rpc('gere_usuarios');
-    if (gestor !== true) return resp({ erro: 'Sem permissão para cadastrar usuários (precisa da tela Usuários e acessos no nível Tudo)' }, 403);
+    if (gestor !== true) return resp({ erro: 'Sem permissão para cadastrar usuários (precisa da tela Usuários e perfis no nível "Ver, incluir e alterar")' }, 403);
     const { data: admin } = await usuario.rpc('eh_admin');
     const podeGerir = async (id: string) => (await usuario.rpc('pode_gerir_usuario', { p_usuario: id })).data === true;
     const { data: eu } = await usuario.auth.getUser((req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, ''));
