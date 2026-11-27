@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611270810">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611270830">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -52,12 +52,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611270810"></script>
-<script src="../../assets/js/ui.js?v=202611270810"></script>
-<script src="../../assets/js/auth.js?v=202611270810"></script>
-<script src="../../assets/js/layout.js?v=202611270810"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611270810"></script>
-<script src="../../assets/js/cadastro.js?v=202611270810"></script>
+<script src="../../assets/js/supabase.js?v=202611270830"></script>
+<script src="../../assets/js/ui.js?v=202611270830"></script>
+<script src="../../assets/js/auth.js?v=202611270830"></script>
+<script src="../../assets/js/layout.js?v=202611270830"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611270830"></script>
+<script src="../../assets/js/cadastro.js?v=202611270830"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -1337,7 +1337,8 @@ const cfg = {
     { id: 'whatsapp_fornecedor', label: 'WhatsApp', tipo: 'tel' },
     { id: 'motivo_recusa', label: 'Motivo da recusa', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'recusado', secao: 'Observações' },
     { id: 'motivo_cancelamento', label: 'Motivo do cancelamento', col: 4, somenteLeitura: true, oculto: r => r.situacao !== 'cancelado' },
-    { id: 'observacoes', label: 'Observações (vão no PDF para o fornecedor)', tipo: 'textarea', col: 2, secao: 'Observações' },
+    { id: 'instrucao_almox', label: 'Instrução para o almoxarifado (onde deixar, para quem, cuidados) · aparece no Recebimento', tipo: 'textarea', col: 4, secao: 'Observações', ajuda: 'Ex.: COMPRADO PELO PAULO · APÓS A CONFERÊNCIA, DEIXAR NA GARAGEM' },
+    { id: 'observacoes', label: 'Observações (vão no PDF para o fornecedor)', tipo: 'textarea', col: 2 },
     { id: 'observacoes_internas', label: 'Observações internas', tipo: 'textarea', col: 2 }
   ],
   async carregarExtra(linhas, ctx) {
@@ -1443,7 +1444,7 @@ const cfg = {
       box.querySelectorAll('input, select, button.rm').forEach(i => i.disabled = true);
       // depois de aprovado só contato, entrega e observações internas mudam
       if (r.id) m.querySelectorAll('.campo input, .campo select, .campo textarea').forEach(i => {
-        if (!['f_contato_fornecedor', 'f_email_fornecedor', 'f_whatsapp_fornecedor', 'f_observacoes_internas', 'f_data_entrega_prevista'].includes(i.id) || FINAL.includes(r.situacao)) i.disabled = true; });
+        if (!['f_contato_fornecedor', 'f_email_fornecedor', 'f_whatsapp_fornecedor', 'f_observacoes_internas', 'f_instrucao_almox', 'f_data_entrega_prevista'].includes(i.id) || FINAL.includes(r.situacao)) i.disabled = true; });
       // a entrega de cada item pode ser remarcada depois de aprovado (como a do pedido), sem nova aprovação
       if (r.id && !FINAL.includes(r.situacao) && r.origem !== 'tiny' && ctx.pode('compras', 'alterar')) box.querySelectorAll('[data-k=data_entrega_prevista]').forEach(i => i.disabled = false);
     }

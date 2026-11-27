@@ -6,7 +6,7 @@
 <title>Recebimento · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611270810">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611270830">
 <style>
   /* Pensada para tablet: cartões grandes, botões grandes, pouca coisa por tela */
   .rc-abas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
@@ -32,6 +32,7 @@
   .rc-sel input { width: 22px; height: 22px; }
   .rc-barra { position: sticky; bottom: 0; background: var(--fundo); padding: 10px 0; display: flex; gap: 10px; align-items: center; justify-content: flex-end; }
   .rc-barra .btn { font-size: 15px; padding: 12px 18px; }
+  .rc-instr { background: #fff7d6; border: 1px solid #f2d36b; border-radius: 8px; padding: 8px 10px; font-size: 14px; font-weight: 600; }
   .rc-vazio { padding: 40px; text-align: center; color: var(--texto-suave); font-size: 15px; }
   .rc-ajuda { font-size: 13px; color: var(--texto-suave); margin: -6px 0 12px; }
   .rc-busca { max-width: 420px; margin: 0 0 12px; }
@@ -49,10 +50,10 @@
   <div id="lista"><div class="rc-vazio">Carregando…</div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611270810"></script>
-<script src="../../assets/js/ui.js?v=202611270810"></script>
-<script src="../../assets/js/auth.js?v=202611270810"></script>
-<script src="../../assets/js/layout.js?v=202611270810"></script>
+<script src="../../assets/js/supabase.js?v=202611270830"></script>
+<script src="../../assets/js/ui.js?v=202611270830"></script>
+<script src="../../assets/js/auth.js?v=202611270830"></script>
+<script src="../../assets/js/layout.js?v=202611270830"></script>
 <script>
 /* Recebimento no almoxarifado (pensado para tablet).
    1) A caminho: pedidos aprovados que ainda não chegaram → botão "Chegou".
@@ -81,7 +82,7 @@ const podeMexer = () => CTX.pode('almoxarifado', 'criar') || CTX.pode('estoque',
 
 async function carregar() {
   const [p, c, s, u] = await Promise.all([
-    db.from('pedidos_compra').select('id, numero, situacao, fornecedor_id, data_pedido, data_entrega_prevista, origem, observacoes, atualizado_em')
+    db.from('pedidos_compra').select('id, numero, situacao, fornecedor_id, data_pedido, data_entrega_prevista, origem, instrucao_almox, atualizado_em')
       .neq('origem', 'tiny').in('situacao', [...ABERTO, 'recebido']),
     db.from('almox_chegadas').select('*').gte('chegou_em', new Date(Date.now() - 120 * 864e5).toISOString()),
     db.rpc('almox_itens_solicitacao'), db.rpc('usuarios_nomes')]);
@@ -131,6 +132,7 @@ function cardPedido(x, modo) {
     <div class="forn">${esc(nomeForn(x.fornecedor_id))}</div>
     <div class="info">${modo === 'caminho' ? `Previsto: <b>${dia(x.data_entrega_prevista) || 'sem data'}</b> · pedido em ${dia(x.data_pedido)}`
       : `Chegou ${dataHoraBR(ch.chegou_em)}${ch.registrado_por ? ' · ' + esc(nomeUsu(ch.registrado_por)) : ''}${ch.nf_numero ? ' · NF ' + esc(ch.nf_numero) : ''}${ch.volumes ? ' · ' + ch.volumes + ' volume(s)' : ''}${ch.observacao ? '<br>' + esc(ch.observacao) : ''}`}</div>
+    ${x.instrucao_almox ? `<div class="rc-instr">📌 ${esc(x.instrucao_almox)}</div>` : ''}
     <ul class="rc-itens">${its.filter(i => falta(i) > 0).map(i => `<li><span class="q">${qtd(falta(i))} ${esc(i.unidade || '')}</span><span>${esc(descItem(i))}</span>${para(i)}</li>`).join('')}</ul>
     ${podeMexer() ? `<div class="rc-bts">${modo === 'caminho'
       ? `<button class="btn primario" data-chegou="${x.id}">📦 Chegou</button>`
@@ -234,7 +236,7 @@ function abrirRetirada(ids) {
 function imprimirLista(x) {
   const its = ITENS[x.id] || [], ch = chegadaAberta(x.id), sols = solDoPedido(x.id);
   imprimirRelatorio({
-    titulo: `Conferência ${x.numero} · ${nomeForn(x.fornecedor_id)}${ch?.nf_numero ? ' · NF ' + ch.nf_numero : ''}`,
+    titulo: `Conferência ${x.numero} · ${nomeForn(x.fornecedor_id)}${ch?.nf_numero ? ' · NF ' + ch.nf_numero : ''}${x.instrucao_almox ? ' · ' + x.instrucao_almox : ''}`,
     colunas: ['Item', 'Un', 'Pedido', 'Já recebido', 'A conferir', 'Chegou (anotar)', 'Para quem'],
     linhas: its.map(i => [descItem(i), i.unidade || '', qtd(i.quantidade), qtd(i.quantidade_recebida), qtd(falta(i)), '', sols.map(s => `${s.solicitacao} ${s.solicitante || ''}`).join(', ')])
   });
