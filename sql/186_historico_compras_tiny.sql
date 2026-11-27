@@ -1,5 +1,5 @@
 -- =====================================================================
--- 185 · Histórico das ordens de compra do Tiny (só consulta)
+-- 186 · Histórico das ordens de compra do Tiny (só consulta)
 --  · Com o Tiny sendo desligado, as ordens de compra feitas lá ficam guardadas no sistema para consulta:
 --    de quem compramos, o quê, quantidade, preço, IPI, frete e a situação que tinham no Tiny.
 --  · Uma linha por item de cada ordem. As canceladas não entram.
