@@ -1,8 +1,10 @@
 // ERP NOX · usuarios-admin — cria login de usuário e convite para a pessoa criar a própria senha.
 // Ninguém digita nem vê a senha de outra pessoa: o login nasce com senha aleatória e a pessoa grava a dela
 // pela página senha.html, com o convite (vale 48 h, uma vez só). Abrir o link ou a prévia do WhatsApp não gasta o convite.
-//   { acao: 'criar', email, nome, perfil_id }   (administrador) → cria (ou reaproveita) o login e devolve { link }
-//   { acao: 'link',  usuario_id }                (administrador) → convite novo para um usuário existente
+//   { acao: 'criar', email, nome, perfil_id }   (gestor) → cria (ou reaproveita) o login e devolve { link }
+//   { acao: 'link',  usuario_id }                (gestor) → convite novo para um usuário existente
+// Gestor = administrador ou quem tem "Usuários e perfis" no nível "Ver, incluir e alterar" (SQL 185). O gestor que não é
+// administrador não cria administrador nem mexe em administrador nem em si mesmo (pode_gerir_usuario).
 //   { acao: 'ver_convite', convite }             (qualquer um)   → { nome, email, expira_em } se o convite vale
 //   { acao: 'definir_senha', convite, senha }    (qualquer um)   → grava a senha e encerra o convite
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -53,10 +55,12 @@ Deno.serve(async req => {
       return resp({ ok: true, email: u.email });
     }
 
-    // ---------- Daqui para baixo: só administrador ----------
+    // ---------- Daqui para baixo: só gestor de usuários ----------
     const usuario = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } });
+    const { data: gestor } = await usuario.rpc('gere_usuarios');
+    if (gestor !== true) return resp({ erro: 'Sem permissão para cadastrar usuários (precisa da tela Usuários e perfis no nível "Ver, incluir e alterar")' }, 403);
     const { data: admin } = await usuario.rpc('eh_admin');
-    if (admin !== true) return resp({ erro: 'Só administrador cria usuários' }, 403);
+    const podeGerir = async (id: string) => (await usuario.rpc('pode_gerir_usuario', { p_usuario: id })).data === true;
     const { data: eu } = await usuario.auth.getUser((req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, ''));
     const site = SITES.find(s => String(corpo.site || '').startsWith(s)) ?? SITES[0];
 
@@ -76,8 +80,10 @@ Deno.serve(async req => {
       if (!nome) return resp({ erro: 'Informe o nome' }, 400);
       const perfil = corpo.perfil_id ? String(corpo.perfil_id) : null;
       if (perfil) { const { data: p } = await db.from('perfis').select('id').eq('id', perfil).maybeSingle(); if (!p) return resp({ erro: 'Perfil não encontrado' }, 400); }
+      if (perfil === 'admin' && admin !== true) return resp({ erro: 'Só o administrador cria outro administrador' }, 403);
 
       const { data: ja } = await db.from('usuarios').select('id').ilike('email', email).maybeSingle();
+      if (ja && !(await podeGerir(ja.id))) return resp({ erro: 'Esse e-mail já é de um administrador (ou é o seu): só o administrador mexe nele' }, 403);
       let id = ja?.id as string | undefined;
       if (!id) {
         const senha = b64url(crypto.getRandomValues(new Uint8Array(32)));   // ninguém usa: a pessoa cria a dela pelo convite
@@ -93,6 +99,7 @@ Deno.serve(async req => {
     if (corpo.acao === 'link') {
       const { data: u } = await db.from('usuarios').select('id').eq('id', String(corpo.usuario_id || '')).maybeSingle();
       if (!u) return resp({ erro: 'Usuário não encontrado' }, 404);
+      if (!(await podeGerir(u.id))) return resp({ erro: 'Link de senha de administrador (ou o seu) só o administrador gera. Para a sua senha, use "Esqueci minha senha".' }, 403);
       return resp({ ok: true, ...(await convite(u.id)) });
     }
     return resp({ erro: 'Ação desconhecida' }, 400);
