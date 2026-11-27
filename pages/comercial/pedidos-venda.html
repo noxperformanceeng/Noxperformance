@@ -6,7 +6,7 @@
 <title>Pedidos de venda · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611271241">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611271243">
 <style>
   .tot-ped { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; margin-top: 8px; }
   .tot-ped b { font-variant-numeric: tabular-nums; }
@@ -17,11 +17,11 @@
 <body data-modulo="pedidos" data-titulo="Pedidos de venda" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611271241"></script>
-<script src="../../assets/js/ui.js?v=202611271241"></script>
-<script src="../../assets/js/auth.js?v=202611271241"></script>
-<script src="../../assets/js/layout.js?v=202611271241"></script>
-<script src="../../assets/js/cadastro.js?v=202611271241"></script>
+<script src="../../assets/js/supabase.js?v=202611271243"></script>
+<script src="../../assets/js/ui.js?v=202611271243"></script>
+<script src="../../assets/js/auth.js?v=202611271243"></script>
+<script src="../../assets/js/layout.js?v=202611271243"></script>
+<script src="../../assets/js/cadastro.js?v=202611271243"></script>
 <script>
 /* =====================================================================
    Pedidos de venda — uma lista só para marketplace e distribuidores
@@ -30,7 +30,11 @@
    - Distribuidor/venda direta: digitado pelo atendimento, com condição de pagamento.
    - "Gerar títulos a receber" leva o pedido para o financeiro (marketplace: valor líquido com a composição
      receita − tarifas; distribuidor: parcelas pela condição).
-   - A NF continua sendo emitida no Tiny; número, série e chave ficam no pedido.
+   - Orçamento: situação "Orçamento" (não reserva estoque); botão "PDF / imprimir" para mandar ao cliente e
+     "Transformar em pedido" quando o cliente fechar.
+   - Preço: o cadastro não tem preço de venda; ao escolher o produto, sugere o último preço cobrado do cliente
+     (ou o último praticado com distribuidor/venda direta).
+   - NF: número, série e chave ficam no pedido (emissão pelo sistema ainda em implantação).
    ===================================================================== */
 const SIT = [{ v: 'orcamento', n: 'Orçamento' }, { v: 'aberto', n: 'Aberto' }, { v: 'faturado', n: 'Faturado (NF)' }, { v: 'enviado', n: 'Enviado' },
   { v: 'entregue', n: 'Entregue' }, { v: 'devolvido', n: 'Devolvido' }, { v: 'cancelado', n: 'Cancelado' }];
@@ -58,7 +62,7 @@ const recebStatus = (r, e) => { const ts = (e.titulos[r.id] || []).filter(t => t
 const optProds = sel => '<option value="">— produto —</option>' + PRODS.filter(p => p.situacao === 'ativo' && (p.aprovacao || 'aprovado') === 'aprovado' || p.id === sel)
   .map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc((p.codigo || '—') + ' · ' + p.descricao)}</option>`).join('');
 const linhaItem = (x = {}) => `<tr data-id="${x.id || ''}" data-anuncio-ref="${x.anuncio_ref || ''}" data-anuncio="${esc(x.anuncio_id || '')}" data-variacao="${esc(x.variacao_id || '')}" data-sku="${esc(x.sku || '')}" data-desc="${esc(x.descricao || '')}">
-  <td><select data-k="produto_id">${optProds(x.produto_id)}</select>${x.anuncio_id || x.sku ? `<div class="ro">${esc([x.anuncio_id, x.variacao_id, x.sku && 'SKU ' + x.sku, x.descricao].filter(Boolean).join(' · '))}</div>` : ''}<div class="ro" data-k="estq"></div></td>
+  <td><select data-k="produto_id">${optProds(x.produto_id)}</select>${x.anuncio_id || x.sku ? `<div class="ro">${esc([x.anuncio_id, x.variacao_id, x.sku && 'SKU ' + x.sku, x.descricao].filter(Boolean).join(' · '))}</div>` : ''}<div class="ro" data-k="estq"></div><div class="ro" data-k="preco"></div></td>
   <td style="width:80px"><input data-k="quantidade" inputmode="decimal" value="${num2(x.quantidade ?? 1)}"></td>
   <td style="width:110px"><input data-k="valor_unitario" inputmode="decimal" value="${num2(x.valor_unitario)}"></td>
   <td style="width:90px"><input data-k="desconto" inputmode="decimal" value="${x.desconto ? num2(x.desconto) : ''}" placeholder="0,00"></td>
@@ -114,13 +118,103 @@ function estoqueItem(tr, q) {
 }
 const qtd = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 
+const ctxPV = () => window.__ctxPV;
+
+/* ---------- Preço sugerido: último preço cobrado (o cadastro não tem preço de venda) ----------
+   Procura nos pedidos de distribuidor/venda direta (fora orçamento e cancelado), do mais novo para o mais antigo:
+   primeiro do mesmo cliente; se não houver, de qualquer cliente. Preço líquido do desconto do item. */
+let PEDS = [];
+function ultimoPreco(prodId, cliId, pedidoAtual) {
+  if (!prodId) return null;
+  let geral = null;
+  for (const r of PEDS) {
+    if (r.id === pedidoAtual) continue;
+    const i = (ex.itens?.[r.id] || []).find(x => x.produto_id === prodId && Number(x.quantidade) > 0);
+    if (!i) continue;
+    const q = Number(i.quantidade), v = Math.round((q * Number(i.valor_unitario) - Number(i.desconto || 0)) / q * 100) / 100;
+    const achado = { valor: v, data: r.data_pedido, cliente: nomeComFantasia(cli(r.cliente_id)) || r.cliente_nome || '' };
+    if (cliId && r.cliente_id === cliId) return { ...achado, mesmo: true };
+    if (!geral) geral = achado;
+  }
+  return geral;
+}
+function dicaPreco(tr) {
+  const el = tr.querySelector('[data-k=preco]'); if (!el || !modalAtual) return;
+  const p = ultimoPreco(Number(tr.querySelector('[data-k=produto_id]').value), Number(modalAtual.querySelector('#f_cliente_id')?.value) || null, modalAtual.__pedidoId);
+  el.innerHTML = p ? `${p.mesmo ? 'Último preço para este cliente' : 'Último preço praticado'}: <b>${reais(p.valor)}</b> em ${dataCurta(p.data)}${p.mesmo ? '' : ' (' + esc(p.cliente) + ')'}` : '';
+  return p;
+}
+
+/* ---------- PDF do orçamento / pedido (para mandar ao cliente) ---------- */
+function carregarScript(src) { return new Promise((ok, err) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = err; document.head.appendChild(s); }); }
+const numeroVenda = r => (r.situacao === 'orcamento' ? 'ORC-' : 'PV-') + String(r.id).padStart(6, '0');
+async function gerarPdfVenda(r) {
+  try {
+    await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+  } catch { aviso('Não carregou o gerador de PDF (internet?)', true); return null; }
+  const [{ data: c }, { data: emps }] = await Promise.all([
+    r.cliente_id ? db.from('clientes').select('*').eq('id', r.cliente_id).maybeSingle() : Promise.resolve({ data: null }),
+    db.from('empresas').select('id, nome, cnpj')]);
+  const emp = (emps || []).find(e => e.id === r.empresa_id) || {}, itens = ex.itens[r.id] || [], orc = r.situacao === 'orcamento';
+  const cond = CONDS.find(x => x.id === r.condicao_pagamento_id)?.nome, forma = FORMAS.find(x => x.id === r.forma_pagamento_id)?.nome;
+  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'a4' }), num = numeroVenda(r);
+  try {
+    const b = await (await fetch(RAIZ + 'assets/img/logo-nox-pdf.jpg')).blob();
+    const url = await new Promise((ok, erro) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = erro; fr.readAsDataURL(b); });
+    doc.addImage(url, 'JPEG', 144, 9, 52, 52 * 196 / 900);
+  } catch {}
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text((orc ? 'ORÇAMENTO ' : 'PEDIDO DE VENDA ') + num, 14, 16);
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+  doc.text([`Nox Performance Engineering${emp.cnpj ? ' · CNPJ ' + emp.cnpj : ''}`, `Data: ${dataCurta(r.data_pedido)}${orc ? '    Validade: 7 dias' : ''}${r.numero_externo ? '    Pedido do cliente: ' + r.numero_externo : ''}`], 14, 22);
+  doc.setFont('helvetica', 'bold'); doc.text('Cliente', 14, 33); doc.setFont('helvetica', 'normal');
+  const cc = c || {};
+  doc.text([`${nomeComFantasia(cc) || r.cliente_nome || ''}${cc.cpf_cnpj ? ' · ' + (String(cc.cpf_cnpj).replace(/\D/g, '').length > 11 ? 'CNPJ ' : 'CPF ') + cc.cpf_cnpj : ''}${cc.rg_ie ? ' · IE ' + cc.rg_ie : ''}`,
+    [cc.email, cc.celular || cc.telefone].filter(Boolean).join(' · '),
+    [cc.endereco, cc.numero, cc.complemento, cc.bairro, cc.cidade && (cc.cidade + (cc.uf ? '/' + cc.uf : '')), cc.cep && 'CEP ' + cc.cep].filter(Boolean).join(', ')].filter(Boolean), 14, 38);
+  const dir = { halign: 'right' }, temDesc = itens.some(i => Number(i.desconto));
+  doc.autoTable({ startY: 52, head: [['#', 'Código', 'Descrição', 'Un', 'Qtd', 'Unitário', ...(temDesc ? ['Desconto'] : []), 'Total']],
+    body: itens.map((i, k) => { const p = prod(i.produto_id) || {}; return [k + 1, p.codigo || i.sku || '', p.descricao || i.descricao || '', p.unidade || 'UN',
+      Number(i.quantidade).toLocaleString('pt-BR'), reais(i.valor_unitario), ...(temDesc ? [Number(i.desconto) ? reais(i.desconto) : ''] : []), reais(i.valor_total)]; }),
+    styles: { fontSize: 8, cellPadding: 1.5 }, headStyles: { fillColor: [40, 40, 40] },
+    columnStyles: temDesc ? { 0: { cellWidth: 7 }, 4: dir, 5: dir, 6: dir, 7: dir } : { 0: { cellWidth: 7 }, 4: dir, 5: dir, 6: dir } });
+  let y = doc.lastAutoTable.finalY + 6;
+  const tot = [['Produtos', reais(r.valor_produtos)]];
+  if (Number(r.desconto)) tot.push(['Desconto', '- ' + reais(r.desconto)]); if (Number(r.frete_cliente)) tot.push(['Frete', reais(r.frete_cliente)]);
+  if (Number(r.outras_receitas)) tot.push(['Outros', reais(r.outras_receitas)]); tot.push(['TOTAL', reais(r.valor_total)]);
+  doc.autoTable({ startY: y, body: tot, theme: 'plain', margin: { left: 130 }, styles: { fontSize: 9, cellPadding: 1 }, columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } } });
+  y = doc.lastAutoTable.finalY + 6;
+  doc.setFontSize(9); doc.text(`Condição de pagamento: ${cond || 'a combinar'}${forma ? '    Forma: ' + forma : ''}`, 14, y); y += 6;
+  if (r.observacoes) { doc.setFont('helvetica', 'bold'); doc.text('Observações', 14, y); doc.setFont('helvetica', 'normal'); const t = doc.splitTextToSize(r.observacoes, 180); doc.text(t, 14, y + 5); y += 7 + t.length * 4; }
+  if (orc) { doc.text('Preços válidos por 7 dias. Prazo de entrega a confirmar no fechamento do pedido.', 14, y); y += 6; }
+  doc.setFontSize(8); doc.setTextColor(110); doc.text(`Vendedor: ${ctxPV()?.usuario?.nome || ''}`, 14, y + 2);
+  const nomeCli = String(cc.nome_fantasia || cc.nome || r.cliente_nome || 'CLIENTE').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50);
+  return { blob: doc.output('blob'), nome: `${num} - ${nomeCli}.pdf`, num };
+}
+async function abrirPdfVenda(r) {
+  const d = await gerarPdfVenda(r); if (!d) return;
+  const url = URL.createObjectURL(d.blob);
+  const m = abrirModal(`<h2>${esc(d.num)} · PDF</h2>
+    <iframe id="pvPdf" src="${url}" title="${esc(d.num)}" style="width:100%;height:72vh;border:1px solid var(--borda);border-radius:8px;background:#fff"></iframe>
+    <div class="acoes"><button class="btn" id="pvF">Fechar</button><a class="btn" href="${url}" download="${esc(d.nome)}">Baixar PDF</a><button class="btn primario" id="pvI">Imprimir</button></div>`);
+  const md = m.querySelector('.modal'); if (md) { md.style.width = 'min(960px, 96vw)'; md.style.maxWidth = '96vw'; }
+  const fr = m.querySelector('#pvPdf');
+  m.querySelector('#pvI').onclick = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch { window.open(url); } };
+  m.querySelector('#pvF').onclick = () => { m.remove(); URL.revokeObjectURL(url); };
+}
+
 /* ---------- Rastreio e financeiro do pedido ---------- */
 function secaoPedido(r) {
   const ts = (ex.titulos[r.id] || []), lv = linkVenda(r), le = linkEnvio(r);
   const etapa = (ok, t) => `<span class="${ok ? 'ok' : ''}">${esc(t)}</span>`;
   const ativos = ts.filter(t => t.situacao !== 'cancelado');
-  return secaoEntregas(r) + `<div class="secao">Rastreio</div>
-    <div class="rastreio">${etapa(true, (canal(r.canal_id)?.nome || 'Pedido') + (r.numero_externo ? ' · ' + r.numero_externo : ''))}<i>›</i>${etapa(r.nf_numero, r.nf_numero ? 'NF ' + r.nf_numero : 'NF (Tiny)')}<i>›</i>
+  const docV = r.tipo !== 'marketplace' && r.situacao !== 'cancelado' ? `<div class="secao">${r.situacao === 'orcamento' ? 'Orçamento' : 'Documento do pedido'}</div>
+    <div class="acoes-ped" style="margin-top:0">
+      <button type="button" class="btn primario" id="btnPdfVenda">${r.situacao === 'orcamento' ? 'PDF do orçamento' : 'PDF do pedido'} / imprimir</button>
+      ${r.situacao === 'orcamento' && ctxPV()?.pode('pedidos', 'alterar') ? '<button type="button" class="btn" id="btnVirarPedido">Transformar em pedido</button>' : ''}
+    </div><p class="sub" style="margin:4px 0 0;font-size:12px">O PDF sai com o que está salvo. Alterou algo? Salve antes.</p>` : '';
+  return docV + secaoEntregas(r) + `<div class="secao">Rastreio</div>
+    <div class="rastreio">${etapa(true, (canal(r.canal_id)?.nome || 'Pedido') + (r.numero_externo ? ' · ' + r.numero_externo : ''))}<i>›</i>${etapa(r.nf_numero, r.nf_numero ? 'NF ' + r.nf_numero : 'NF')}<i>›</i>
       ${etapa(r.data_envio || ['enviado', 'entregue'].includes(r.situacao) || ['enviado', 'entregue'].includes(r.etapa), r.data_envio ? 'Enviado ' + dataCurta(r.data_envio) : 'Envio')}<i>›</i>${etapa(r.data_entrega || r.etapa === 'entregue', r.data_entrega ? 'Entregue ' + dataCurta(r.data_entrega) : r.etapa === 'devolvido' ? 'Devolvido' : 'Entrega')}<i>›</i>${etapa(ativos.length, 'Título a receber')}<i>›</i>
       ${etapa(ativos.length && ativos.every(t => t.situacao === 'recebido'), 'Recebido')}<i>›</i>${etapa(ativos.length && ativos.every(t => ex.conciliados.has(t.id)), 'Conciliado')}</div>
     ${lv || le ? `<p style="margin:8px 0 0;font-size:13px">${lv ? `<a class="ext" href="${esc(lv)}" target="_blank" rel="noopener">Abrir a venda na plataforma</a>` : ''}${le ? ` &nbsp; <a class="ext" href="${esc(le)}" target="_blank" rel="noopener">Abrir o envio</a>` : ''}</p>` : ''}
@@ -300,7 +394,7 @@ const cfg = {
     { id: 'logistica', label: 'Logística', tipo: 'select', opcoes: LOG, filtro: true },
     { id: 'data_envio', label: 'Enviado em', tipo: 'data' },
     { id: 'data_entrega', label: 'Entregue em', tipo: 'data' },
-    { id: 'nf_numero', label: 'NF nº', secao: 'Nota fiscal (emitida no Tiny)' },
+    { id: 'nf_numero', label: 'NF nº', secao: 'Nota fiscal' },
     { id: 'nf_serie', label: 'Série' },
     { id: 'nf_data', label: 'Emissão da NF', tipo: 'data' },
     { id: 'nf_chave', label: 'Chave de acesso', col: 4 },
@@ -312,6 +406,8 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     window.__ctxNox = ctx;
+    PEDS = linhas.filter(r => r.tipo !== 'marketplace' && !['orcamento', 'cancelado'].includes(r.situacao))
+      .sort((a, b) => String(b.data_pedido).localeCompare(String(a.data_pedido)) || b.id - a.id);
     const [c, cl, p, ca, te, co, fo, it, en, ti, rc, pe, pei] = await Promise.all([
       buscarTodos(() => db.from('canais_venda').select('*').order('nome')),
       buscarTodos(() => db.from('clientes').select('id, nome, nome_fantasia, tipo_cliente, situacao, representante_id').order('nome')),
@@ -395,13 +491,26 @@ const cfg = {
       box.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('tr').remove(); recalcular(); } });
       box.addEventListener('change', e => {
         if (e.target.dataset.k === 'tipo_codigo') { const c = Number(e.target.selectedOptions[0]?.dataset.cat); if (c) e.target.closest('tr').querySelector('[data-k=categoria_financeira_id]').value = c; }
+        // produto escolhido: mostra o último preço e preenche o unitário se estiver vazio
+        if (e.target.dataset.k === 'produto_id') { const tr = e.target.closest('tr'), p = dicaPreco(tr), u = tr.querySelector('[data-k=valor_unitario]');
+          if (p && !(lerNumero(u.value) > 0)) { u.value = num2(p.valor); formatarCampoMoeda?.(u); } }
         recalcular();
       });
+      m.querySelector('#f_cliente_id')?.addEventListener('change', () => m.querySelectorAll('#itens tbody tr').forEach(dicaPreco));
       box.addEventListener('input', recalcular);
       ['desconto', 'frete_cliente', 'outras_receitas'].forEach(id => m.querySelector('#f_' + id)?.addEventListener('input', recalcular));
       fCanal.addEventListener('change', aplicarCanal);
     } else box.querySelectorAll('input, select').forEach(i => i.disabled = true);
     aplicarCanal(); recalcular();
+    m.__pedidoId = r.id || null;
+    if (fTipo?.value !== 'marketplace') m.querySelectorAll('#itens tbody tr').forEach(dicaPreco);
+    m.querySelector('#btnPdfVenda')?.addEventListener('click', () => abrirPdfVenda(r));
+    m.querySelector('#btnVirarPedido')?.addEventListener('click', async () => {
+      if (!confirm('Transformar este orçamento em pedido? (salve antes as alterações) — o pedido passa a reservar o estoque.')) return;
+      const { error } = await db.from('pedidos_venda').update({ situacao: 'aberto', data_pedido: new Date().toLocaleDateString('sv-SE') }).eq('id', r.id);
+      if (error) return aviso('Não transformou: ' + error.message, true);
+      aviso('Orçamento virou pedido'); m.remove(); cfg.recarregar();
+    });
     // Ações do pedido
     m.querySelector('#btnGerar')?.addEventListener('click', async () => {
       if (!confirm('Gerar os títulos a receber deste pedido? (salve antes as alterações)')) return;
