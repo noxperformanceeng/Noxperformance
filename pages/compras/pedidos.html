@@ -1179,6 +1179,8 @@ async function carregarFila() {
   FILA = (its || []).filter(i => (!i.pedido_id || ped[i.pedido_id] === 'cancelado') && !(i.cotacao_id && cot[i.cotacao_id] === 'aberta'))
     .map(i => ({ ...i, sol: solDe[i.solicitacao_id] })).sort((a, b) => a.solicitacao_id - b.solicitacao_id || a.id - b.id);
 }
+// Lista de pedidos: código + descrição do cadastro (ou a descrição do item, se não tiver cadastro)
+const nomeItemLista = i => { const p = prod(i.produto_id); return p ? [p.codigo, p.descricao].filter(Boolean).join(' · ') : (i.descricao || ''); };
 const nomeItemFila = i => i.produto_id ? `${prod(i.produto_id)?.codigo || ''} ${prod(i.produto_id)?.descricao || ''}`.trim()
   : i.servico_id ? (serv(i.servico_id)?.nome || 'Serviço') + (i.descricao ? ' · ' + i.descricao : '') : i.peca_id ? 'Usinagem · ' + (prod(i.peca_id)?.codigo || '') : (i.descricao || '') + ' (sem cadastro)';
 function abrirFila() {
@@ -1387,9 +1389,9 @@ const cfg = {
     // ?sugestao=1 (vindo da página inicial): abre a sugestão de compra uma vez
     if (!window.__sugAberta && new URLSearchParams(location.search).get('sugestao') && SUG.length) { window.__sugAberta = true; abrirSugestao(); } },
   colunasExtras: [
-    { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${prod(i.produto_id)?.codigo || i.descricao}`).join(', '),
-      html: (r, e) => { const l = e.itens[r.id] || [], t = l.map(i => `${num(i.quantidade)}× ${prod(i.produto_id)?.codigo || i.descricao}`).join(', ');
-        return `<span class="texto-curto" style="max-width:220px" title="${esc(t)}">${esc(t)}</span>${avulsosPendentes(r).length && EDITAVEL.includes(r.situacao) ? ' <span class="tg erro">sem cadastro · liberar</span>' : l.some(i => !i.produto_id && !i.servico_id) ? ' <span class="tg neutro">avulso liberado</span>' : ''}`; } },
+    { label: 'Itens', texto: (r, e) => (e.itens[r.id] || []).map(i => `${num(i.quantidade)}× ${nomeItemLista(i)}`).join(', '),
+      html: (r, e) => { const l = e.itens[r.id] || [], t = l.map(i => `${num(i.quantidade)}× ${nomeItemLista(i)}`).join(', ');
+        return `<span class="texto-curto" style="max-width:340px" title="${esc(t)}">${esc(t)}</span>${avulsosPendentes(r).length && EDITAVEL.includes(r.situacao) ? ' <span class="tg erro">sem cadastro · liberar</span>' : l.some(i => !i.produto_id && !i.servico_id) ? ' <span class="tg neutro">avulso liberado</span>' : ''}`; } },
     { label: 'Comprador', texto: r => usu(r.comprador_id) },
     { label: 'Aprovação', texto: r => r.situacao === 'em_aprovacao' ? `${(r.niveis_aprovados || []).length}/${(r.niveis_exigidos || []).length} · ${nomeNivel(r, nivelAtual(r))}` : '' }
   ],
