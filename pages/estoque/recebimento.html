@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recebimento · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611270810">
+<style>
+  /* Pensada para tablet: cartões grandes, botões grandes, pouca coisa por tela */
+  .rc-abas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+  .rc-aba { font: inherit; border: 1px solid var(--linha); background: var(--superficie); border-radius: 12px; padding: 10px 16px; cursor: pointer; text-align: left; min-width: 150px; }
+  .rc-aba .n { font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; display: block; }
+  .rc-aba .t { font-size: 13px; color: var(--texto-suave); }
+  .rc-aba.ativa { box-shadow: 0 0 0 2px var(--destaque) inset; }
+  .rc-aba.tem .n { color: var(--destaque); }
+  .rc-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+  .rc-card { background: var(--superficie); border: 1px solid var(--linha); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .rc-card.atrasado { border-color: var(--erro); }
+  .rc-card h3 { margin: 0; font-size: 17px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .rc-card .forn { font-size: 14px; font-weight: 600; }
+  .rc-card .info { font-size: 13px; color: var(--texto-suave); }
+  .rc-itens { list-style: none; margin: 0; padding: 0; font-size: 14px; border-top: 1px solid var(--linha); }
+  .rc-itens li { padding: 6px 0; border-bottom: 1px solid var(--linha); display: flex; gap: 8px; align-items: baseline; }
+  .rc-itens .q { font-weight: 700; min-width: 58px; font-variant-numeric: tabular-nums; }
+  .rc-itens .para { margin-left: auto; font-size: 12px; color: var(--texto-suave); white-space: nowrap; }
+  .rc-bts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+  .rc-bts .btn { font-size: 15px; padding: 11px 16px; border-radius: 10px; }
+  .rc-bts .btn.primario { flex: 1; }
+  .rc-sel { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--linha); font-size: 14px; cursor: pointer; }
+  .rc-sel input { width: 22px; height: 22px; }
+  .rc-barra { position: sticky; bottom: 0; background: var(--fundo); padding: 10px 0; display: flex; gap: 10px; align-items: center; justify-content: flex-end; }
+  .rc-barra .btn { font-size: 15px; padding: 12px 18px; }
+  .rc-vazio { padding: 40px; text-align: center; color: var(--texto-suave); font-size: 15px; }
+  .rc-ajuda { font-size: 13px; color: var(--texto-suave); margin: -6px 0 12px; }
+  .rc-busca { max-width: 420px; margin: 0 0 12px; }
+  @media (max-width: 760px) { .rc-lista { grid-template-columns: 1fr; } .rc-aba { min-width: 0; flex: 1 1 45%; } }
+</style>
+</head>
+<body data-modulo="almoxarifado" data-titulo="Recebimento">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Recebimento</h1>
+    <p class="sub">Chegou → conferido → liberado para retirada → retirado. Sem preços nesta tela.</p></div>
+    <button class="btn" id="btnAtualizar">Atualizar</button></div>
+  <div class="rc-abas" id="abas"></div>
+  <p class="rc-ajuda" id="ajuda"></p>
+  <input id="fBusca" class="busca rc-busca" type="search" placeholder="Buscar: pedido, fornecedor, item, solicitação, pessoa…">
+  <div id="lista"><div class="rc-vazio">Carregando…</div></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611270810"></script>
+<script src="../../assets/js/ui.js?v=202611270810"></script>
+<script src="../../assets/js/auth.js?v=202611270810"></script>
+<script src="../../assets/js/layout.js?v=202611270810"></script>
+<script>
+/* Recebimento no almoxarifado (pensado para tablet).
+   1) A caminho: pedidos aprovados que ainda não chegaram → botão "Chegou".
+   2) Para conferir: o que chegou → "Conferir e dar entrada" abre a entrada da NF do pedido (atualiza o estoque).
+   3) Para liberar: itens de solicitação já conferidos → "Liberar para retirada" (avisa quem pediu).
+   4) Aguardando retirada: → "Registrar retirada" (quem retirou; baixa do estoque o que entrou no estoque).
+   5) Concluídos: conferidos e retirados dos últimos 30 dias. */
+const ABAS = [
+  { v: 'caminho',  n: 'A caminho',            ajuda: 'Pedidos aprovados que ainda não chegaram. Quando a mercadoria chegar, toque em "Chegou".' },
+  { v: 'conferir', n: 'Para conferir',        ajuda: 'Já chegou: confira item por item e dê a entrada. O estoque é atualizado na entrada.' },
+  { v: 'liberar',  n: 'Para liberar',         ajuda: 'Conferido e pedido por alguém numa solicitação: separe e libere para retirada (a pessoa recebe um aviso).' },
+  { v: 'retirada', n: 'Aguardando retirada',  ajuda: 'Liberado: quando a pessoa vier buscar, registre a retirada.' },
+  { v: 'feitos',   n: 'Concluídos (30 dias)', ajuda: 'Conferências e retiradas dos últimos 30 dias.' }];
+const ABERTO = ['aprovado', 'enviado', 'recebido_parcial'];
+let CTX = null, aba = 'caminho', PEDS = [], ITENS = {}, FORN = {}, PROD = {}, CHEG = [], SOL = [], USU = [];
+const dia = v => v ? String(v).slice(0, 10).split('-').reverse().join('/') : '';
+const hoje = () => new Date().toLocaleDateString('sv-SE');
+const qtd = v => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+const nomeForn = id => { const f = FORN[id]; return f ? (f.nome_fantasia || f.nome) : ''; };
+const descItem = i => i.descricao || (PROD[i.produto_id] ? `${PROD[i.produto_id].codigo || ''} ${PROD[i.produto_id].descricao}`.trim() : 'item');
+const falta = i => Math.max(0, Number(i.quantidade) - Number(i.quantidade_recebida || 0) - Number(i.quantidade_cancelada || 0));
+const chegadaAberta = pid => CHEG.find(c => c.pedido_id === pid && !c.conferido_em);
+const solDoPedido = pid => SOL.filter(s => s.pedido_id === pid);
+const nomeUsu = id => USU.find(u => u.id === id)?.nome || '';
+const podeMexer = () => CTX.pode('almoxarifado', 'criar') || CTX.pode('estoque', 'alterar') || CTX.pode('compras', 'alterar');
+
+async function carregar() {
+  const [p, c, s, u] = await Promise.all([
+    db.from('pedidos_compra').select('id, numero, situacao, fornecedor_id, data_pedido, data_entrega_prevista, origem, observacoes, atualizado_em')
+      .neq('origem', 'tiny').in('situacao', [...ABERTO, 'recebido']),
+    db.from('almox_chegadas').select('*').gte('chegou_em', new Date(Date.now() - 120 * 864e5).toISOString()),
+    db.rpc('almox_itens_solicitacao'), db.rpc('usuarios_nomes')]);
+  if (p.error) { document.getElementById('lista').innerHTML = `<div class="rc-vazio">Não carregou: ${esc(p.error.message)}</div>`; return; }
+  CHEG = c.data || []; SOL = s.data || []; USU = u.data || [];
+  // pedido recebido só interessa se ainda tem algo para liberar/retirar ou foi conferido há pouco
+  const recente = Date.now() - 30 * 864e5;
+  PEDS = (p.data || []).filter(x => ABERTO.includes(x.situacao) || SOL.some(y => y.pedido_id === x.id && !y.retirado_em)
+    || CHEG.some(k => k.pedido_id === x.id && k.conferido_em && Date.parse(k.conferido_em) > recente));
+  const ids = PEDS.map(x => x.id);
+  const [it, fo] = await Promise.all([
+    ids.length ? db.from('pedidos_compra_itens').select('id, pedido_id, produto_id, servico_id, descricao, unidade, quantidade, quantidade_recebida, quantidade_cancelada, tipo_item').in('pedido_id', ids).order('id') : { data: [] },
+    db.from('fornecedores').select('id, nome, nome_fantasia').in('id', [...new Set(PEDS.map(x => x.fornecedor_id))].concat([0]))]);
+  ITENS = {}; (it.data || []).forEach(i => (ITENS[i.pedido_id] ||= []).push(i));
+  FORN = Object.fromEntries((fo.data || []).map(f => [f.id, f]));
+  const pids = [...new Set((it.data || []).filter(i => i.produto_id && !i.descricao).map(i => i.produto_id))];
+  if (pids.length) { const { data } = await db.from('produtos').select('id, codigo, descricao').in('id', pids); PROD = Object.fromEntries((data || []).map(x => [x.id, x])); }
+  desenhar();
+}
+
+function grupos() {
+  const b = document.getElementById('fBusca').value;
+  const ok = t => !b || combinaBusca(t, b);
+  const txtPed = x => `${x.numero} ${nomeForn(x.fornecedor_id)} ${(ITENS[x.id] || []).map(descItem).join(' ')} ${solDoPedido(x.id).map(s => s.solicitacao + ' ' + (s.solicitante || '')).join(' ')}`;
+  const caminho = PEDS.filter(x => ABERTO.includes(x.situacao) && !chegadaAberta(x.id) && (ITENS[x.id] || []).some(i => falta(i) > 0))
+    .sort((a, b) => String(a.data_entrega_prevista || '9').localeCompare(String(b.data_entrega_prevista || '9')));
+  const conferir = PEDS.filter(x => chegadaAberta(x.id)).sort((a, b) => String(chegadaAberta(a.id).chegou_em).localeCompare(String(chegadaAberta(b.id).chegou_em)));
+  const conferido = pid => ['recebido', 'recebido_parcial'].includes(PEDS.find(x => x.id === pid)?.situacao);
+  const liberar = SOL.filter(s => !s.liberado_em && conferido(s.pedido_id));
+  const retirada = SOL.filter(s => s.liberado_em && !s.retirado_em);
+  const feitos = [
+    ...CHEG.filter(k => k.conferido_em && Date.parse(k.conferido_em) > Date.now() - 30 * 864e5).map(k => ({ tipo: 'conf', em: k.conferido_em, k })),
+    ...SOL.filter(s => s.retirado_em).map(s => ({ tipo: 'ret', em: s.retirado_em, s }))].sort((a, b) => String(b.em).localeCompare(String(a.em)));
+  return {
+    caminho: caminho.filter(x => ok(txtPed(x))), conferir: conferir.filter(x => ok(txtPed(x))),
+    liberar: liberar.filter(s => ok(`${s.solicitacao} ${s.solicitante} ${s.descricao}`)), retirada: retirada.filter(s => ok(`${s.solicitacao} ${s.solicitante} ${s.descricao}`)),
+    feitos: feitos.filter(f => ok(f.tipo === 'conf' ? txtPed(PEDS.find(x => x.id === f.k.pedido_id) || {}) : `${f.s.solicitacao} ${f.s.solicitante} ${f.s.descricao} ${f.s.retirado_quem}`)) };
+}
+
+function cardPedido(x, modo) {
+  const its = ITENS[x.id] || [], ch = chegadaAberta(x.id), sols = solDoPedido(x.id);
+  const atrasado = modo === 'caminho' && x.data_entrega_prevista && x.data_entrega_prevista < hoje();
+  const para = i => { const s = sols.find(y => y.descricao && descItem(i) && (y.descricao.includes(descItem(i)) || descItem(i).includes(y.descricao))) || (sols.length === 1 ? sols[0] : null);
+    return s ? `<span class="para">${esc(s.solicitacao)} · ${esc(s.solicitante || '')}</span>` : ''; };
+  return `<div class="rc-card${atrasado ? ' atrasado' : ''}" data-ped="${x.id}">
+    <h3>${esc(x.numero)} ${x.situacao === 'recebido_parcial' ? '<span class="tg alerta">entregue parcial</span>' : ''}${atrasado ? '<span class="tg erro">atrasado</span>' : ''}</h3>
+    <div class="forn">${esc(nomeForn(x.fornecedor_id))}</div>
+    <div class="info">${modo === 'caminho' ? `Previsto: <b>${dia(x.data_entrega_prevista) || 'sem data'}</b> · pedido em ${dia(x.data_pedido)}`
+      : `Chegou ${dataHoraBR(ch.chegou_em)}${ch.registrado_por ? ' · ' + esc(nomeUsu(ch.registrado_por)) : ''}${ch.nf_numero ? ' · NF ' + esc(ch.nf_numero) : ''}${ch.volumes ? ' · ' + ch.volumes + ' volume(s)' : ''}${ch.observacao ? '<br>' + esc(ch.observacao) : ''}`}</div>
+    <ul class="rc-itens">${its.filter(i => falta(i) > 0).map(i => `<li><span class="q">${qtd(falta(i))} ${esc(i.unidade || '')}</span><span>${esc(descItem(i))}</span>${para(i)}</li>`).join('')}</ul>
+    ${podeMexer() ? `<div class="rc-bts">${modo === 'caminho'
+      ? `<button class="btn primario" data-chegou="${x.id}">📦 Chegou</button>`
+      : `<a class="btn primario" href="../compras/pedidos.html?abrir=${x.id}&receber=1">✔ Conferir e dar entrada</a><button class="btn" data-desfazer="${ch.id}" title="Registrou a chegada por engano">Desfazer</button>`}
+      <button class="btn" data-lista="${x.id}" title="Lista para conferir no papel (sem preços)">🖨 Lista</button></div>` : ''}
+  </div>`;
+}
+
+function listaSel(ls, rotuloBtn, acao) {
+  if (!ls.length) return '';
+  const porSc = {}; ls.forEach(s => (porSc[s.solicitacao_id] ||= []).push(s));
+  return `${Object.values(porSc).map(g => `<div class="rc-card"><h3>${esc(g[0].solicitacao)} <span class="info" style="font-weight:500">· ${esc(g[0].solicitante || '')}</span></h3>
+      ${g.map(s => { const p = PEDS.find(x => x.id === s.pedido_id);
+        return `<label class="rc-sel"><input type="checkbox" data-sel="${s.item_id}"><span><b>${qtd(s.quantidade)} ${esc(s.unidade || '')}</b> · ${esc(s.descricao || '')}<br><span class="info">${esc(p?.numero || '')}${s.liberado_em ? ' · liberado ' + dataHoraBR(s.liberado_em) : ''}</span></span></label>`; }).join('')}
+    </div>`).join('')}`
+    + (podeMexer() ? `<div class="rc-barra"><span class="info" id="nSel">Nenhum marcado</span><button class="btn" id="selTodos">Marcar todos</button><button class="btn primario" id="${acao}">${rotuloBtn}</button></div>` : '');
+}
+
+function desenhar() {
+  const g = grupos();
+  document.getElementById('abas').innerHTML = ABAS.map(a => `<button class="rc-aba${a.v === aba ? ' ativa' : ''}${a.v !== 'feitos' && g[a.v].length ? ' tem' : ''}" data-aba="${a.v}"><span class="n">${g[a.v].length}</span><span class="t">${a.n}</span></button>`).join('');
+  document.getElementById('ajuda').textContent = ABAS.find(a => a.v === aba).ajuda;
+  const el = document.getElementById('lista');
+  let html = '';
+  if (aba === 'caminho' || aba === 'conferir') html = g[aba].length ? `<div class="rc-lista">${g[aba].map(x => cardPedido(x, aba)).join('')}</div>` : '';
+  else if (aba === 'liberar') html = listaSel(g.liberar, '✔ Liberar para retirada', 'btLiberar');
+  else if (aba === 'retirada') html = listaSel(g.retirada, '🤝 Registrar retirada…', 'btRetirar');
+  else html = g.feitos.length ? `<div class="cartao"><table><thead><tr><th>Quando</th><th>O quê</th><th>Detalhe</th></tr></thead><tbody>${g.feitos.slice(0, 200).map(f => {
+      if (f.tipo === 'conf') { const p = PEDS.find(x => x.id === f.k.pedido_id);
+        return `<tr><td>${dataHoraBR(f.em)}</td><td><span class="tg ok">Conferido</span> ${esc(p?.numero || '')}</td><td>${esc(nomeForn(p?.fornecedor_id))}${f.k.nf_numero ? ' · NF ' + esc(f.k.nf_numero) : ''}${f.k.conferido_por ? ' · por ' + esc(nomeUsu(f.k.conferido_por)) : ''}</td></tr>`; }
+      return `<tr><td>${dataHoraBR(f.em)}</td><td><span class="tg pc">Retirado</span> ${esc(f.s.solicitacao)}</td><td>${qtd(f.s.quantidade)} ${esc(f.s.unidade || '')} · ${esc(f.s.descricao || '')} · retirou: <b>${esc(f.s.retirado_quem || '')}</b></td></tr>`; }).join('')}</tbody></table></div>` : '';
+  el.innerHTML = html || '<div class="rc-vazio">Nada aqui agora 👍</div>';
+  ligar();
+}
+
+function ligar() {
+  document.querySelectorAll('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
+  document.querySelectorAll('[data-chegou]').forEach(b => b.onclick = () => abrirChegada(PEDS.find(x => x.id === Number(b.dataset.chegou))));
+  document.querySelectorAll('[data-lista]').forEach(b => b.onclick = () => imprimirLista(PEDS.find(x => x.id === Number(b.dataset.lista))));
+  document.querySelectorAll('[data-desfazer]').forEach(b => b.onclick = async () => {
+    if (!confirm('Desfazer o registro de chegada? O pedido volta para "A caminho".')) return;
+    const { error } = await db.rpc('almox_desfazer_chegada', { p_id: Number(b.dataset.desfazer) });
+    if (error) return aviso('Não desfez: ' + error.message, true);
+    aviso('Chegada desfeita'); carregar(); });
+  const sels = () => [...document.querySelectorAll('[data-sel]:checked')].map(x => Number(x.dataset.sel));
+  const contar = () => { const n = sels().length, e = document.getElementById('nSel'); if (e) e.textContent = n ? `${n} marcado(s)` : 'Nenhum marcado'; };
+  document.querySelectorAll('[data-sel]').forEach(x => x.onchange = contar);
+  const tod = document.getElementById('selTodos');
+  if (tod) tod.onclick = () => { const all = [...document.querySelectorAll('[data-sel]')], marcar = all.some(x => !x.checked); all.forEach(x => x.checked = marcar); contar(); };
+  const lib = document.getElementById('btLiberar');
+  if (lib) lib.onclick = async () => {
+    const ids = sels(); if (!ids.length) return aviso('Marque o que já está separado para retirada', true);
+    lib.disabled = true;
+    const { data, error } = await db.rpc('almox_liberar_retirada', { p_itens: ids });
+    lib.disabled = false;
+    if (error) return aviso('Não liberou: ' + error.message, true);
+    aviso(`${data} item(ns) liberado(s) · quem pediu recebeu o aviso`); carregar();
+  };
+  const ret = document.getElementById('btRetirar');
+  if (ret) ret.onclick = () => { const ids = sels(); if (!ids.length) return aviso('Marque o que está sendo retirado', true); abrirRetirada(ids); };
+}
+
+function abrirChegada(x) {
+  const m = abrirModal(`<h2>Chegou · ${esc(x.numero)}</h2>
+    <p class="sub" style="margin:0 0 8px">${esc(nomeForn(x.fornecedor_id))}. Registre que chegou; a conferência item por item vem depois, em "Para conferir".</p>
+    <div class="grade-campos">
+      <div class="campo"><label>NF nº <span class="sub">(se veio com nota)</span></label><input id="cNf" inputmode="numeric"></div>
+      <div class="campo"><label>Volumes / caixas</label><input id="cVol" inputmode="numeric" placeholder="1"></div>
+      <div class="campo l2"><label>Observação</label><input id="cObs" placeholder="ex.: caixa amassada, veio pela transportadora…"></div>
+    </div>
+    <div class="acoes"><button class="btn" id="cX">Voltar</button><button class="btn primario" id="cOk">📦 Registrar chegada</button></div>`);
+  m.querySelector('#cX').onclick = () => m.remove();
+  m.querySelector('#cOk').onclick = async () => {
+    const vol = Math.round(lerNumero(m.querySelector('#cVol').value) || 0) || null;
+    m.querySelector('#cOk').disabled = true;
+    const { error } = await db.rpc('almox_registrar_chegada', { p_pedido: x.id, p_nf: m.querySelector('#cNf').value, p_volumes: vol, p_obs: m.querySelector('#cObs').value });
+    if (error) { m.querySelector('#cOk').disabled = false; return aviso('Não registrou: ' + error.message, true); }
+    aviso(`${x.numero}: chegada registrada · agora está em "Para conferir"`); m.remove(); carregar();
+  };
+}
+
+function abrirRetirada(ids) {
+  const its = SOL.filter(s => ids.includes(s.item_id)), quem = [...new Set(its.map(s => s.solicitante_id).filter(Boolean))];
+  const m = abrirModal(`<h2>Registrar retirada</h2>
+    <ul class="rc-itens" style="margin-bottom:10px">${its.map(s => `<li><span class="q">${qtd(s.quantidade)} ${esc(s.unidade || '')}</span><span>${esc(s.descricao || '')}</span><span class="para">${esc(s.solicitacao)}</span></li>`).join('')}</ul>
+    <div class="grade-campos">
+      <div class="campo l2"><label>Quem retirou <span class="obrig">*</span></label><select id="rQuem"><option value="">— escolha —</option>${USU.filter(u => u.ativo !== false).sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR')).map(u => `<option value="${u.id}"${quem.length === 1 && quem[0] === u.id ? ' selected' : ''}>${esc(u.nome)}</option>`).join('')}</select></div>
+      <div class="campo l2"><label>Observação</label><input id="rObs" placeholder="ex.: retirou para a solda"></div>
+    </div>
+    <div class="acoes"><button class="btn" id="rX">Voltar</button><button class="btn primario" id="rOk">🤝 Confirmar retirada</button></div>`);
+  m.querySelector('#rX').onclick = () => m.remove();
+  m.querySelector('#rOk').onclick = async () => {
+    const q = m.querySelector('#rQuem').value; if (!q) return aviso('Escolha quem retirou', true);
+    m.querySelector('#rOk').disabled = true;
+    const { data, error } = await db.rpc('almox_registrar_retirada', { p_itens: ids, p_quem: q, p_obs: m.querySelector('#rObs').value });
+    if (error) { m.querySelector('#rOk').disabled = false; return aviso('Não registrou: ' + error.message, true); }
+    aviso(`${data} item(ns) retirado(s)`); m.remove(); carregar();
+  };
+}
+
+function imprimirLista(x) {
+  const its = ITENS[x.id] || [], ch = chegadaAberta(x.id), sols = solDoPedido(x.id);
+  imprimirRelatorio({
+    titulo: `Conferência ${x.numero} · ${nomeForn(x.fornecedor_id)}${ch?.nf_numero ? ' · NF ' + ch.nf_numero : ''}`,
+    colunas: ['Item', 'Un', 'Pedido', 'Já recebido', 'A conferir', 'Chegou (anotar)', 'Para quem'],
+    linhas: its.map(i => [descItem(i), i.unidade || '', qtd(i.quantidade), qtd(i.quantidade_recebida), qtd(falta(i)), '', sols.map(s => `${s.solicitacao} ${s.solicitante || ''}`).join(', ')])
+  });
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  document.getElementById('btnAtualizar').onclick = carregar;
+  ligarBusca(document.getElementById('fBusca'), desenhar);
+  window.addEventListener('aba-ativa', carregar);
+  ouvirMudancas(null, carregar);
+  carregar();
+})();
+</script>
+</body>
+</html>

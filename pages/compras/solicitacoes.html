@@ -6,7 +6,7 @@
 <title>Solicitações de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611260955">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611270810">
 <style>
   .sub-ed table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .sub-ed th { text-align: left; font-size: 11px; color: var(--texto-suave); font-weight: 500; padding: 0 3px 3px; white-space: nowrap; }
@@ -34,11 +34,11 @@
 <body data-modulo="solicitacoes_compra" data-titulo="Solicitações de compra">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611260955"></script>
-<script src="../../assets/js/ui.js?v=202611260955"></script>
-<script src="../../assets/js/auth.js?v=202611260955"></script>
-<script src="../../assets/js/layout.js?v=202611260955"></script>
-<script src="../../assets/js/cadastro.js?v=202611260955"></script>
+<script src="../../assets/js/supabase.js?v=202611270810"></script>
+<script src="../../assets/js/ui.js?v=202611270810"></script>
+<script src="../../assets/js/auth.js?v=202611270810"></script>
+<script src="../../assets/js/layout.js?v=202611270810"></script>
+<script src="../../assets/js/cadastro.js?v=202611270810"></script>
 <script>
 /* =====================================================================
    Solicitações de compra (antes do pedido)
@@ -59,7 +59,7 @@ const tgUrg = v => { const u = URG[pesoUrg(v)] || URG[1]; return u.v === 'normal
 const urgDe = r => (ex.itens?.[r.id] || []).reduce((m, i) => pesoUrg(i.urgencia) > pesoUrg(m) ? i.urgencia : m, 'baixa');
 const num = v => v == null || v === '' ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 const hojeISO = () => new Date().toLocaleDateString('sv-SE');
-let CTX = null, CAT = [], PEDS = {}, COTS = {}, USU = [], ACOES = new Set(), ex = {};
+let CTX = null, CAT = [], PEDS = {}, COTS = {}, USU = [], ACOES = new Set(), ex = {}, AND = {}, SC_ATUAL = null;
 const sit = v => SIT.find(s => s.v === v) || { n: v, cor: 'neutro' };
 const usu = id => USU.find(u => u.id === id)?.nome || '';
 const itemCat = (t, id) => CAT.find(c => c.tipo === t && c.id === id);
@@ -71,15 +71,28 @@ const semPedido = i => !i.pedido_id || PEDS[i.pedido_id]?.situacao === 'cancelad
 const emCotacao = i => semPedido(i) && i.cotacao_id && COTS[i.cotacao_id]?.situacao === 'aberta';
 const pendente = i => semPedido(i) && !emCotacao(i);
 const itensDe = r => ex.itens?.[r.id] || [];
-// etapa da solicitação para a lista: mostra o andamento da compra depois de aprovada
+// Andamento de cada item (o solicitante vê isto; sem preço e sem fornecedor)
+const ETAPAS = ['Aguardando o comprador', 'Visto pelo comprador', 'Em cotação', 'Em compra', 'Comprado', 'Chegou', 'Conferido', 'Liberado para retirada', 'Retirado'];
+const COR_ETAPA = ['neutro', 'info', 'alerta', 'pc', 'pc', 'info', 'ok', 'ok', 'ok'];
+function etapaItem(i, r) {
+  if (i.retirado_em) return 8;
+  if (i.liberado_em) return 7;
+  const p = !semPedido(i) && PEDS[i.pedido_id];
+  if (p) {
+    if (['recebido', 'recebido_parcial'].includes(p.situacao)) return 6;
+    if (AND[p.id]?.chegou_em && !AND[p.id]?.conferido_em) return 5;
+    return ['aprovado', 'enviado'].includes(p.situacao) ? 4 : 3;
+  }
+  if (emCotacao(i)) return 2;
+  return r?.vista_comprador_em ? 1 : 0;
+}
+const tgEtapa = k => `<span class="tg ${COR_ETAPA[k]}">${ETAPAS[k]}</span>`;
+// etapa da solicitação para a lista: o item mais atrasado manda; "parcial" quando os itens estão em etapas diferentes
 function etapa(r) {
   if (r.situacao !== 'aprovado') return sit(r.situacao);
-  const its = itensDe(r), pend = its.filter(pendente).length;
-  if (pend === its.length) return { n: 'Com o comprador', cor: 'ok' };
-  if (its.every(i => pendente(i) || emCotacao(i))) return { n: 'Em cotação', cor: 'alerta' };
-  const peds = [...new Set(its.filter(i => !semPedido(i)).map(i => PEDS[i.pedido_id]))].filter(Boolean);
-  if (pend || its.some(emCotacao)) return { n: `Em compra parcial (${its.length - pend}/${its.length})`, cor: 'pc' };
-  return peds.every(p => p.situacao === 'recebido') ? { n: 'Recebida', cor: 'ok' } : { n: 'Em pedido de compra', cor: 'pc' };
+  const ks = itensDe(r).map(i => etapaItem(i, r)); if (!ks.length) return { n: ETAPAS[0], cor: 'neutro' };
+  const min = Math.min(...ks), max = Math.max(...ks);
+  return { n: ETAPAS[min] + (max > min ? ` (parte já: ${ETAPAS[max].toLowerCase()})` : ''), cor: COR_ETAPA[min] };
 }
 
 /* ---------- Itens (sempre do cadastro de produtos ou de serviços) ---------- */
@@ -136,7 +149,7 @@ function linhaItem(x = {}, ped = false) {
     <td style="width:62px"><input data-k="unidade" value="${esc(x.unidade || '')}" placeholder="un"></td>
     <td style="width:84px"><input data-k="quantidade" inputmode="decimal" value="${num(x.quantidade ?? 1)}"></td>
     <td style="width:100px"><select data-k="urgencia" data-simples>${URG.map(u => `<option value="${u.v}"${u.v === (x.urgencia || 'normal') ? ' selected' : ''}>${u.n}</option>`).join('')}</select></td>
-    ${ped ? `<td>${p && p.situacao !== 'cancelado' ? `<span class="tg pc">${esc(p.numero)} · ${esc(p.situacao)}</span>` : emCotacao(x) ? `<span class="tg alerta">${esc(COTS[x.cotacao_id].numero)} · em cotação</span>` : '<span class="sub">aguardando comprador</span>'}</td>` : ''}
+    ${ped ? `<td>${tgEtapa(etapaItem(x, SC_ATUAL))}${p && p.situacao !== 'cancelado' ? ` <span class="sub">${esc(p.numero)}</span>` : ''}${x.retirado_em ? `<br><span class="sub">retirado ${dataHoraBR(x.retirado_em)}</span>` : x.liberado_em ? `<br><span class="sub">liberado ${dataHoraBR(x.liberado_em)}</span>` : ''}</td>` : ''}
     <td style="width:22px"><button type="button" class="rm" title="Remover">×</button></td></tr>`;
 }
 function lerItens(m) {
@@ -237,6 +250,7 @@ const cfg = {
       buscarTodos(() => db.from('solicitacoes_compra_itens').select('*').order('id')),
       buscarTodos(() => db.rpc('sc_catalogo').order('tipo', { ascending: false }).order('id')).then(data => ({ data })), db.rpc('sc_pedidos'), db.rpc('usuarios_nomes'), db.rpc('minhas_acoes'), db.rpc('sc_cotacoes')
     ]);
+    try { AND = Object.fromEntries((((await db.rpc('sc_pedidos_andamento')).data) || []).map(x => [x.pedido_id, x])); } catch (e) { AND = {}; }
     try { USI = new Set(((await db.rpc('sc_pecas_usinagem')).data || []).map(Number)); } catch (e) { USI = new Set(); }
     CAT = (cat.data || []).sort((a, b) => String(a.descricao).localeCompare(String(b.descricao), 'pt-BR'));
     PEDS = Object.fromEntries((pe.data || []).map(p => [p.id, p])); USU = us.data || []; ACOES = new Set(ac.data || []); COTS = Object.fromEntries((co.data || []).map(c => [c.id, c]));
@@ -266,12 +280,12 @@ const cfg = {
   secaoExtra: r => {
     const e = etapa(r), passo = (t, cls) => `<span class="${cls}">${t}</span>`;
     const pedsIt = [...new Set(itensDe(r).filter(i => !semPedido(i)).map(i => PEDS[i.pedido_id]))].filter(Boolean), chegou = e.n === 'Recebida';
+    const ks = itensDe(r).map(i => etapaItem(i, r)), kmin = ks.length ? Math.min(...ks) : 0, kmax = ks.length ? Math.max(...ks) : 0;
+    const st = k => r.situacao !== 'aprovado' ? '' : kmin >= k ? 'ok' : kmax >= k ? 'agora' : (kmin === k - 1 ? 'agora' : '');
     const fluxo = [passo('Solicitada', 'ok'),
       ...(r.situacao === 'recusado' ? [passo('Recusada', 'erro')] : r.situacao === 'em_aprovacao' ? [passo('Aprovação', 'agora')] : []),
-      passo('Comprador', r.situacao === 'aprovado' ? (itensDe(r).some(pendente) ? 'agora' : 'ok') : ''),
-      passo('Cotação', r.situacao === 'aprovado' && itensDe(r).some(emCotacao) ? 'agora' : r.situacao === 'aprovado' && pedsIt.length ? 'ok' : ''),
-      passo('Pedido de compra', r.situacao === 'aprovado' && pedsIt.length ? (chegou ? 'ok' : 'agora') : ''),
-      passo('Material chegou', chegou ? 'ok' : '')].join('<i>›</i>');
+      passo('Visto pelo comprador' + (r.vista_comprador_em ? ' ' + dataCurta(r.vista_comprador_em) : ''), st(1)), passo('Cotação', st(2)), passo('Comprado', st(4)),
+      passo('Chegou', st(5)), passo('Conferido', st(6)), passo('Liberado para retirada', st(7)), passo('Retirado', st(8))].join('<i>›</i>');
     const peds = [...new Set(itensDe(r).filter(i => i.pedido_id).map(i => i.pedido_id))].map(id => PEDS[id]).filter(Boolean);
     const cots = [...new Set(itensDe(r).filter(i => i.cotacao_id).map(i => i.cotacao_id))].map(id => COTS[id]).filter(Boolean);
     const bts = [
@@ -282,11 +296,13 @@ const cfg = {
     return `<div class="secao">Andamento</div><div class="sc-fluxo">${fluxo}</div>
       <div class="sub">Pedida por <b>${esc(usu(r.solicitante_id))}</b>${r.decidido_em && r.decidido_por ? ` · ${r.situacao === 'recusado' ? 'recusada' : 'aprovada'} por <b>${esc(usu(r.decidido_por))}</b> em ${dataHoraBR(r.decidido_em)}` : ''} · <span class="tg ${e.cor}">${esc(e.n)}</span></div>
       ${cots.length ? `<div style="margin-top:6px">Cotação(ões): ${cots.map(c => CTX.pode('cotacoes_compra') ? `<a href="${RAIZ}pages/compras/cotacoes.html?abrir=${c.id}" class="tg ${c.situacao === 'cancelada' ? 'neutro' : 'alerta'}">${esc(c.numero)} · ${esc(c.situacao)}</a>` : `<span class="tg neutro">${esc(c.numero)} · ${esc(c.situacao)}</span>`).join(' ')}</div>` : ''}
-      ${peds.length ? `<div style="margin-top:6px">Pedido(s) gerado(s): ${peds.map(p => `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${p.id}" class="tg ${p.situacao === 'cancelado' ? 'neutro' : 'pc'}">${esc(p.numero)} · ${esc(p.fornecedor || '')} · ${esc(p.situacao)}</a>`).join(' ')}</div>` : ''}
+      ${peds.length ? `<div style="margin-top:6px">Pedido(s) gerado(s): ${peds.map(p => CTX.pode('compras') ? `<a href="${RAIZ}pages/compras/pedidos.html?abrir=${p.id}" class="tg ${p.situacao === 'cancelado' ? 'neutro' : 'pc'}">${esc(p.numero)}${p.fornecedor ? ' · ' + esc(p.fornecedor) : ''} · ${esc(p.situacao)}</a>` : `<span class="tg ${p.situacao === 'cancelado' ? 'neutro' : 'pc'}">${esc(p.numero)}</span>`).join(' ')}</div>` : ''}
       ${r.situacao === 'recusado' && minha(r) ? '<div class="aviso-box">Recusada: veja o motivo, ajuste o que for preciso e salve para mandar de novo ao comprador (ou cancele).</div>' : ''}
       ${bts ? `<div class="acoes-pc" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${bts}</div>` : ''}`;
   },
   aoAbrir(m, r, ctx) {
+    SC_ATUAL = r;
+    if (r.id && r.situacao === 'aprovado' && !r.vista_comprador_em && souComprador() && !minha(r)) db.rpc('sc_marcar_vista', { p_id: r.id }).then(() => {});
     const novo = !r.id, editavel = novo || (EDITAVEL.includes(r.situacao) && (r.situacao !== 'aprovado' || (itensDe(r).length && itensDe(r).every(pendente)))
       && (minha(r) || ctx.pode('solicitacoes_compra', 'total')));
     const ped = r.situacao === 'aprovado';

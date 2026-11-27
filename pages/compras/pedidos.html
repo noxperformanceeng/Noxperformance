@@ -6,7 +6,7 @@
 <title>Pedidos de compra · NOX ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../../assets/css/style.css?v=202611260955">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611270810">
 <style>
   .pc-alertas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
   .pc-alertas button { border: 1px solid var(--linha); background: var(--superficie); border-radius: 8px; padding: 6px 10px; font: 500 12.5px var(--fonte); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
@@ -52,12 +52,12 @@
 <body data-modulo="compras" data-titulo="Pedidos de compra" data-empresa="sim">
 <main id="conteudo"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/supabase.js?v=202611260955"></script>
-<script src="../../assets/js/ui.js?v=202611260955"></script>
-<script src="../../assets/js/auth.js?v=202611260955"></script>
-<script src="../../assets/js/layout.js?v=202611260955"></script>
-<script src="../../assets/js/destino-estoque.js?v=202611260955"></script>
-<script src="../../assets/js/cadastro.js?v=202611260955"></script>
+<script src="../../assets/js/supabase.js?v=202611270810"></script>
+<script src="../../assets/js/ui.js?v=202611270810"></script>
+<script src="../../assets/js/auth.js?v=202611270810"></script>
+<script src="../../assets/js/layout.js?v=202611270810"></script>
+<script src="../../assets/js/destino-estoque.js?v=202611270810"></script>
+<script src="../../assets/js/cadastro.js?v=202611270810"></script>
 <script>
 /* =====================================================================
    Pedidos de compra
@@ -1034,6 +1034,7 @@ async function resolverMaterial(r, pai, x, acao) {
 }
 
 /* ---------- Recebimento da NF ---------- */
+let RECEBER_AUTO = new URLSearchParams(location.search).get('receber') === '1';
 function abrirRecebimento(r, pai) {
   const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem' || i.servico_id), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
   const itens = (ex.itens[r.id] || []).map(i => ({ ...i, pend: Math.max(0, Number(i.quantidade) - Number(i.quantidade_recebida)) }));
@@ -1060,6 +1061,8 @@ function abrirRecebimento(r, pai) {
     </div>
     <div class="acoes"><button class="btn" id="rN">Voltar</button><button class="btn primario" id="rS">Dar entrada</button></div>`);
   const q = s => m.querySelector(s);
+  db.from('almox_chegadas').select('nf_numero, observacao').eq('pedido_id', r.id).is('conferido_em', null).limit(1).then(({ data }) => {
+    const c = (data || [])[0]; if (c?.nf_numero && !q('#rNf').value) q('#rNf').value = c.nf_numero; });
   let valorEditado = false;
   const somaItens = () => { let t = 0; m.querySelectorAll('[data-item]').forEach(tr => { const v = Math.round((lerNumero(tr.querySelector('[data-q]').value) || 0) * Number(tr.dataset.unit) * 100) / 100; tr.querySelector('[data-v]').textContent = reais(v); t += v; }); simularSaldo(); return t; };
   // Simulação: com as quantidades digitadas, o pedido fecha (recebido) ou fica com saldo (entregue parcial)?
@@ -1411,6 +1414,9 @@ const cfg = {
     if (r.id) mostrarMaterial(m, r);
     if (r.id && r.origem !== 'tiny') mostrarSolicitacoes(m, r);
     if (r.id) mostrarAnexos(m, r);
+    // vindo da tela Recebimento ("Conferir e dar entrada"): abre a entrada da NF direto, uma vez
+    if (r.id && RECEBER_AUTO && ['aprovado', 'enviado', 'recebido_parcial'].includes(r.situacao) && (ctx.pode('compras', 'alterar') || ctx.pode('estoque', 'alterar'))) {
+      RECEBER_AUTO = false; setTimeout(() => abrirRecebimento(r, m), 250); }
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
     const box = document.createElement('div');
