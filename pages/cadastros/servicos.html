@@ -30,6 +30,7 @@ montarCadastro({
   campos: [
     { id: 'nome', label: 'Nome do serviço', obrig: true, col: 2, lista: true, placeholder: 'ex.: DESENHO TÉCNICO, PINTURA ELETROSTÁTICA' },
     { id: 'unidade', label: 'Unidade', obrig: true, padrao: 'SV', lista: true, placeholder: 'SV, PÇ, H…', ajuda: 'SV = serviço (valor fechado), PÇ = por peça, H = por hora' },
+    { id: 'passa_almoxarifado', label: 'Recebimento', tipo: 'bool', padrao: true, textoBool: 'Passa pelo almoxarifado (tem algo físico para receber)', lista: true, ajuda: 'Desmarque para software, assinatura, hospedagem e outros serviços sem entrega física: o pedido não aparece para o almoxarifado e fica com o financeiro' },
     { id: 'usinagem', label: 'Usinagem', tipo: 'bool', textoBool: 'Pede a peça que volta usinada', ajuda: 'Marque só para usinagem: no pedido aparece a peça, o material e as barras a enviar' },
     { id: 'categoria_financeira_id', label: 'Categoria financeira *', tipo: 'select', col: 2, lista: true, cadastro: false,
       opcoes: () => CATS.map(c => ({ v: c.id, n: `${c.nome}` })), ajuda: 'Para onde vai a despesa deste serviço' },

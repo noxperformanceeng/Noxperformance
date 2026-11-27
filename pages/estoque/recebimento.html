@@ -86,11 +86,13 @@ async function carregar() {
       .neq('origem', 'tiny').in('situacao', [...ABERTO, 'recebido']),
     db.from('almox_chegadas').select('*').gte('chegou_em', new Date(Date.now() - 120 * 864e5).toISOString()),
     db.rpc('almox_itens_solicitacao'), db.rpc('usuarios_nomes')]);
+  // software, assinatura, hospedagem e frete não passam pelo almoxarifado
+  let semAlmox = new Set(); try { semAlmox = new Set((((await db.rpc('pc_ids_sem_almoxarifado')).data) || []).map(Number)); } catch (e) { /* segue */ }
   if (p.error) { document.getElementById('lista').innerHTML = `<div class="rc-vazio">Não carregou: ${esc(p.error.message)}</div>`; return; }
   CHEG = c.data || []; SOL = s.data || []; USU = u.data || [];
   // pedido recebido só interessa se ainda tem algo para liberar/retirar ou foi conferido há pouco
   const recente = Date.now() - 30 * 864e5;
-  PEDS = (p.data || []).filter(x => ABERTO.includes(x.situacao) || SOL.some(y => y.pedido_id === x.id && !y.retirado_em)
+  PEDS = (p.data || []).filter(x => !semAlmox.has(Number(x.id))).filter(x => ABERTO.includes(x.situacao) || SOL.some(y => y.pedido_id === x.id && !y.retirado_em)
     || CHEG.some(k => k.pedido_id === x.id && k.conferido_em && Date.parse(k.conferido_em) > recente));
   const ids = PEDS.map(x => x.id);
   const [it, fo] = await Promise.all([

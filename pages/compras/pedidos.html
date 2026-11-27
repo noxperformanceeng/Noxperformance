@@ -634,7 +634,7 @@ function secaoPedido(r) {
   if (recsFin.length) etapas.push(`<span class="${recsFin.some(x => x.situacao_financeiro === 'devolvido') ? 'erro' : recsFin.every(x => x.situacao_financeiro === 'lancado') ? 'ok' : 'agora'}">Financeiro lança${recsFin.every(x => x.situacao_financeiro === 'lancado') ? ' ✓' : ''}</span>`);
   if (s === 'cancelado') etapas.push('<span class="erro">Cancelado</span>');
   const tits = ex.titulos[r.id] || [], recs = ex.recebimentos[r.id] || [], evs = (ex.eventos[r.id] || []).slice().reverse();
-  const podeAlt = CTX.pode('compras', 'alterar'), podeCriar = CTX.pode('compras', 'criar'), podeEntrada = podeAlt || CTX.pode('estoque', 'alterar');
+  const podeAlt = CTX.pode('compras', 'alterar'), podeCriar = CTX.pode('compras', 'criar'), podeEntrada = podeAlt || CTX.pode('estoque', 'alterar') || (CTX.pode('pagar', 'alterar') && SEM_ALMOX.has(Number(r.id)));
   const btn = (id, txt, cls = '') => `<button type="button" class="btn ${cls}" data-pc="${id}">${txt}</button>`;
   const acoes = [];
   if (EDITAVEL.includes(s) && avulsosPendentes(r).length && possoLiberar()) acoes.push(btn('liberar_avulso', 'Liberar item sem cadastro…', 'primario'));
@@ -1034,6 +1034,7 @@ async function resolverMaterial(r, pai, x, acao) {
 }
 
 /* ---------- Recebimento da NF ---------- */
+let SEM_ALMOX = new Set();   // software/assinatura/hospedagem/frete: o financeiro dá a entrada da fatura
 let RECEBER_AUTO = new URLSearchParams(location.search).get('receber') === '1';
 function abrirRecebimento(r, pai) {
   const soServico = (ex.itens[r.id] || []).length > 0 && (ex.itens[r.id] || []).every(i => i.tipo_item === 'servico_usinagem' || i.servico_id), srvIds = new Set((ex.itens[r.id] || []).filter(i => i.tipo_item === 'servico_usinagem').map(i => i.id));
@@ -1343,6 +1344,7 @@ const cfg = {
   ],
   async carregarExtra(linhas, ctx) {
     CTX = ctx;
+    try { SEM_ALMOX = new Set((((await db.rpc('pc_ids_sem_almoxarifado')).data) || []).map(Number)); } catch (e) { SEM_ALMOX = new Set(); }
     const [f, p, c, co, fo, cb, al, it, ev, rc, ti, pf, em, us, ac, fi, sv, es] = await Promise.all([
       buscarTodos(() => db.from('fornecedores').select('id, nome, nome_fantasia, cnpj, contato, telefone, email, situacao, prazo_pagamento_dias, endereco, numero, complemento, bairro, cidade, uf, cep').order('nome')),
       buscarTodos(() => db.from('produtos').select('id, codigo, descricao, unidade, unidade_compra, categoria_financeira_id, situacao, tipo, aprovacao, custo_referencia, custo_referencia_em').order('descricao')),
