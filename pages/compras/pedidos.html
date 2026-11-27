@@ -668,6 +668,7 @@ function secaoPedido(r) {
     <div class="acoes-pc">${acoes.join('')}</div>
     ${r.origem !== 'tiny' ? '<div class="secao">Solicitação de compra</div><div id="pcSol"><p class="sub" style="margin:0">Carregando…</p></div>' : ''}
     ${temUsi ? '<div class="secao">Material na usinagem</div><div id="pcMat"><p class="sub" style="margin:0">Carregando…</p></div>' : ''}
+    <div class="secao">Anexos</div><div id="pcAnx"><p class="sub" style="margin:0">Carregando…</p></div>
     <div class="secao">Contas a pagar</div>
     ${tits.length ? `<table class="lista-mini"><thead><tr><th>Documento</th><th>Vencimento</th><th>Valor</th><th>Pago</th><th>Situação</th></tr></thead><tbody>
       ${tits.map(t => `<tr><td>${CTX.pode('pagar') ? `<a href="${RAIZ}pages/financeiro/contas-pagar.html?abrir=${t.id}" style="color:var(--destaque)">${esc(t.documento || '#' + t.id)}</a>` : esc(t.documento || '#' + t.id)}
@@ -847,6 +848,50 @@ Por favor, confirme o recebimento e informe o número do pedido na nota fiscal. 
 }
 
 /* ---------- Solicitação de compra vinculada (sem ela o pedido não vai para aprovação) ---------- */
+/* ---------- Anexos do pedido: fatura/orçamento, comprovante, NF, print da compra ---------- */
+const TIPOS_ANX = { fatura: 'Fatura / orçamento', comprovante: 'Comprovante de pagamento', nota_fiscal: 'Nota fiscal', print: 'Print da compra', outro: 'Outro' };
+const nomeArq = n => String(n || 'arquivo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
+async function mostrarAnexos(m, r) {
+  const box = m.querySelector('#pcAnx'); if (!box) return;
+  const { data, error } = await db.from('pedidos_compra_anexos').select('*').eq('pedido_id', r.id).order('id');
+  if (error) { box.innerHTML = `<p class="sub erro" style="margin:0">Não carregou: ${esc(error.message)}</p>`; return; }
+  const pode = r.situacao !== 'cancelado' && CTX.pode('compras', 'criar'), ls = data || [];
+  box.innerHTML = (ls.length ? `<table class="lista-mini"><tbody>${ls.map(a => `<tr data-anx="${a.id}"><td><a href="#" data-abrir-anx style="color:var(--destaque)">📎 ${esc(a.nome)}</a></td>
+      <td>${esc(TIPOS_ANX[a.tipo] || 'Outro')}</td><td><small>${esc(usu(a.criado_por) || '')} · ${dataHoraBR(a.criado_em)}</small></td>
+      <td>${CTX.admin || (pode && a.criado_por === CTX.usuario.id) ? '<button type="button" class="rm" data-rm-anx title="Excluir este anexo">×</button>' : ''}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="sub" style="margin:0 0 6px">Nenhum anexo.</p>')
+    + (pode ? `<div class="acoes-pc"><select id="pcAnxTipo">${Object.entries(TIPOS_ANX).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+      <button type="button" class="btn" id="pcAnxAdd" title="PDF, imagem, planilha… (até 20 MB cada)">📎 Anexar arquivo…</button></div>` : '');
+  box.querySelectorAll('[data-abrir-anx]').forEach(el => el.onclick = async e => { e.preventDefault();
+    const a = ls.find(x => x.id === Number(el.closest('tr').dataset.anx));
+    const { data: s, error: er } = await db.storage.from('compras').createSignedUrl(a.caminho, 3600);
+    if (er || !s?.signedUrl) return aviso('Não abriu: ' + (er?.message || 'arquivo não encontrado'), true);
+    window.open(s.signedUrl, '_blank'); });
+  box.querySelectorAll('[data-rm-anx]').forEach(b => b.onclick = async () => {
+    const a = ls.find(x => x.id === Number(b.closest('tr').dataset.anx)); if (!a || !confirm(`Excluir o anexo "${a.nome}"?`)) return;
+    const { data: apg, error: er } = await db.from('pedidos_compra_anexos').delete().eq('id', a.id).select('id');
+    if (er || !apg?.length) return aviso('Não excluiu: ' + (er?.message || 'só quem anexou ou o administrador exclui'), true);
+    aviso('Anexo excluído'); mostrarAnexos(m, r); });
+  box.querySelector('#pcAnxAdd')?.addEventListener('click', () => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true;
+    inp.accept = '.pdf,.xlsx,.xls,.xlsm,.ods,.csv,.xml,.doc,.docx,image/*';
+    inp.onchange = async () => {
+      const tipo = box.querySelector('#pcAnxTipo').value; let n = 0;
+      for (const f of inp.files) {
+        if (f.size > 20 * 1024 * 1024) { aviso(`${f.name}: maior que 20 MB`, true); continue; }
+        const caminho = `pedidos/${r.id}/${Date.now()}-${nomeArq(f.name)}`;
+        const up = await db.storage.from('compras').upload(caminho, f, { contentType: f.type || 'application/octet-stream', upsert: false });
+        if (up.error) { aviso(`${f.name}: não subiu (${up.error.message})`, true); continue; }
+        const { error: er } = await db.from('pedidos_compra_anexos').insert({ pedido_id: r.id, tipo, nome: f.name, caminho, mime: f.type || null, tamanho: f.size });
+        if (er) { aviso(`${f.name}: não registrou (${er.message})`, true); continue; }
+        n++;
+      }
+      if (n) { aviso(`${n} anexo(s) incluído(s)`); mostrarAnexos(m, r); }
+    };
+    inp.click();
+  });
+}
+
 async function mostrarSolicitacoes(m, r) {
   const box = m.querySelector('#pcSol'); if (!box) return;
   const { data, error } = await db.rpc('pc_solicitacoes', { p_pedido: r.id });
@@ -1365,6 +1410,7 @@ const cfg = {
     if (r.id && r.origem !== 'tiny') mostrarPendencias(m, r);
     if (r.id) mostrarMaterial(m, r);
     if (r.id && r.origem !== 'tiny') mostrarSolicitacoes(m, r);
+    if (r.id) mostrarAnexos(m, r);
     const editavel = !r.id || EDITAVEL.includes(r.situacao), podeEd = r.id ? ctx.pode('compras', 'alterar') : ctx.pode('compras', 'criar');
     const mostrarRec = ['aprovado', 'enviado', 'recebido_parcial', 'recebido'].includes(r.situacao);
     const box = document.createElement('div');
