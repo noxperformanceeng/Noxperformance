@@ -51,6 +51,7 @@
       <select id="perfilEscolhido" style="max-width:280px"></select>
       <button class="btn primario" id="salvarPerfil">Salvar perfil</button>
       <button class="btn" id="novoPerfil" type="button">+ Novo perfil</button>
+      <input id="buscaTela" class="busca" type="search" placeholder="Buscar tela: ex. usuário, nota fiscal" style="margin-left:auto;max-width:280px">
     </div>
     <p class="sub" style="margin:0 0 8px;font-size:12.5px">Escolha o perfil, marque o que cada tela permite e salve. Quem tem o perfil recebe essas telas; telas a mais ou a menos para uma pessoa só ficam na aba Usuários (botão de editar do usuário).<br><b>Níveis:</b> Só ver · Ver e incluir novos (não mexe nos que já existem) · Ver, incluir e alterar (não inativa nem exclui) · Tudo (inclusive inativar). <b>Excluir</b> registros: só o master — os demais inativam.</p>
     <div class="cartao tabela-rolagem">
@@ -95,6 +96,7 @@ const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, inc
     document.getElementById('ferrUsuarios').hidden = b.dataset.aba !== 'usuarios';
   }));
   ligarBusca('busca', desenharUsuarios);
+  ligarBusca('buscaTela', () => filtrarLinhas(document.getElementById('aba-perfis'), document.getElementById('buscaTela').value), 120);
   ['fPerfil', 'fAtivo', 'fExtras', 'fDe', 'fAte'].forEach(id => document.getElementById(id).addEventListener('change', desenharUsuarios));
   ligarPainelFiltros(document.getElementById('conteudo'), 'usuarios', desenharUsuarios);
   botoesRelatorio('relUsuarios', () => ({
@@ -201,7 +203,7 @@ function editarUsuario(id) {
     const base = u.perfil_id === 'admin' ? 'editar' : doPerfil(m.id);
     const padrao = 'Padrão do perfil: ' + (base ? NIVEL[base] : 'sem acesso');
     const a = ajuste(m.id);
-    return `<tr><td style="color:var(--texto-suave)">${GRUPOS[m.grupo]}</td><td>${esc(m.nome)}</td><td>
+    return `<tr data-busca="${esc(GRUPOS[m.grupo] + ' ' + m.nome)}"><td style="color:var(--texto-suave)">${GRUPOS[m.grupo]}</td><td>${esc(m.nome)}</td><td>
       <select data-tela="${m.id}">
         <option value="">${padrao}</option>
         <option value="ver"${a === 'ver' ? ' selected' : ''}>Liberar: só ver</option>
@@ -216,6 +218,7 @@ function editarUsuario(id) {
     <h2>${esc(u.email)}</h2>
     <div class="campo"><label>Nome</label><input id="mNome" value="${esc(u.nome)}"></div>
     <div class="campo"><label>Situação</label><select id="mAtivo"><option value="1"${u.ativo ? ' selected' : ''}>Ativo</option><option value="0"${u.ativo ? '' : ' selected'}>Inativo (não entra no sistema)</option></select></div>
+    <input id="mBusca" class="busca" type="search" placeholder="Buscar tela ou ação: ex. usuário, nota fiscal, ponto" style="width:100%;margin:4px 0 10px">
     <label>Telas deste usuário — perfil base: <b>${esc(nomePerfil)}</b></label>
     <div style="max-height:40vh;overflow:auto;margin-bottom:12px"><table>${linhas}</table></div>
     ${acoes.length ? `<label>Ações sensíveis — além de ver/editar a tela (padrão: só o gestor)</label>
@@ -223,12 +226,16 @@ function editarUsuario(id) {
       const doPerf = u.perfil_id === 'admin' || perfilAcoes.some(x => x.perfil_id === u.perfil_id && x.acao_id === a.id);
       const aj = usuarioAcoes.find(x => x.usuario_id === id && x.acao_id === a.id);
       const v = aj ? (aj.permitido ? 'sim' : 'nao') : '';
-      return `<tr><td style="color:var(--texto-suave)">${esc(modulos.find(m => m.id === a.modulo_id)?.nome || '')}</td><td>${esc(a.nome)}<small class="sub2">${esc(a.descricao || '')}</small></td><td>
+      const tela = modulos.find(m => m.id === a.modulo_id);
+      return `<tr data-busca="${esc([GRUPOS[tela?.grupo], tela?.nome, a.nome, a.descricao].filter(Boolean).join(' '))}"><td style="color:var(--texto-suave)">${esc(tela?.nome || '')}</td><td>${esc(a.nome)}<small class="sub2">${esc(a.descricao || '')}</small></td><td>
         <select data-acao="${a.id}" ${ctx.admin ? '' : 'disabled'}><option value="">Padrão do perfil: ${doPerf ? 'pode' : 'não pode'}</option>
         <option value="sim"${v === 'sim' ? ' selected' : ''}>Liberar para esta pessoa</option><option value="nao"${v === 'nao' ? ' selected' : ''}>Bloquear para esta pessoa</option></select></td></tr>`;
     }).join('')}</table></div>` : ''}
     <div class="acoes"><button class="btn" id="mLink" style="margin-right:auto" title="Gera um link para a pessoa criar ou trocar a senha">Link de nova senha</button><button class="btn" id="mCancelar">Cancelar</button><button class="btn primario" id="mSalvar">Salvar</button></div>`);
   modal.querySelector('.modal').style.maxWidth = '640px';
+  const mBusca = modal.querySelector('#mBusca');
+  ligarBusca(mBusca, () => filtrarLinhas(modal, mBusca.value), 120);
+  mBusca.focus();
   modal.querySelector('#mCancelar').onclick = () => modal.remove();
   modal.querySelector('#mLink').onclick = async e => {
     e.target.disabled = true;
@@ -344,7 +351,7 @@ function desenharMatriz() {
   document.getElementById('matrizPerfil').onchange = () => { matrizMexida = true; };
   document.getElementById('matrizPerfil').innerHTML = modulos.map(m => {
     const n = permissoes.find(p => p.perfil_id === perfil && p.modulo_id === m.id)?.nivel || '';
-    return `<tr><td style="color:var(--texto-suave)">${GRUPOS[m.grupo]}</td><td>${esc(m.nome)}</td><td>
+    return `<tr data-busca="${esc(GRUPOS[m.grupo] + ' ' + m.nome)}"><td style="color:var(--texto-suave)">${GRUPOS[m.grupo]}</td><td>${esc(m.nome)}</td><td>
       <select data-mod="${m.id}" ${ctx.admin ? '' : 'disabled'}>
         <option value="">Sem acesso</option>
         <option value="ver"${n === 'ver' ? ' selected' : ''}>Só ver</option>
@@ -353,6 +360,22 @@ function desenharMatriz() {
         <option value="editar"${n === 'editar' ? ' selected' : ''}>Tudo (inclusive inativar)</option>
       </select></td></tr>`;
   }).join('');
+  filtrarLinhas(document.getElementById('matrizPerfil'), document.getElementById('buscaTela').value);
+}
+
+// Busca de tela/ação dentro das listas de permissões: esconde as linhas que não combinam (por setor, nome da tela,
+// nome e descrição da ação). Palavras em qualquer ordem, sem acento: "usuario" acha "Usuários e acessos";
+// tolera singular/plural: "nota fiscal" acha "Notas fiscais".
+function filtrarLinhas(caixa, termo) {
+  const palavras = semAcento(termo).split(/\s+/).filter(Boolean);
+  const combina = txt => { const t = semAcento(txt); return palavras.every(p => t.includes(p) || (p.length >= 5 && t.includes(p.slice(0, -1)))); };
+  caixa.querySelectorAll('tr[data-busca]').forEach(tr => { tr.hidden = !combina(tr.dataset.busca); });
+  caixa.querySelectorAll('table').forEach(t => {
+    const nada = !t.querySelector('tr[data-busca]:not([hidden])');
+    let v = t.querySelector('tr.sem-resultado');
+    if (nada && !v) { v = document.createElement('tr'); v.className = 'sem-resultado'; v.innerHTML = '<td colspan="3" class="vazio">Nada encontrado com essa busca</td>'; (t.tBodies[0] || t).appendChild(v); }
+    if (v) v.hidden = !nada;
+  });
 }
 
 async function salvarPerfil() {
