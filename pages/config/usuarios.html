@@ -80,7 +80,7 @@
 <script src="../../assets/js/auth.js?v=202611270847"></script>
 <script src="../../assets/js/layout.js?v=202611270847"></script>
 <script>
-let ctx, perfis = [], modulos = [], permissoes = [], ajustes = [], usuarios = [];
+let ctx, gestor = false, perfis = [], modulos = [], permissoes = [], ajustes = [], usuarios = [];
 let acoes = [], perfilAcoes = [], usuarioAcoes = [];   // ações sensíveis (estornar, cancelar…), por perfil e por pessoa
 const GRUPOS = { cadastros: 'Cadastros', comercial: 'Comercial', suprimentos: 'Suprimentos', producao: 'Produção', engenharia: 'Engenharia', financeiro: 'Financeiro', rh: 'RH', indicadores: 'Indicadores', config: 'Configurações' };
 const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, incluir e alterar', editar: 'Tudo (inclusive inativar)', nenhum: 'Bloqueado' };
@@ -88,6 +88,9 @@ const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, inc
 (async () => {
   ctx = await iniciarTela();
   if (!ctx) return;
+  // Gestor de usuários: administrador ou "Usuários e acessos" no nível Tudo (SQL 185). Perfis, empresas e ações
+  // sensíveis continuam só com o administrador; o gestor não mexe em administradores nem em si mesmo.
+  gestor = ctx.admin || ctx.niveis.usuarios === 'editar' || ctx.niveis.usuarios === 'total';
   if (!ctx.admin) document.querySelectorAll('.btn.primario').forEach(b => b.hidden = true);
 
   document.querySelectorAll('.aba').forEach(b => b.addEventListener('click', () => {
@@ -105,11 +108,11 @@ const NIVEL = { ver: 'Só ver', criar: 'Ver e incluir novos', alterar: 'Ver, inc
     linhas: usuariosFiltrados().map(u => [u.nome, u.email, perfis.find(p => p.id === u.perfil_id)?.nome || 'Sem perfil',
       resumoAjustes(u.id), !u.ativo ? 'Inativo' : u.sem_acesso ? 'Aguardando 1º acesso' : 'Ativo', dataBR(u.criado_em)])
   }));
-  const bnu = document.getElementById('novoUsuario'); bnu.hidden = !ctx.admin; bnu.onclick = novoUsuario;
+  const bnu = document.getElementById('novoUsuario'); bnu.hidden = !gestor; bnu.onclick = novoUsuario;
   await carregar();
   // Vindo do cadastro de funcionário: abre direto o usuário
   const alvo = new URLSearchParams(location.search).get('usuario');
-  if (alvo && ctx.admin && usuarios.some(u => u.id === alvo)) editarUsuario(alvo);
+  if (alvo && usuarios.some(u => u.id === alvo && podeGerir(u))) editarUsuario(alvo);
 })();
 
 // Situação: Inativo (bloqueado) · Aguardando 1º acesso (ainda não criou a senha/entrou) · Ativo
@@ -143,6 +146,8 @@ async function carregar() {
 }
 
 /* ---------- USUÁRIOS ---------- */
+const podeGerir = u => ctx.admin || (gestor && u.id !== ctx.usuario.id && u.perfil_id !== 'admin');
+const perfisQuePosso = () => perfis.filter(p => ctx.admin || p.id !== 'admin');
 function resumoAcoes(id) {
   const lib = usuarioAcoes.filter(x => x.usuario_id === id && x.permitido).map(x => acoes.find(a => a.id === x.acao_id)?.nome).filter(Boolean);
   return lib.length ? ` · ações: ${lib.join(', ')}` : '';
@@ -169,17 +174,17 @@ function desenharUsuarios() {
   const fp = document.getElementById('fPerfil');
   if (fp.options.length <= 2) fp.innerHTML += perfis.map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('');
   const lista = usuariosFiltrados();
-  const opcoes = sel => '<option value="">— sem perfil —</option>' + perfis.map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc(p.nome)}</option>`).join('');
+  const opcoes = sel => '<option value="">— sem perfil —</option>' + (sel === 'admin' ? perfis : perfisQuePosso()).map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc(p.nome)}</option>`).join('');
   document.getElementById('listaUsuarios').innerHTML = lista.length ? lista.map(u => {
     const resumo = resumoAjustes(u.id) + esc(resumoAcoes(u.id));
     return `<tr>
       <td>${esc(u.nome)}</td>
       <td>${esc(u.email)}</td>
-      <td><select data-perfil="${u.id}" ${ctx.admin ? '' : 'disabled'}>${opcoes(u.perfil_id)}</select></td>
+      <td><select data-perfil="${u.id}" ${podeGerir(u) ? '' : 'disabled'}>${opcoes(u.perfil_id)}</select></td>
       <td>${resumo}</td>
       <td>${situacaoUsuario(u)}</td>
       <td>${dataBR(u.criado_em)}</td>
-      <td style="text-align:right">${ctx.admin ? `<button class="btn discreto" data-editar="${u.id}">Editar</button>` : ''}</td></tr>`;
+      <td style="text-align:right">${podeGerir(u) ? `<button class="btn discreto" data-editar="${u.id}">Editar</button>` : ''}</td></tr>`;
   }).join('') : '<tr><td colspan="7" class="vazio">Nenhum usuário com esses filtros.</td></tr>';
 
   document.getElementById('contagem').textContent = `${lista.length} usuário${lista.length === 1 ? '' : 's'}`;
@@ -221,7 +226,7 @@ function editarUsuario(id) {
     <input id="mBusca" class="busca" type="search" placeholder="Buscar tela ou ação: ex. usuário, nota fiscal, ponto" style="width:100%;margin:4px 0 10px">
     <label>Telas deste usuário — perfil base: <b>${esc(nomePerfil)}</b></label>
     <div style="max-height:40vh;overflow:auto;margin-bottom:12px"><table>${linhas}</table></div>
-    ${acoes.length ? `<label>Ações sensíveis — além de ver/editar a tela (padrão: só o gestor)</label>
+    ${acoes.length ? `<label>Ações sensíveis — além de ver/editar a tela (padrão: só o gestor)${ctx.admin ? '' : ' · só o administrador altera'}</label>
     <div style="max-height:24vh;overflow:auto;margin-bottom:12px"><table>${acoes.map(a => {
       const doPerf = u.perfil_id === 'admin' || perfilAcoes.some(x => x.perfil_id === u.perfil_id && x.acao_id === a.id);
       const aj = usuarioAcoes.find(x => x.usuario_id === id && x.acao_id === a.id);
@@ -276,7 +281,7 @@ function novoUsuario() {
   const m = abrirModal(`<h2>Novo usuário</h2>
     <div class="campo"><label>Nome <span class="obrig">*</span></label><input id="nuNome" placeholder="como aparece no sistema"></div>
     <div class="campo"><label>E-mail <span class="obrig">*</span></label><input id="nuEmail" type="email" placeholder="e-mail que a pessoa usa para entrar"></div>
-    <div class="campo"><label>Perfil</label><select id="nuPerfil"><option value="">— sem perfil (não vê nada até definir) —</option>${perfis.map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></div>
+    <div class="campo"><label>Perfil</label><select id="nuPerfil"><option value="">— sem perfil (não vê nada até definir) —</option>${perfisQuePosso().map(p => `<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></div>
     <p class="sub" style="margin:6px 0 0">Depois de criar, aparece um link para a pessoa criar a própria senha. Telas a mais ou a menos para ela: botão Editar na lista.</p>
     <div class="acoes" style="margin-top:14px"><button class="btn" id="nuX">Cancelar</button><button class="btn primario" id="nuOk">Criar usuário</button></div>`);
   m.querySelector('.modal').classList.add('form');
