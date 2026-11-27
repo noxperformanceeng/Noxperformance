@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mensagens pós-venda do ML · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611271028">
+<style>
+  .chat { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 12px; align-items: start; }
+  @media (max-width: 860px) { .chat { grid-template-columns: 1fr; } }
+  .convs { max-height: calc(100vh - 230px); overflow: auto; padding: 0; }
+  .conv { padding: 10px 12px; border-bottom: 1px solid var(--linha); cursor: pointer; }
+  .conv:hover { background: var(--fundo-suave, #f6f7f8); }
+  .conv.sel { background: #fffbe6; border-left: 3px solid #f5c400; padding-left: 9px; }
+  .conv .nome { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  .conv .nome small { font-weight: 400; color: var(--texto-suave); white-space: nowrap; }
+  .conv .ult { font-size: 12.5px; color: var(--texto-suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv.esp .nome::before { content: '●'; color: #c62828; margin-right: 4px; }
+  .painel { padding: 0; display: flex; flex-direction: column; min-height: 420px; }
+  .painel .cab { padding: 10px 14px; border-bottom: 1px solid var(--linha); font-size: 13px; line-height: 1.6; }
+  .painel .cab b { font-size: 15px; }
+  .msgs { padding: 12px 14px; max-height: calc(100vh - 470px); min-height: 200px; overflow: auto; display: flex; flex-direction: column; gap: 6px; background: #fafafa; }
+  .msg { max-width: 78%; padding: 7px 10px; border-radius: 10px; font-size: 13.5px; line-height: 1.35; white-space: pre-wrap; word-break: break-word; }
+  .msg small { display: block; font-size: 10.5px; opacity: .65; margin-top: 2px; }
+  .msg.cli { align-self: flex-start; background: #fff; border: 1px solid var(--linha); }
+  .msg.loja { align-self: flex-end; background: #fff6cc; }
+  .resp { padding: 10px 14px; border-top: 1px solid var(--linha); }
+  .resp textarea { width: 100%; min-height: 84px; }
+  .conta-ml { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 4px; color: #333; background: #f5c400; }
+  .cont { font-size: 12px; color: var(--texto-suave); margin-right: auto; align-self: center; }
+  .cont.passou { color: #c62828; font-weight: 600; }
+  .buscar-ped { display: flex; gap: 6px; align-items: center; }
+  .buscar-ped input { width: 170px; }
+</style>
+</head>
+<body data-modulo="mensagens_ml" data-titulo="Mensagens pós-venda do ML">
+<main id="conteudo">
+  <div class="cab-tela"><div><h1>Mensagens pós-venda do Mercado Livre</h1>
+    <p class="sub">Mensagens que os compradores mandam depois da compra, nas contas ML 30 e ML 37. Chegam sozinhas a cada 3 minutos. Em vermelho, quem está esperando resposta. Escreva e clique em Enviar: vai direto para a conversa do pedido no Mercado Livre (máximo 350 caracteres).</p></div>
+  </div>
+  <div class="barra-ferr">
+    <div class="abas" id="abas"></div>
+    <div class="ferr">
+      <input id="fBusca" class="busca" type="search" placeholder="Buscar: comprador, mensagem, pedido, produto…">
+      <span class="buscar-ped"><input id="fPedido" type="search" placeholder="Nº do pedido no ML"><button class="btn fino" type="button" id="btnPedido" title="Traz a conversa de uma venda, mesmo que já tenha sido lida no Mercado Livre">Buscar conversa</button></span>
+    </div>
+  </div>
+  <div class="chat">
+    <div class="cartao convs" id="convs"><div class="vazio" style="padding:14px">Carregando…</div></div>
+    <div class="cartao painel" id="painel"><div class="vazio" style="padding:14px">Escolha uma conversa.</div></div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611271028"></script>
+<script src="../../assets/js/ui.js?v=202611271028"></script>
+<script src="../../assets/js/auth.js?v=202611271028"></script>
+<script src="../../assets/js/layout.js?v=202611271028"></script>
+<script>
+/* =====================================================================
+   Mensagens pós-venda do Mercado Livre
+   · ml-mensagens (a cada 3 min) grava conversas com mensagem não lida e as ativas dos últimos dias.
+   · Enviar: ml_mensagem_responder grava o texto e o servidor envia ao ML; a tela mostra "enviando" e, em tempo
+     real, a mensagem aparece na conversa (ou o erro do ML).
+   · Resolvida sem resposta: ml_mensagem_resolver tira da fila e marca como lida no ML.
+   · Buscar conversa: ml_mensagem_buscar traz a conversa de uma venda pelo nº do pedido.
+   · Rascunhos ficam guardados por conversa mesmo quando a tela se atualiza sozinha.
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const LIMITE = 350;
+const ABAS = [{ v: 'esp', n: 'Aguardando resposta' }, { v: '', n: 'Todas' }];
+const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const semAc = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const MODERACAO = { IN_MODERATION: 'em análise pelo ML', REJECTED: 'bloqueada pelo ML', MODERATED: 'moderada pelo ML' };
+let CTX = null, CONVS = [], MSGS = [], CANAIS = new Map(), aba = 'esp', sel = null, esperando = null;
+const RASC = new Map();   // rascunho por conversa
+
+function saudacao() { const h = new Date().getHours(); return (h < 12 ? 'Ótimo dia' : h < 18 ? 'Ótima tarde' : 'Ótima noite') + ', tudo bom? '; }
+
+async function carregar() {
+  const [c, cv] = await Promise.all([
+    buscarTodos(() => db.from('ml_conversas').select('*').order('ultima_msg_em', { ascending: false, nullsFirst: false })),
+    db.from('canais_venda').select('id, nome')
+  ]);
+  CONVS = c; CANAIS = new Map((cv.data || []).map(x => [x.id, x]));
+  if (esperando && CONVS.some(x => x.id === esperando)) { sel = esperando; esperando = null; aba = ''; }
+  if (sel) await carregarMsgs();
+  desenhar();
+}
+async function carregarMsgs() {
+  const { data, error } = await db.from('ml_mensagens').select('*').eq('conversa_id', sel).order('enviada_em').limit(300);
+  if (!error) MSGS = data || [];
+}
+
+function filtradas() {
+  const b = semAc($('#fBusca').value).split(/\s+/).filter(Boolean);
+  return CONVS.filter(c => (!aba || c.aguardando) && b.every(w => semAc([c.comprador_nome, c.ultima_msg_texto, c.order_id, c.id, c.produto].join(' ')).includes(w)));
+}
+
+function desenhar() {
+  const n = { esp: CONVS.filter(c => c.aguardando).length, '': CONVS.length };
+  $('#abas').innerHTML = ABAS.map(x => `<button type="button" class="aba${aba === x.v ? ' ativa' : ''}" data-aba="${x.v}">${x.n} <span class="n">${n[x.v]}</span></button>`).join('');
+  $('#abas').querySelectorAll('button').forEach(b => b.onclick = () => { aba = b.dataset.aba; desenhar(); });
+  const l = filtradas();
+  $('#convs').innerHTML = l.length ? l.map(c => `<div class="conv${c.id === sel ? ' sel' : ''}${c.aguardando ? ' esp' : ''}" data-c="${esc(c.id)}">
+      <div class="nome"><span>${esc(c.comprador_nome || 'Comprador')}</span><small>${quando(c.ultima_msg_em)}</small></div>
+      <div class="ult">${c.resposta_pendente && !c.resposta_erro ? '⏳ enviando… ' : ''}${c.situacao === 'blocked' ? '⛔ ' : ''}${esc(c.ultima_msg_texto || c.produto || '')}</div></div>`).join('')
+    : `<div class="vazio" style="padding:14px">${aba ? 'Nenhuma conversa esperando resposta. 👍' : 'Nenhuma conversa ainda.'}</div>`;
+  $('#convs').querySelectorAll('[data-c]').forEach(d => d.onclick = async () => { guardarRascunho(); sel = d.dataset.c; await carregarMsgs(); desenhar(); });
+  painel();
+}
+
+function guardarRascunho() { const t = $('#txResp'); if (t && sel) RASC.set(sel, t.value); }
+
+function contador() {
+  const t = $('#txResp'), k = $('#cont'); if (!t || !k) return;
+  const n = t.value.trim().length; k.textContent = `${n} de ${LIMITE} caracteres`; k.classList.toggle('passou', n > LIMITE);
+}
+
+function painel() {
+  const c = CONVS.find(x => x.id === sel);
+  if (!c) { $('#painel').innerHTML = '<div class="vazio" style="padding:14px">Escolha uma conversa.</div>'; return; }
+  const conta = CANAIS.get(c.canal_id), pode = CTX.pode('mensagens_ml', 'alterar'), bloq = c.situacao === 'blocked';
+  const temComprador = MSGS.some(m => !m.de_loja);
+  const rasc = RASC.has(c.id) ? RASC.get(c.id) : (c.aguardando ? saudacao() : '');
+  const venda = c.order_id ? `<a href="https://www.mercadolivre.com.br/vendas/${encodeURIComponent(c.order_id)}/detalhe" target="_blank" rel="noopener">${esc(c.order_id)}</a>` : esc(c.id);
+  $('#painel').innerHTML = `<div class="cab"><b>${esc(c.comprador_nome || 'Comprador')}</b> <span class="conta-ml">${esc(conta?.nome || 'Mercado Livre')}</span>
+      · pedido ${venda}${c.produto ? ` · ${esc(c.produto)}` : ''}
+      ${c.reclamacao_id ? ` · <span class="tg alerta">em reclamação ${esc(c.reclamacao_id)}</span>` : ''}
+      ${bloq ? `<br><span class="tg erro">Conversa bloqueada pelo ML${c.subsituacao ? `: ${esc(c.subsituacao)}` : ''}</span>` : ''}
+      ${c.resolvida_em && !c.aguardando ? `<br><small style="color:var(--texto-suave)">Resolvida sem resposta em ${quando(c.resolvida_em)}</small>` : ''}</div>
+    <div class="msgs" id="msgs">${MSGS.map(m => `<div class="msg ${m.de_loja ? 'loja' : 'cli'}">${esc(m.texto)}${(m.anexos || []).length ? `\n📎 ${m.anexos.length} anexo(s) — veja no Mercado Livre` : ''}
+        <small>${m.de_loja ? (m.origem === 'sistema' ? 'Loja · pelo sistema' : 'Loja') : 'Comprador'} · ${quando(m.enviada_em)}${m.moderacao ? ` · <b>${esc(MODERACAO[m.moderacao] || m.moderacao)}</b>` : ''}</small></div>`).join('') || '<div class="vazio">Sem mensagens nesta venda.</div>'}</div>
+    ${pode ? `<div class="resp">
+      ${c.resposta_erro ? `<div style="color:#c62828;font-size:13px;margin-bottom:6px">Não enviou: ${esc(c.resposta_erro)}</div>` : ''}
+      ${bloq ? '<div class="vazio">O Mercado Livre não deixa responder esta conversa.</div>'
+        : !temComprador ? '<div class="vazio">O comprador ainda não escreveu. Para começar a conversa, use o Mercado Livre (ele pede o motivo do contato).</div>'
+        : `<textarea id="txResp" data-livre maxlength="1000" placeholder="Escreva a resposta ao comprador">${esc(rasc)}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap">
+        <span class="cont" id="cont"></span>
+        ${c.aguardando ? '<button class="btn discreto fino" type="button" id="btnResolver" title="Tira da fila sem responder (ex.: o comprador só agradeceu)">Resolvida sem resposta</button>' : ''}
+        <button class="btn primario" type="button" id="btnEnviar"${c.resposta_pendente && !c.resposta_erro ? ' disabled' : ''}>${c.resposta_pendente && !c.resposta_erro ? 'Enviando…' : 'Enviar'}</button>
+      </div>`}</div>` : ''}`;
+  const ms = $('#msgs'); ms.scrollTop = ms.scrollHeight;
+  if (!pode || bloq || !temComprador) return;
+  contador();
+  $('#txResp').oninput = () => { RASC.set(c.id, $('#txResp').value); contador(); };
+  const br = $('#btnResolver');
+  if (br) br.onclick = async () => {
+    const { error } = await db.rpc('ml_mensagem_resolver', { p_id: c.id });
+    aviso(error ? error.message : 'Conversa tirada da fila', !!error);
+  };
+  $('#btnEnviar').onclick = async () => {
+    const texto = semCaps($('#txResp').value.trim());
+    if (!texto || texto === saudacao().trim()) return aviso('Escreva a resposta', true);
+    if (texto.length > LIMITE) return aviso(`O Mercado Livre aceita no máximo ${LIMITE} caracteres (a resposta tem ${texto.length})`, true);
+    if (/(whats|zap|wpp|\(\d{2}\)\s*\d|\b\d{4,5}-\d{4}\b|@[a-z0-9-]+\.[a-z]|instagram|facebook|https?:\/\/(?!(www\.)?mercadoli[vb]re))/i.test(texto) && !confirm('A resposta parece ter telefone, e-mail, rede social ou link de fora do ML, o que o Mercado Livre bloqueia. Enviar mesmo assim?')) return;
+    $('#btnEnviar').disabled = true;
+    const { error } = await db.rpc('ml_mensagem_responder', { p_id: c.id, p_texto: texto });
+    if (error) { $('#btnEnviar').disabled = false; return aviso(error.message, true); }
+    RASC.delete(c.id); aviso('Enviando para o Mercado Livre…');
+  };
+}
+
+async function buscarPedido() {
+  const num = $('#fPedido').value.trim(); if (!num) return aviso('Informe o número do pedido do Mercado Livre', true);
+  const { data, error } = await db.rpc('ml_mensagem_buscar', { p_numero: num });
+  if (error) return aviso(error.message, true);
+  esperando = data;
+  if (CONVS.some(x => x.id === data)) { await carregar(); }
+  aviso('Buscando a conversa no Mercado Livre: aparece em alguns segundos');
+}
+
+(async () => {
+  CTX = await iniciarTela(); if (!CTX) return;
+  ligarBusca($('#fBusca'), desenhar);
+  $('#btnPedido').onclick = buscarPedido;
+  $('#fPedido').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); buscarPedido(); } });
+  window.addEventListener('aba-ativa', carregar);
+  await carregar();
+  if (!sel) { const p = filtradas()[0]; if (p) { sel = p.id; await carregarMsgs(); desenhar(); } }
+})();
+</script>
+</body>
+</html>
