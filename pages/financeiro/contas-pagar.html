@@ -229,14 +229,14 @@ function montarParcelamento(m) {
   });
 }
 
-// No título já lançado: as outras parcelas da mesma compra (link para abrir cada uma)
+// No título já lançado: as outras parcelas da mesma compra (link para abrir cada uma) e o total da compra
 function htmlParcelasGrupo(r) {
-  if (!r.grupo_parcelas) return '';
-  const ps = LINHAS.filter(x => x.grupo_parcelas === r.grupo_parcelas).sort((a, b) => (a.parcela || 0) - (b.parcela || 0));
+  const ps = irmasDe(r).sort((a, b) => (parcelaDe(a)[0] || 0) - (parcelaDe(b)[0] || 0));
   if (ps.length < 2) return '';
-  return `<div class="secao">Parcelas desta compra · ${ps.length}</div><table class="lista-mini"><thead><tr><th>Parcela</th><th>Emissão</th><th>Vencimento</th><th>Valor</th><th>Situação</th></tr></thead><tbody>
-    ${ps.map(x => `<tr${x.id === r.id ? ' style="font-weight:600"' : ''}><td>${x.id === r.id ? `${x.parcela}/${x.parcelas} (este)` : `<a href="?abrir=${x.id}" style="color:var(--destaque)">${x.parcela}/${x.parcelas}</a>`}</td>
-      <td>${dataCurta(x.data_emissao)}</td><td>${dataCurta(x.data_vencimento)}</td><td class="num">${reais(x.valor)}</td><td>${cfg.campos.find(c => c.id === 'situacao').listaHtml(x)}</td></tr>`).join('')}</tbody></table>`;
+  const tot = ps.reduce((s, x) => s + Number(x.valor || 0), 0), pago = ps.reduce((s, x) => s + Number(x.valor_pago || 0), 0);
+  return `<div class="secao">Parcelas desta compra · ${ps.length} · total ${reais(tot)}${pago > 0.009 ? ` · pago ${reais(pago)} · falta ${reais(tot - pago)}` : ''}</div><table class="lista-mini"><thead><tr><th>Parcela</th><th>Emissão</th><th>Vencimento</th><th>Valor</th><th>Situação</th></tr></thead><tbody>
+    ${ps.map(x => { const [pc, pcs] = parcelaDe(x); return `<tr${x.id === r.id ? ' style="font-weight:600"' : ''}><td>${x.id === r.id ? `${pc}/${pcs} (este)` : `<a href="?abrir=${x.id}" style="color:var(--destaque)">${pc}/${pcs}</a>`}</td>
+      <td>${dataCurta(x.data_emissao)}</td><td>${dataCurta(x.data_vencimento)}</td><td class="num">${reais(x.valor)}</td><td>${cfg.campos.find(c => c.id === 'situacao').listaHtml(x)}</td></tr>`; }).join('')}</tbody></table>`;
 }
 
 // Outros títulos em aberto (sem pagamento) com o mesmo nome de fornecedor do Tiny e ainda sem cadastro
@@ -244,6 +244,22 @@ function htmlParcelasGrupo(r) {
 const parcelaDe = r => { if (r.parcela && r.parcelas) return [r.parcela, r.parcelas];
   const m = r.origem === 'importacao' && String(r.descricao || '').match(/parcela\s*\(?\s*(\d{1,3})\s*\/\s*(\d{1,3})/i);
   return m && +m[1] >= 1 && +m[1] <= +m[2] ? [+m[1], +m[2]] : []; };
+// Parcelas da mesma compra: mesmo grupo de parcelas (lançado parcelado), mesmo pedido de compra,
+// ou (importados do Tiny) mesmo fornecedor + documento (ou nº da NF/ordem de compra no histórico) + nº de parcelas
+const refCompra = x => x.documento || (String(x.descricao || '').match(/(?:NF|ordem de compra|pedido)\s*n?[ºo°.]?\s*(\d{2,})/i) || [])[1] || '';
+const chaveIrma = x => x.grupo_parcelas ? 'g' + x.grupo_parcelas
+  : x.pedido_compra_id ? `p${x.pedido_compra_id}|${!!x.projecao}|${!!x.origem_ref?.antecipado}`
+  : refCompra(x) ? `d${x.fornecedor_id || x.origem_ref?.fornecedor_tiny || ''}|${refCompra(x)}|${x.origem}|${parcelaDe(x)[1]}` : 'i' + x.id;
+let IRM = { base: null, mapa: new Map() };   // índice refeito só quando a lista recarrega
+const irmasDe = r => { if (!(parcelaDe(r)[1] > 1)) return [];
+  if (IRM.base !== LINHAS) { const m = new Map();
+    LINHAS.forEach(x => { if (x.situacao === 'cancelado') return; const k = chaveIrma(x); (m.get(k) || m.set(k, []).get(k)).push(x); });
+    IRM = { base: LINHAS, mapa: m }; }
+  const l = IRM.mapa.get(chaveIrma(r)) || []; return l.some(x => x.id === r.id) ? l : [...l, r]; };
+// Total da compra parcelada para a lista; se faltar alguma parcela no sistema, estima (valor × nº de parcelas)
+const totalCompra = r => { const n = parcelaDe(r)[1]; if (!(n > 1)) return '';
+  const ps = irmasDe(r), t = ps.length === n ? ps.reduce((s, x) => s + Number(x.valor || 0), 0) : Number(r.valor || 0) * n;
+  return `<small class="sub2" title="Valor total da compra (soma das ${n} parcelas)">${ps.length === n ? '' : '≈ '}total ${reais(t)}</small>`; };
 // Título do RH: quem recebe é o colaborador (funcionario_id), não um fornecedor. O nome vem no fim da descrição ("Adiantamento salarial 10/2026 · NOME").
 const colaborador = r => r.origem === 'rh' && r.funcionario_id ? (r.descricao || '').split(' · ').pop().trim() : '';
 // Título do RH com o total (SQL 134): sem nome de colaborador; o detalhe fica só nas telas do RH
@@ -684,7 +700,7 @@ const cfg = {
     { id: 'data_vencimento', label: 'Vencimento', tipo: 'data', obrig: true, lista: true,
       listaHtml: r => `${dataCurta(r.data_vencimento)}${ABERTOS.includes(r.situacao) ? `<small class="sub2"><span class="prazo p-${faixa(r)}">${textoPrazo(r)}</span></small>` : ''}` },
     { id: 'parcela', label: 'Parcela', tipo: 'numero', oculto: r => !r.id,
-      listaHtml: r => { const [p, n] = parcelaDe(r); return p ? `<span class="nw" title="Parcela ${p} de ${n}">${p}/${n}</span>` : '<span class="sub">única</span>'; } },
+      listaHtml: r => { const [p, n] = parcelaDe(r); return p ? `<span class="nw" title="Parcela ${p} de ${n}">${p}/${n}</span>${totalCompra(r)}` : '<span class="sub">única</span>'; } },
     { id: 'parcelas', label: 'de (total de parcelas)', tipo: 'numero', oculto: r => !r.id },
     { id: 'data_competencia', label: 'Competência', tipo: 'data', somenteLeitura: true, oculto: r => !r.id, ajuda: 'Automática: igual à data de emissão.' },
     { id: 'saldo', label: 'Saldo (R$)', tipo: 'moeda', somenteLeitura: true, lista: true, oculto: r => !r.id },
