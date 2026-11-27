@@ -324,8 +324,9 @@ async function montarCadastro(cfg) {
     const extras = (cfg.filtrosExtras || []).filter(f => f.id !== ignorarExtra)
       .map(f => [f, cont.querySelector(`[data-filtro-extra="${f.id}"]`).value]).filter(([, v]) => v);
     const porCampo = filtrosCampo.map(c => [c, cont.querySelector(`[data-filtro="${c.id}"]`).value]).filter(([, v]) => v);
+    // com texto na busca, procura em todas as abas (a aba só vale sem busca)
     return linhas.filter(r => {
-      if (cfg.abas && aba !== '' && !naAba(r, aba)) return false;
+      if (cfg.abas && aba !== '' && !termos.length && !naAba(r, aba)) return false;
       if (cfg.porEmpresa && ctx.empresa && r.empresa_id !== ctx.empresa) return false;
       for (const [f, v] of extras) if (!f.teste(r, v, extra)) return false;
       for (const [c, v] of porCampo) {
@@ -344,9 +345,12 @@ async function montarCadastro(cfg) {
 
   function desenhar() {
     if (cfg.abas) {
-      const base = linhas.filter(r => !cfg.porEmpresa || !ctx.empresa || r.empresa_id === ctx.empresa);
-      $('#cAbas').innerHTML = cfg.abas.opcoes.map(o => `<button class="aba${String(o.v) === aba ? ' ativa' : ''}" data-v="${esc(o.v)}">${esc(o.n)}<span class="n">${base.filter(r => o.v === '' || naAba(r, String(o.v))).length}</span></button>`).join('');
-      cont.querySelectorAll('#cAbas .aba').forEach(b => b.onclick = () => { aba = b.dataset.v; selecionados.clear(); desenhar(); });
+      const bq = $('#fBusca').value.trim(), tq = bq ? (cfg.chavesBusca ? buscaComChaves(bq) : semAcento(bq)).split(/\s+/).filter(Boolean) : [];
+      const base = linhas.filter(r => (!cfg.porEmpresa || !ctx.empresa || r.empresa_id === ctx.empresa) && (!tq.length || tq.every(x => textoBusca(r).includes(x))));
+      // buscando: os números mostram quantos resultados há em cada aba e nenhuma aba fica marcada
+      $('#cAbas').innerHTML = cfg.abas.opcoes.map(o => `<button class="aba${!tq.length && String(o.v) === aba ? ' ativa' : ''}" data-v="${esc(o.v)}">${esc(o.n)}<span class="n">${base.filter(r => o.v === '' || naAba(r, String(o.v))).length}</span></button>`).join('')
+        + (tq.length ? '<span class="sub" style="align-self:center;margin-left:6px">🔎 buscando em todas as abas</span>' : '');
+      cont.querySelectorAll('#cAbas .aba').forEach(b => b.onclick = () => { aba = b.dataset.v; selecionados.clear(); if (tq.length) { $('#fBusca').value = ''; } desenhar(); });
     }
     const base = filtrar(true);
     $('#cPend').innerHTML = desenharPendencias(PEND.map(p => ({ ...p, n: base.filter(r => r._pend.includes(p.id)).length })), pendAtual);
