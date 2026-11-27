@@ -424,6 +424,8 @@ const cfg = {
       buscarTodos(() => db.from('pedidos_venda_entregas_itens').select('*').order('id'))
     ]);
     const [ac, dp] = await Promise.all([db.rpc('minhas_acoes'), db.rpc('estoque_disponivel')]); ACOES = new Set(ac.data || []);
+    // soma do período (rodapé da lista) só para quem vê os valores da empresa (SQL 191/192); o valor de cada venda continua
+    cfg.totais = ACOES.has('empresa.valores') ? ['valor_total', 'encargos', 'valor_liquido'] : null;
     DISP = new Map((dp.data || []).map(x => [x.produto_id, x]));
     CANAIS = c; CLIENTES = cl; PRODS = p; CATS = ca; TIPOS_ENC = te; CONDS = co; FORMAS = fo;
     const itens = {}, encargos = {}, titulos = {};
