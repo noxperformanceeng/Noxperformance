@@ -133,7 +133,8 @@ async function outroCadastroAoSalvar(cfg, m, dados) {
 async function montarCadastro(cfg) {
   const ctx = await iniciarTela();
   if (!ctx) return;
-  const podeCriar = ctx.pode(cfg.modulo, 'criar'), podeAlterar = ctx.pode(cfg.modulo, 'alterar'), podeTotal = ctx.pode(cfg.modulo, 'total');
+  // somenteLeitura: tela só de consulta (ex.: histórico importado) — sem novo, sem edição, sem ações em lote
+  const podeCriar = !cfg.somenteLeitura && ctx.pode(cfg.modulo, 'criar'), podeAlterar = !cfg.somenteLeitura && ctx.pode(cfg.modulo, 'alterar'), podeTotal = ctx.pode(cfg.modulo, 'total');
   const podeEditar = podeAlterar;   // seleção em lote e edição de existentes
   const INATIVA = /inativ|reativ|exclu|cancel|deslig/i;
   const campos = cfg.campos;
@@ -142,7 +143,7 @@ async function montarCadastro(cfg) {
   let linhas = [], extra = {}, nomes = {};
   let formAberto = null;   // { id, m, assinatura, salvando }: formulário aberto, para avisar se outra pessoa mexer no mesmo registro
   let aba = cfg.abas ? cfg.abas.padrao ?? '' : '', pendAtual = '', visiveis = [], selecionados = new Set();
-  let ordem = { campo: cfg.ordem || campos.find(c => c.lista)?.id, asc: true };
+  let ordem = { campo: cfg.ordem || campos.find(c => c.lista)?.id, asc: !cfg.ordemDesc };
   // Árvore (opcional): cfg.arvore = { chave: r => '3.01.002', pai: chave => '3.01' | null }
   // Grupos recolhíveis; o estado fica salvo por tela. Com busca/filtro ativo, mostra tudo que bate.
   const chaveArv = 'nox_arvore_' + cfg.tabela;
