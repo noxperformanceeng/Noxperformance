@@ -23,7 +23,7 @@
 <body data-modulo="integracoes" data-titulo="Integrações">
 <main id="conteudo">
   <div class="cab-tela"><div><h1>Integrações</h1>
-    <p class="sub">Ligações do sistema com Mercado Livre, Tiny e Mercado Pago, por empresa. Tudo que vem de fora entra primeiro numa área de conferência e só depois vira título ou pedido, conferido com o extrato.</p></div>
+    <p class="sub">Ligações do sistema com Mercado Livre, Tiny, Mercado Pago e SEFAZ (certificado digital), por empresa. Tudo que vem de fora entra primeiro numa área de conferência e só depois vira título ou pedido, conferido com o extrato.</p></div>
     <button class="btn" id="btnAtualizar" type="button">Atualizar</button></div>
   <div class="integ" id="cartoes"><div class="cartao vazio">Carregando…</div></div>
   <h2>Leituras recentes</h2>
@@ -83,7 +83,27 @@ async function carregar() {
   html += `<div class="cartao"><h3>Mercado Pago <span class="selo">Extrato</span></h3>
     <p class="sub">Extrato das contas Mercado Pago 30 e 37 para a conciliação. Enquanto a leitura automática não estiver ligada, use Importar extrato na tela Extratos e conciliação.</p>
     <div class="acoes-integ"><a class="btn fino" href="${RAIZ}pages/financeiro/conciliacao.html">Abrir conciliação</a></div></div>`;
+  // Certificado digital A1 por empresa (SEFAZ: notas emitidas contra a NOX)
+  const [{ data: certs }, { data: ctl }] = await Promise.all([db.from('sefaz_certificados').select('*'), db.from('sefaz_dfe_controle').select('*')]);
+  empresas.forEach(e => {
+    if (!sufixo(e.id)) return;
+    const c = (certs || []).find(x => x.empresa_id === e.id), k = (ctl || []).find(x => x.empresa_id === e.id);
+    const dias = c ? Math.floor((Date.parse(c.valido_ate) - Date.now()) / 864e5) : null;
+    const selo = !c ? '<span class="selo erro">Sem certificado</span>' : dias < 0 ? '<span class="selo erro">Vencido</span>' : dias <= 30 ? `<span class="selo erro">Vence em ${dias} dia(s)</span>` : '<span class="selo ok">Instalado</span>';
+    html += `<div class="cartao"><h3>Certificado digital · ${esc(e.nome)} ${selo}</h3>
+      <p class="sub">Certificado A1 (.pfx) deste CNPJ, guardado no cofre criptografado. Usado para baixar da SEFAZ as NF-e emitidas contra a empresa.</p>
+      ${c ? `<table><tr><td>Titular</td><td class="n">${esc(c.titular || '')}</td></tr><tr><td>CNPJ</td><td class="n">${esc(c.cnpj)}</td></tr>
+        <tr><td>Válido até</td><td class="n">${new Date(c.valido_ate).toLocaleDateString('pt-BR')}</td></tr><tr><td>Enviado em</td><td class="n">${dataHoraBR(c.enviado_em)}</td></tr>
+        <tr><td>Última busca na SEFAZ</td><td class="n">${k?.consultado_em ? dataHoraBR(k.consultado_em) + ' · ' + esc(k.ultimo_status || '') : 'ainda não'}</td></tr></table>` : ''}
+      ${ctx.admin ? `<div class="acoes-integ"><button class="btn fino${c ? '' : ' primario'}" type="button" data-cert="${e.id}">${c ? 'Trocar certificado…' : 'Enviar certificado…'}</button>${c ? `<button class="btn fino discreto" type="button" data-cert-rm="${e.id}">Remover</button>` : ''}</div>` : ''}</div>`;
+  });
   document.getElementById('cartoes').innerHTML = html;
+  document.querySelectorAll('[data-cert]').forEach(b => b.onclick = () => enviarCertificado(Number(b.dataset.cert)));
+  document.querySelectorAll('[data-cert-rm]').forEach(b => b.onclick = async () => {
+    if (!confirm('Remover o certificado desta empresa? A busca de notas na SEFAZ para até enviar outro.')) return;
+    const { error } = await db.rpc('sefaz_cert_remover', { p_empresa: Number(b.dataset.certRm) });
+    if (error) return aviso('Não removeu: ' + error.message, true);
+    aviso('Certificado removido'); carregar(); });
   document.querySelectorAll('[data-ler]').forEach(b => b.onclick = () => ler(...b.dataset.ler.split('|')));
 
   document.getElementById('jobs').innerHTML = data.jobs.length ? data.jobs.map(j => {
@@ -95,6 +115,35 @@ async function carregar() {
   }).join('') : '<tr><td colspan="11" class="vazio">Nenhuma leitura ainda.</td></tr>';
 
   clearTimeout(timer); if (rodando) timer = setTimeout(carregar, 8000);
+}
+
+function enviarCertificado(empresaId) {
+  const m = abrirModal(`<h2>Certificado digital · ${esc(nomeEmp(empresaId))}</h2>
+    <p class="sub" style="margin:0 0 8px">Escolha o arquivo do certificado <b>A1</b> (.pfx ou .p12) deste CNPJ e digite a senha.
+      O sistema confere se a senha abre o arquivo, se o CNPJ é desta empresa e a validade, e guarda tudo no cofre criptografado.
+      A senha não fica visível para ninguém depois de enviada.</p>
+    <div class="grade-campos">
+      <div class="campo l2"><label>Arquivo do certificado (.pfx / .p12)</label><input type="file" id="cArq" accept=".pfx,.p12,application/x-pkcs12"></div>
+      <div class="campo l2"><label>Senha do certificado</label><input type="password" id="cSenha" autocomplete="new-password"></div>
+    </div>
+    <div class="acoes"><button class="btn" id="cX" type="button">Cancelar</button><button class="btn primario" id="cOk" type="button">Enviar e conferir</button></div>`);
+  m.querySelector('#cX').onclick = () => m.remove();
+  m.querySelector('#cOk').onclick = async () => {
+    const f = m.querySelector('#cArq').files[0], senha = m.querySelector('#cSenha').value;
+    if (!f) return aviso('Escolha o arquivo .pfx', true);
+    if (!senha) return aviso('Digite a senha do certificado', true);
+    if (f.size > 100000) return aviso('Arquivo grande demais para um certificado A1', true);
+    const b64 = await new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = erro; r.readAsDataURL(f); });
+    m.querySelector('#cOk').disabled = true; m.querySelector('#cOk').textContent = 'Conferindo…';
+    const { data, error } = await db.functions.invoke('sefaz-certificado', { body: { empresa_id: empresaId, pfx_base64: b64, senha } });
+    m.querySelector('#cSenha').value = '';
+    if (error || data?.erro) {
+      let msg = data?.erro; if (!msg && error?.context) { try { msg = (await error.context.json()).erro; } catch { /* segue */ } }
+      m.querySelector('#cOk').disabled = false; m.querySelector('#cOk').textContent = 'Enviar e conferir';
+      return aviso(msg || error?.message || 'Não enviou', true);
+    }
+    aviso(`Certificado da ${data.empresa} instalado · válido até ${new Date(data.valido_ate).toLocaleDateString('pt-BR')}`); m.remove(); carregar();
+  };
 }
 
 async function ler(s, recurso) {
