@@ -1,0 +1,11 @@
+-- =====================================================================
+-- 189 · Pedido de venda digitado: libera o recálculo dos totais para quem usa a tela
+-- O que muda:
+--   - A função que recalcula os totais do pedido (produtos, desconto, frete, total, líquido) estava fechada
+--     para os usuários (026). Como o "salvar pedido" chama essa função, NINGUÉM conseguia salvar um pedido
+--     digitado na tela (só entravam os pedidos importados do Tiny e dos marketplaces).
+--   - Agora quem está logado pode executá-la. Ela só refaz as contas do próprio pedido a partir dos itens
+--     e encargos já gravados; não lê nem mostra dados de outras tabelas.
+-- Dá para desfazer: revoke execute on function public.pedido_venda_recalcular(bigint) from authenticated;
+-- =====================================================================
+grant execute on function public.pedido_venda_recalcular(bigint) to authenticated;
