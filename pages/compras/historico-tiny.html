@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Histórico de compras do Tiny · NOX ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/style.css?v=202611271011">
+</head>
+<body data-modulo="compras" data-titulo="Histórico de compras do Tiny">
+<main id="conteudo"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/supabase.js?v=202611271011"></script>
+<script src="../../assets/js/ui.js?v=202611271011"></script>
+<script src="../../assets/js/auth.js?v=202611271011"></script>
+<script src="../../assets/js/layout.js?v=202611271011"></script>
+<script src="../../assets/js/cadastro.js?v=202611271011"></script>
+<script>
+// Histórico das ordens de compra do Tiny (só consulta) — carregado das planilhas exportadas do Tiny em 27/11/2026 (sql/185)
+montarCadastro({
+  tabela: 'historico_compras_tiny', modulo: 'compras', titulo: 'Histórico de compras do Tiny', singular: 'item', plural: 'itens',
+  subtitulo: 'Ordens de compra feitas no Tiny até nov/2026, item por item. Só consulta: não gera pedido, conta a pagar nem aviso. As canceladas não entraram.',
+  somenteLeitura: true, revisao: false, porEmpresa: true, ordem: 'oc_numero', ordemDesc: true,
+  tituloRegistro: r => `OC ${r.oc_numero} (Tiny) · ${r.fornecedor_nome}`,
+  periodos: [{ campo: 'data_pedido', label: 'Data da ordem' }, { campo: 'data_prevista', label: 'Data prevista' }],
+  abas: { campo: 'situacao', padrao: '', opcoes: [{ v: '', n: 'Todas' }, { v: 'atendido', n: 'Atendidas' }, { v: 'em_aberto', n: 'Em aberto no Tiny' }, { v: 'em_andamento', n: 'Em andamento' }] },
+  totais: ['valor_produto', 'ipi', 'frete', 'desconto', 'total'],
+  resumo: v => `${new Set(v.map(r => r.empresa_id + '-' + r.oc_numero)).size} ordens · ${new Set(v.map(r => r.fornecedor_nome)).size} fornecedores`,
+  campos: [
+    { id: 'oc_numero', label: 'OC nº', tipo: 'numero', lista: true },
+    { id: 'data_pedido', label: 'Data', tipo: 'data', lista: true },
+    { id: 'fornecedor_nome', label: 'Fornecedor', col: 2, lista: true, filtro: true },
+    { id: 'item', label: 'Item', col: 3, lista: true },
+    { id: 'quantidade', label: 'Qtd', tipo: 'numero', lista: true },
+    { id: 'valor_unitario', label: 'Valor unitário', tipo: 'moeda', lista: true },
+    { id: 'valor_produto', label: 'Valor dos produtos', tipo: 'moeda', lista: true },
+    { id: 'desconto', label: 'Desconto', tipo: 'moeda' },
+    { id: 'frete', label: 'Frete', tipo: 'moeda' },
+    { id: 'ipi', label: 'IPI', tipo: 'moeda', lista: true },
+    { id: 'icms', label: 'ICMS', tipo: 'moeda' },
+    { id: 'total', label: 'Total', tipo: 'moeda', lista: true },
+    { id: 'situacao', label: 'Situação no Tiny', tipo: 'select', lista: true, filtro: true,
+      opcoes: [{ v: 'atendido', n: 'Atendida' }, { v: 'em_aberto', n: 'Em aberto' }, { v: 'em_andamento', n: 'Em andamento' }] },
+    { id: 'data_prevista', label: 'Data prevista', tipo: 'data' },
+    { id: 'numero_fornecedor', label: 'Nº no fornecedor' },
+    { id: 'linha', label: 'Item nº na ordem', tipo: 'numero' },
+    { id: 'empresa_id', label: 'Empresa (CNPJ)', tipo: 'empresa', lista: true, opcoes: ctx => ctx.empresas.map(e => ({ v: e.id, n: e.nome })) },
+    { id: 'observacoes', label: 'Observações', tipo: 'textarea', col: 3 }
+  ]
+});
+</script>
+</body>
+</html>

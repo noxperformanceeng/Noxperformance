@@ -7,7 +7,7 @@
    ===================================================================== */
 // versão das telas (carimbada por tools/versao.py): vai no endereço de cada tela aberta nas abas,
 // para o navegador não mostrar uma cópia antiga da tela depois de uma atualização
-const VERSAO_TELAS = '202611271009';
+const VERSAO_TELAS = '202611271011';
 const urlTela = c => RAIZ + c + (c.includes('?') ? '&' : '?') + 'v=' + VERSAO_TELAS;
 // Menu por ÁREA (nov/2026): cada área tem uma página de cartões (pages/area.html?a=<slug>) com as telas dela.
 // "sub" separa partes dentro da área; arquivo null = tela ainda não feita ("em breve", só o administrador vê).
@@ -41,7 +41,8 @@ const MENU = [
     { id: 'compras',       nome: 'Pedidos de compra', arquivo: 'pages/compras/pedidos.html', desc: 'Aprovação, envio ao fornecedor e recebimento' },
     { id: 'notas',         nome: 'Notas fiscais de entrada', arquivo: 'pages/financeiro/notas-fiscais.html', desc: 'XML das notas ligado ao pedido' },
     { id: 'fornecedores',  nome: 'Fornecedores',      arquivo: 'pages/cadastros/fornecedores.html', desc: 'Cadastro e histórico de preços' },
-    { id: 'compras',       nome: 'Serviços terceirizados', arquivo: 'pages/cadastros/servicos.html', desc: 'Usinagem, pintura, corte e dobra' }
+    { id: 'compras',       nome: 'Serviços terceirizados', arquivo: 'pages/cadastros/servicos.html', desc: 'Usinagem, pintura, corte e dobra' },
+    { id: 'compras',       nome: 'Histórico de compras do Tiny', arquivo: 'pages/compras/historico-tiny.html', desc: 'Ordens de compra antigas do Tiny (só consulta)' }
   ]},
   { grupo: 'Estoque', slug: 'estoque', icone: 'estoque', itens: [
     { id: 'almoxarifado',  nome: 'Recebimento',       arquivo: 'pages/estoque/recebimento.html', desc: 'Chegada, conferência, liberação e retirada' },
